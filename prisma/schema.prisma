@@ -1,0 +1,16 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// Entidade de demonstração da infraestrutura, sem autenticação ou dados reais.
+model Usuario {
+  id       Int      @id @default(autoincrement())
+  nome     String   @db.VarChar(100)
+  email    String   @unique @db.VarChar(191)
+  criadoEm DateTime @default(now())
+}
