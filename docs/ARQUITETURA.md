@@ -51,6 +51,7 @@ src/
     ├── prisma.ts            # cliente Prisma (server-only)
     ├── formatacao.ts        # formatarMoeda, formatarQuantidade, formatarData...
     ├── formulario.ts        # EstadoFormulario (retorno das Server Actions)
+    ├── sessao.ts            # getSessao() / getEmpresaAtual()
     └── utils.ts             # cn()
 ```
 
@@ -90,7 +91,7 @@ export const cargoSchema = z.object({
 ```ts
 import "server-only"
 import { prisma } from "@/lib/prisma"
-import { getEmpresaAtual } from "@/lib/sessao" // criado na issue "Contexto multiempresa"
+import { getEmpresaAtual } from "@/lib/sessao"
 
 export async function listarCargos() {
   const { idEmpresa } = await getEmpresaAtual()
@@ -210,7 +211,8 @@ export default async function Page() {
 
 ## Regras obrigatórias
 
-1. **Multiempresa.** Toda leitura ou escrita em tabela com `id_empresa` filtra ou grava a empresa da sessão (`getEmpresaAtual()`). Nunca aceite `id_empresa` vindo do formulário.
+1. **Multiempresa.** Toda leitura ou escrita em tabela com `id_empresa` filtra ou grava a empresa da sessão (`getEmpresaAtual()`). Nunca aceite `id_empresa` vindo do formulário. O mesmo vale para `id_usuario`: use `getSessao()`.
+   - Enquanto a autenticação não existe, `src/lib/sessao.ts` é **provisório** e lê `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` do `.env.local`. Use essas funções mesmo assim: quando o login entrar, só a implementação muda.
 2. **Permissão no servidor.** Toda Server Action verifica sessão e permissão antes de gravar (helper da issue "Controle de acesso"). Esconder um botão não protege nada.
 3. **Transações.** Operações que mexem em mais de uma tabela (estoque, kardex, reservas, produção, entrada de NF) usam `prisma.$transaction`. Movimentação de estoque passa **sempre** pelo serviço único de estoque (issue "Movimentação de estoque e kardex").
 4. **Numeração automática.** Números de pedido, compra, venda e OP vêm do helper de `sequencias_automaticas` (issue "Numeração automática"), nunca de `count() + 1`.
