@@ -7,10 +7,1215 @@ datasource db {
   provider = "mysql"
 }
 
-// Entidade de demonstração da infraestrutura, sem autenticação ou dados reais.
-model Usuario {
-  id       Int      @id @default(autoincrement())
-  nome     String   @db.VarChar(100)
-  email    String   @unique @db.VarChar(191)
-  criadoEm DateTime @default(now())
+model administradores_gerais {
+  id            Int                           @id @default(autoincrement())
+  nome          String                        @db.VarChar(150)
+  email         String                        @unique(map: "uk_administrador_geral_email") @db.VarChar(150)
+  senha_hash    String                        @db.VarChar(255)
+  status        administradores_gerais_status @default(ATIVO)
+  data_cadastro DateTime                      @default(now()) @db.Timestamp(0)
+}
+
+model auditoria {
+  id               Int            @id @default(autoincrement())
+  id_empresa       Int?
+  id_usuario       Int?
+  tabela           String         @db.VarChar(100)
+  id_registro      Int?
+  acao             auditoria_acao
+  dados_anteriores String?        @db.Text
+  dados_novos      String?        @db.Text
+  ip               String?        @db.VarChar(45)
+  data_evento      DateTime       @default(now()) @db.Timestamp(0)
+  empresas         empresas?      @relation(fields: [id_empresa], references: [id], map: "fk_auditoria_empresa")
+  usuarios         usuarios?      @relation(fields: [id_usuario], references: [id], map: "fk_auditoria_usuario")
+
+  @@index([id_empresa], map: "fk_auditoria_empresa")
+  @@index([id_usuario], map: "fk_auditoria_usuario")
+}
+
+model cargos {
+  id              Int               @id @default(autoincrement())
+  id_empresa      Int
+  nome            String            @db.VarChar(100)
+  descricao       String?           @db.VarChar(255)
+  status          cargos_status     @default(ATIVO)
+  empresas        empresas          @relation(fields: [id_empresa], references: [id], map: "fk_cargos_empresa")
+  usuario_empresa usuario_empresa[]
+
+  @@unique([id_empresa, nome], map: "uk_cargo_empresa_nome")
+}
+
+model categorias {
+  id         Int               @id @default(autoincrement())
+  id_empresa Int?
+  nome       String            @db.VarChar(100)
+  descricao  String?           @db.VarChar(255)
+  status     categorias_status @default(ATIVA)
+  empresas   empresas?         @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_categorias_empresa")
+  produtos   produtos[]
+
+  @@unique([id_empresa, nome], map: "uk_categoria_empresa_nome")
+}
+
+model clientes {
+  id                Int             @id @default(autoincrement())
+  id_empresa        Int
+  nome_razao_social String          @db.VarChar(150)
+  cpf_cnpj          String?         @db.VarChar(20)
+  email             String?         @db.VarChar(150)
+  telefone          String?         @db.VarChar(30)
+  endereco          String?         @db.VarChar(255)
+  numero            String?         @db.VarChar(20)
+  complemento       String?         @db.VarChar(100)
+  bairro            String?         @db.VarChar(100)
+  cidade            String?         @db.VarChar(100)
+  estado            String?         @db.Char(2)
+  cep               String?         @db.VarChar(10)
+  status            clientes_status @default(ATIVO)
+  data_cadastro     DateTime        @default(now()) @db.Timestamp(0)
+  empresas          empresas        @relation(fields: [id_empresa], references: [id], map: "fk_clientes_empresa")
+  venda             venda[]
+
+  @@index([id_empresa], map: "idx_cliente_empresa")
+}
+
+model compra_itens {
+  id             Int       @id @default(autoincrement())
+  id_compra      Int
+  id_produto     Int
+  id_cor         Int?
+  id_tamanho     Int?
+  quantidade     Decimal   @db.Decimal(15, 3)
+  valor_unitario Decimal   @default(0.00) @db.Decimal(15, 2)
+  valor_total    Decimal   @default(0.00) @db.Decimal(15, 2)
+  compras        compras   @relation(fields: [id_compra], references: [id], onDelete: Cascade, map: "fk_compra_item_compra")
+  cores          cores?    @relation(fields: [id_cor], references: [id], onDelete: Restrict, map: "fk_compra_item_cor")
+  produtos       produtos  @relation(fields: [id_produto], references: [id], map: "fk_compra_item_produto")
+  tamanhos       tamanhos? @relation(fields: [id_tamanho], references: [id], onDelete: Restrict, map: "fk_compra_item_tamanho")
+
+  @@unique([id_compra, id_produto, id_cor, id_tamanho], map: "uk_compra_item_produto_variacao")
+  @@index([id_cor], map: "fk_compra_item_cor")
+  @@index([id_produto], map: "fk_compra_item_produto")
+  @@index([id_tamanho], map: "fk_compra_item_tamanho")
+}
+
+model compras {
+  id                      Int             @id @default(autoincrement())
+  id_empresa              Int
+  id_local_estoque        Int
+  id_fornecedor           Int
+  id_ordem_producao       Int?
+  id_usuario              Int
+  id_pedido_compra_legado Int?            @unique(map: "uk_compra_pedido_legado")
+  codigo                  String          @db.VarChar(50)
+  origem                  compras_origem  @default(MANUAL)
+  status                  compras_status  @default(RASCUNHO)
+  data_emissao            DateTime        @db.DateTime(0)
+  observacao              String?         @db.VarChar(255)
+  data_cadastro           DateTime        @default(now()) @db.Timestamp(0)
+  data_atualizacao        DateTime        @default(now()) @db.Timestamp(0)
+  compra_itens            compra_itens[]
+  empresas                empresas        @relation(fields: [id_empresa], references: [id], map: "fk_compra_empresa")
+  locais_estoque          locais_estoque  @relation(fields: [id_local_estoque], references: [id], map: "fk_compra_estoque")
+  fornecedores            fornecedores    @relation(fields: [id_fornecedor], references: [id], map: "fk_compra_fornecedor")
+  ordem_producao          ordem_producao? @relation(fields: [id_ordem_producao], references: [id], map: "fk_compra_op")
+  pedido_compra           pedido_compra?  @relation(fields: [id_pedido_compra_legado], references: [id], map: "fk_compra_pedido_legado")
+  usuarios                usuarios        @relation(fields: [id_usuario], references: [id], map: "fk_compra_usuario")
+  nota_fiscal             nota_fiscal[]
+
+  @@unique([id_empresa, codigo], map: "uk_compra_empresa_codigo")
+  @@index([id_local_estoque], map: "fk_compra_estoque")
+  @@index([id_fornecedor], map: "fk_compra_fornecedor")
+  @@index([id_ordem_producao], map: "fk_compra_op")
+  @@index([id_usuario], map: "fk_compra_usuario")
+  @@index([id_empresa, status], map: "idx_compra_empresa_status")
+}
+
+model consumo_producao {
+  id                      Int                  @id @default(autoincrement())
+  id_ordem_producao       Int
+  id_necessidade_producao Int
+  id_reserva_estoque      Int
+  id_produto              Int
+  id_setor                Int
+  quantidade              Decimal              @db.Decimal(15, 3)
+  data_consumo            DateTime?            @db.DateTime(0)
+  id_usuario              Int
+  necessidade_producao    necessidade_producao @relation(fields: [id_necessidade_producao], references: [id], map: "fk_consumo_necessidade")
+  ordem_producao          ordem_producao       @relation(fields: [id_ordem_producao], references: [id], map: "fk_consumo_op")
+  produtos                produtos             @relation(fields: [id_produto], references: [id], map: "fk_consumo_produto")
+  reserva_estoque         reserva_estoque      @relation(fields: [id_reserva_estoque], references: [id], map: "fk_consumo_reserva")
+  setores                 setores              @relation(fields: [id_setor], references: [id], map: "fk_consumo_setor")
+  usuarios                usuarios             @relation(fields: [id_usuario], references: [id], map: "fk_consumo_usuario")
+
+  @@index([id_necessidade_producao], map: "fk_consumo_necessidade")
+  @@index([id_ordem_producao], map: "fk_consumo_op")
+  @@index([id_produto], map: "fk_consumo_produto")
+  @@index([id_reserva_estoque], map: "fk_consumo_reserva")
+  @@index([id_setor], map: "fk_consumo_setor")
+  @@index([id_usuario], map: "fk_consumo_usuario")
+}
+
+model cores {
+  id                  Int                   @id @default(autoincrement())
+  id_empresa          Int?
+  nome                String                @db.VarChar(100)
+  codigo_hex          String?               @db.VarChar(7)
+  status              cores_status          @default(ATIVA)
+  compra_itens        compra_itens[]
+  empresas            empresas?             @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_cores_empresa")
+  item_nota_fiscal    item_nota_fiscal[]
+  ordem_producao_item ordem_producao_item[]
+  produto_empresa     produto_empresa[]
+  produto_variacoes   produto_variacoes[]
+
+  @@unique([id_empresa, nome], map: "uk_cor_empresa_nome")
+}
+
+model empresa_fornecedor {
+  id              Int                       @id @default(autoincrement())
+  id_empresa      Int
+  id_fornecedor   Int
+  prazo_pagamento Int?
+  prazo_entrega   Int?
+  observacao      String?                   @db.VarChar(255)
+  status          empresa_fornecedor_status @default(ATIVO)
+  empresas        empresas                  @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_empresa_fornecedor_empresa")
+  fornecedores    fornecedores              @relation(fields: [id_fornecedor], references: [id], map: "fk_empresa_fornecedor_fornecedor")
+
+  @@unique([id_empresa, id_fornecedor], map: "uk_empresa_fornecedor")
+  @@index([id_fornecedor], map: "fk_empresa_fornecedor_fornecedor")
+}
+
+model empresas {
+  id                     Int                      @id @default(autoincrement())
+  razao_social           String                   @db.VarChar(150)
+  nome_fantasia          String?                  @db.VarChar(150)
+  cnpj                   String                   @unique(map: "uk_empresa_cnpj") @db.VarChar(18)
+  inscricao_estadual     String?                  @db.VarChar(30)
+  email                  String?                  @db.VarChar(150)
+  telefone               String?                  @db.VarChar(30)
+  endereco               String?                  @db.VarChar(255)
+  numero                 String?                  @db.VarChar(20)
+  complemento            String?                  @db.VarChar(100)
+  bairro                 String?                  @db.VarChar(100)
+  cidade                 String?                  @db.VarChar(100)
+  estado                 String?                  @db.Char(2)
+  cep                    String?                  @db.VarChar(10)
+  logo_url               String?                  @db.LongText
+  cor_tema               String                   @default("#22c55e") @db.VarChar(50)
+  status                 empresas_status          @default(ATIVA)
+  data_cadastro          DateTime                 @default(now()) @db.Timestamp(0)
+  auditoria              auditoria[]
+  cargos                 cargos[]
+  categorias             categorias[]
+  clientes               clientes[]
+  compras                compras[]
+  cores                  cores[]
+  empresa_fornecedor     empresa_fornecedor[]
+  estoque                estoque[]
+  ficha_tecnica          ficha_tecnica[]
+  fornecedores           fornecedores[]
+  kardex                 kardex[]
+  locais_estoque         locais_estoque[]
+  movimentacao_estoque   movimentacao_estoque[]
+  nota_fiscal            nota_fiscal[]
+  ordem_producao         ordem_producao[]
+  pedido_compra          pedido_compra[]
+  produto_empresa        produto_empresa[]
+  produto_fornecedor     produto_fornecedor[]
+  produto_variacoes      produto_variacoes[]
+  requisicao_compra      requisicao_compra[]
+  reserva_estoque        reserva_estoque[]
+  sequencias_automaticas sequencias_automaticas[]
+  setores                setores[]
+  tamanhos               tamanhos[]
+  tipos_setor            tipos_setor[]
+  usuario_empresa        usuario_empresa[]
+  venda                  venda[]
+}
+
+model estoque {
+  id                   Int            @id @default(autoincrement())
+  id_empresa           Int
+  id_local_estoque     Int
+  id_setor             Int
+  id_produto           Int
+  quantidade           Decimal        @default(0.000) @db.Decimal(15, 3)
+  quantidade_reservada Decimal        @default(0.000) @db.Decimal(15, 3)
+  data_atualizacao     DateTime       @default(now()) @db.Timestamp(0)
+  empresas             empresas       @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_estoque_empresa")
+  locais_estoque       locais_estoque @relation(fields: [id_local_estoque], references: [id], map: "fk_estoque_local")
+  produtos             produtos       @relation(fields: [id_produto], references: [id], map: "fk_estoque_produto")
+  setores              setores        @relation(fields: [id_setor], references: [id], map: "fk_estoque_setor")
+
+  @@unique([id_empresa, id_local_estoque, id_produto], map: "uk_estoque_empresa_local_produto")
+  @@unique([id_empresa, id_setor, id_produto], map: "uk_estoque_empresa_setor_produto")
+  @@index([id_local_estoque], map: "fk_estoque_local")
+  @@index([id_produto], map: "fk_estoque_produto")
+  @@index([id_setor], map: "fk_estoque_setor")
+}
+
+model ficha_tecnica {
+  id                 Int                  @id @default(autoincrement())
+  id_empresa         Int
+  id_produto         Int
+  versao             Int                  @default(1)
+  status             ficha_tecnica_status @default(RASCUNHO)
+  data_vigencia      DateTime?            @db.Date
+  empresas           empresas             @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_ficha_empresa")
+  produtos           produtos             @relation(fields: [id_produto], references: [id], map: "fk_ficha_produto")
+  ficha_tecnica_item ficha_tecnica_item[]
+
+  @@unique([id_empresa, id_produto, versao], map: "uk_ficha_produto_versao")
+  @@index([id_produto], map: "fk_ficha_produto")
+}
+
+model ficha_tecnica_item {
+  id                    Int           @id @default(autoincrement())
+  id_ficha_tecnica      Int
+  id_produto_componente Int
+  quantidade            Decimal       @db.Decimal(15, 3)
+  perda_percentual      Decimal       @default(0.00) @db.Decimal(5, 2)
+  produtos              produtos      @relation(fields: [id_produto_componente], references: [id], map: "fk_ficha_item_componente")
+  ficha_tecnica         ficha_tecnica @relation(fields: [id_ficha_tecnica], references: [id], onDelete: Cascade, map: "fk_ficha_item_ficha")
+
+  @@unique([id_ficha_tecnica, id_produto_componente], map: "uk_ficha_item_componente")
+  @@index([id_produto_componente], map: "fk_ficha_item_componente")
+}
+
+model fornecedores {
+  id                 Int                  @id @default(autoincrement())
+  id_empresa         Int?
+  razao_social       String               @db.VarChar(150)
+  nome_fantasia      String?              @db.VarChar(150)
+  cnpj               String?              @db.VarChar(18)
+  inscricao_estadual String?              @db.VarChar(30)
+  email              String?              @db.VarChar(150)
+  telefone           String?              @db.VarChar(30)
+  endereco           String?              @db.VarChar(255)
+  numero             String?              @db.VarChar(20)
+  complemento        String?              @db.VarChar(100)
+  bairro             String?              @db.VarChar(100)
+  cidade             String?              @db.VarChar(100)
+  estado             String?              @db.Char(2)
+  cep                String?              @db.VarChar(10)
+  status             fornecedores_status  @default(ATIVO)
+  data_cadastro      DateTime             @default(now()) @db.Timestamp(0)
+  compras            compras[]
+  empresa_fornecedor empresa_fornecedor[]
+  empresas           empresas?            @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_fornecedores_empresa")
+  nota_fiscal        nota_fiscal[]
+  pedido_compra      pedido_compra[]
+  produto_fornecedor produto_fornecedor[]
+
+  @@unique([id_empresa, cnpj], map: "uk_fornecedor_empresa_cnpj")
+}
+
+model item_nota_fiscal {
+  id                                 Int                         @id @default(autoincrement())
+  id_nota_fiscal                     Int
+  numero_item                        Int
+  id_produto                         Int?
+  id_cor                             Int?
+  id_tamanho                         Int?
+  codigo_produto                     String?                     @db.VarChar(100)
+  descricao_produto                  String?                     @db.VarChar(255)
+  quantidade                         Decimal                     @db.Decimal(15, 3)
+  unidade                            String                      @db.VarChar(20)
+  tipo_valor                         item_nota_fiscal_tipo_valor @default(UNITARIO)
+  valor_unitario                     Decimal                     @db.Decimal(15, 2)
+  valor_total                        Decimal                     @db.Decimal(15, 2)
+  produto_cadastrado_automaticamente Boolean                     @default(false)
+  cores                              cores?                      @relation(fields: [id_cor], references: [id], onDelete: Restrict, map: "fk_item_nf_cor")
+  nota_fiscal                        nota_fiscal                 @relation(fields: [id_nota_fiscal], references: [id], onDelete: Cascade, map: "fk_item_nf_nota")
+  produtos                           produtos?                   @relation(fields: [id_produto], references: [id], onDelete: Restrict, map: "fk_item_nf_produto")
+  tamanhos                           tamanhos?                   @relation(fields: [id_tamanho], references: [id], onDelete: Restrict, map: "fk_item_nf_tamanho")
+
+  @@unique([id_nota_fiscal, numero_item], map: "uk_item_nf")
+  @@index([id_cor], map: "fk_item_nf_cor")
+  @@index([id_produto], map: "fk_item_nf_produto")
+  @@index([id_tamanho], map: "fk_item_nf_tamanho")
+}
+
+model item_pedido_compra {
+  id               Int           @id @default(autoincrement())
+  id_pedido_compra Int
+  id_produto       Int
+  quantidade       Decimal       @db.Decimal(15, 3)
+  valor_unitario   Decimal       @db.Decimal(15, 2)
+  valor_total      Decimal       @db.Decimal(15, 2)
+  pedido_compra    pedido_compra @relation(fields: [id_pedido_compra], references: [id], onDelete: Cascade, map: "fk_item_pedido_compra_pedido")
+  produtos         produtos      @relation(fields: [id_produto], references: [id], map: "fk_item_pedido_compra_produto")
+
+  @@index([id_pedido_compra], map: "fk_item_pedido_compra_pedido")
+  @@index([id_produto], map: "fk_item_pedido_compra_produto")
+}
+
+model item_requisicao_compra {
+  id                   Int               @id @default(autoincrement())
+  id_requisicao_compra Int
+  id_produto           Int
+  quantidade           Decimal           @db.Decimal(15, 3)
+  observacao           String?           @db.VarChar(255)
+  produtos             produtos          @relation(fields: [id_produto], references: [id], map: "fk_item_req_compra_produto")
+  requisicao_compra    requisicao_compra @relation(fields: [id_requisicao_compra], references: [id], onDelete: Cascade, map: "fk_item_req_compra_requisicao")
+
+  @@unique([id_requisicao_compra, id_produto], map: "uk_item_req_compra_produto")
+  @@index([id_produto], map: "fk_item_req_compra_produto")
+}
+
+model item_venda {
+  id             Int      @id @default(autoincrement())
+  id_venda       Int
+  id_produto     Int
+  quantidade     Decimal  @db.Decimal(15, 3)
+  valor_unitario Decimal  @db.Decimal(15, 2)
+  valor_total    Decimal  @db.Decimal(15, 2)
+  produtos       produtos @relation(fields: [id_produto], references: [id], map: "fk_item_venda_produto")
+  venda          venda    @relation(fields: [id_venda], references: [id], onDelete: Cascade, map: "fk_item_venda_venda")
+
+  @@unique([id_venda, id_produto], map: "uk_item_venda_produto")
+  @@index([id_produto], map: "fk_item_venda_produto")
+}
+
+model kardex {
+  id                   Int                      @id @default(autoincrement())
+  id_empresa           Int
+  id_local_estoque     Int?
+  id_setor             Int?
+  id_produto           Int
+  id_movimentacao      Int                      @unique(map: "uk_kardex_movimentacao")
+  tipo_movimentacao    kardex_tipo_movimentacao
+  quantidade           Decimal                  @db.Decimal(15, 3)
+  saldo_anterior       Decimal                  @db.Decimal(15, 3)
+  saldo_atual          Decimal                  @db.Decimal(15, 3)
+  data_movimentacao    DateTime                 @default(now()) @db.Timestamp(0)
+  empresas             empresas                 @relation(fields: [id_empresa], references: [id], map: "fk_kardex_empresa")
+  locais_estoque       locais_estoque?          @relation(fields: [id_local_estoque], references: [id], onDelete: Restrict, map: "fk_kardex_local")
+  movimentacao_estoque movimentacao_estoque     @relation(fields: [id_movimentacao], references: [id], map: "fk_kardex_movimentacao")
+  produtos             produtos                 @relation(fields: [id_produto], references: [id], map: "fk_kardex_produto")
+  setores              setores?                 @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_kardex_setor")
+
+  @@index([id_empresa], map: "fk_kardex_empresa")
+  @@index([id_local_estoque], map: "fk_kardex_local")
+  @@index([id_produto], map: "fk_kardex_produto")
+  @@index([id_setor], map: "fk_kardex_setor")
+}
+
+model locais_estoque {
+  id                   Int                    @id @default(autoincrement())
+  id_empresa           Int
+  nome                 String                 @db.VarChar(100)
+  descricao            String?                @db.VarChar(255)
+  status               locais_estoque_status  @default(ATIVO)
+  compras              compras[]
+  estoque              estoque[]
+  kardex               kardex[]
+  empresas             empresas               @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_locais_estoque_empresa")
+  movimentacao_estoque movimentacao_estoque[]
+  nota_fiscal          nota_fiscal[]
+  ordem_producao       ordem_producao[]
+  requisicao_compra    requisicao_compra[]
+  reserva_estoque      reserva_estoque[]
+
+  @@unique([id_empresa, nome], map: "uk_local_estoque_empresa_nome")
+}
+
+model movimentacao_estoque {
+  id                Int                       @id @default(autoincrement())
+  id_empresa        Int
+  id_local_estoque  Int?
+  id_setor          Int?
+  id_produto        Int
+  tipo              movimentacao_estoque_tipo
+  quantidade        Decimal                   @db.Decimal(15, 3)
+  valor_total       Decimal                   @default(0.00) @db.Decimal(15, 2)
+  origem_tipo       String?                   @db.VarChar(50)
+  origem_id         Int?
+  id_usuario        Int
+  data_movimentacao DateTime                  @default(now()) @db.Timestamp(0)
+  observacao        String?                   @db.VarChar(255)
+  kardex            kardex?
+  empresas          empresas                  @relation(fields: [id_empresa], references: [id], map: "fk_mov_estoque_empresa")
+  locais_estoque    locais_estoque?           @relation(fields: [id_local_estoque], references: [id], onDelete: Restrict, map: "fk_mov_estoque_local")
+  produtos          produtos                  @relation(fields: [id_produto], references: [id], map: "fk_mov_estoque_produto")
+  setores           setores?                  @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_mov_estoque_setor")
+  usuarios          usuarios                  @relation(fields: [id_usuario], references: [id], map: "fk_mov_estoque_usuario")
+
+  @@index([id_empresa], map: "fk_mov_estoque_empresa")
+  @@index([id_local_estoque], map: "fk_mov_estoque_local")
+  @@index([id_produto], map: "fk_mov_estoque_produto")
+  @@index([id_setor], map: "fk_mov_estoque_setor")
+  @@index([id_usuario], map: "fk_mov_estoque_usuario")
+}
+
+model necessidade_producao {
+  id                    Int                         @id @default(autoincrement())
+  id_ordem_producao     Int
+  id_produto            Int
+  quantidade_necessaria Decimal                     @db.Decimal(15, 3)
+  quantidade_reservada  Decimal                     @default(0.000) @db.Decimal(15, 3)
+  quantidade_consumida  Decimal                     @default(0.000) @db.Decimal(15, 3)
+  status                necessidade_producao_status @default(PENDENTE)
+  consumo_producao      consumo_producao[]
+  ordem_producao        ordem_producao              @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_necessidade_op")
+  produtos              produtos                    @relation(fields: [id_produto], references: [id], map: "fk_necessidade_produto")
+  reserva_estoque       reserva_estoque[]
+
+  @@unique([id_ordem_producao, id_produto], map: "uk_necessidade_op_produto")
+  @@index([id_produto], map: "fk_necessidade_produto")
+}
+
+model nota_fiscal {
+  id                 Int                @id @default(autoincrement())
+  id_empresa         Int
+  id_local_estoque   Int?
+  id_fornecedor      Int
+  id_pedido_compra   Int?
+  id_compra          Int?
+  id_setor_destino   Int?
+  numero             String             @db.VarChar(30)
+  serie              String             @db.VarChar(10)
+  chave_acesso       String             @unique(map: "uk_nf_chave_acesso") @db.VarChar(44)
+  status             nota_fiscal_status @default(PENDENTE)
+  data_emissao       DateTime?          @db.DateTime(0)
+  data_recebimento   DateTime?          @db.DateTime(0)
+  valor_total        Decimal            @default(0.00) @db.Decimal(15, 2)
+  entrada_processada Boolean            @default(false)
+  data_processamento DateTime?          @db.DateTime(0)
+  observacao         String?            @db.VarChar(255)
+  item_nota_fiscal   item_nota_fiscal[]
+  setores            setores?           @relation(fields: [id_setor_destino], references: [id], onDelete: Restrict, map: "fk_nf_setor_destino")
+  compras            compras?           @relation(fields: [id_compra], references: [id], onDelete: Restrict, map: "fk_nota_fiscal_compra")
+  empresas           empresas           @relation(fields: [id_empresa], references: [id], map: "fk_nota_fiscal_empresa")
+  fornecedores       fornecedores       @relation(fields: [id_fornecedor], references: [id], map: "fk_nota_fiscal_fornecedor")
+  locais_estoque     locais_estoque?    @relation(fields: [id_local_estoque], references: [id], onDelete: Restrict, map: "fk_nota_fiscal_local")
+  pedido_compra      pedido_compra?     @relation(fields: [id_pedido_compra], references: [id], map: "fk_nota_fiscal_pedido")
+
+  @@unique([id_empresa, numero, serie], map: "uk_nf_empresa_numero_serie")
+  @@index([id_setor_destino], map: "fk_nf_setor_destino")
+  @@index([id_compra], map: "fk_nota_fiscal_compra")
+  @@index([id_fornecedor], map: "fk_nota_fiscal_fornecedor")
+  @@index([id_local_estoque], map: "fk_nota_fiscal_local")
+  @@index([id_pedido_compra], map: "fk_nota_fiscal_pedido")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ordem_producao {
+  id                                Int                                 @id @default(autoincrement())
+  id_empresa                        Int
+  id_local_estoque                  Int?
+  id_usuario                        Int
+  id_setor                          Int?
+  numero                            String                              @db.VarChar(50)
+  prioridade                        ordem_producao_prioridade           @default(NORMAL)
+  quantidade_planejada              Decimal                             @default(0.000) @db.Decimal(15, 3)
+  status                            ordem_producao_status               @default(PLANEJADA)
+  data_inicio                       DateTime?                           @db.DateTime(0)
+  data_previsao                     DateTime?                           @db.DateTime(0)
+  data_conclusao                    DateTime?                           @db.DateTime(0)
+  observacao                        String?                             @db.VarChar(255)
+  compras                           compras[]
+  consumo_producao                  consumo_producao[]
+  necessidade_producao              necessidade_producao[]
+  setores                           setores?                            @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_op_setor")
+  empresas                          empresas                            @relation(fields: [id_empresa], references: [id], map: "fk_ordem_producao_empresa")
+  locais_estoque                    locais_estoque?                     @relation(fields: [id_local_estoque], references: [id], onDelete: Restrict, map: "fk_ordem_producao_local")
+  usuarios                          usuarios                            @relation(fields: [id_usuario], references: [id], map: "fk_ordem_producao_usuario")
+  ordem_producao_consumo_planejado  ordem_producao_consumo_planejado[]
+  ordem_producao_fluxo_setor        ordem_producao_fluxo_setor[]
+  ordem_producao_item               ordem_producao_item[]
+  ordem_producao_movimentacao_setor ordem_producao_movimentacao_setor[]
+  pedido_compra                     pedido_compra[]
+  reserva_estoque                   reserva_estoque[]
+
+  @@unique([id_empresa, numero], map: "uk_ordem_producao_empresa_numero")
+  @@index([id_setor], map: "fk_op_setor")
+  @@index([id_local_estoque], map: "fk_ordem_producao_local")
+  @@index([id_usuario], map: "fk_ordem_producao_usuario")
+}
+
+model ordem_producao_consumo_planejado {
+  id                     Int                 @id @default(autoincrement())
+  id_ordem_producao      Int
+  id_ordem_producao_item Int
+  id_materia_prima       Int
+  quantidade_por_peca    Decimal             @db.Decimal(15, 3)
+  quantidade_necessaria  Decimal             @db.Decimal(15, 3)
+  quantidade_disponivel  Decimal             @default(0.000) @db.Decimal(15, 3)
+  quantidade_faltante    Decimal             @default(0.000) @db.Decimal(15, 3)
+  ordem_producao_item    ordem_producao_item @relation(fields: [id_ordem_producao_item], references: [id], onDelete: Cascade, map: "fk_op_consumo_item")
+  produtos               produtos            @relation(fields: [id_materia_prima], references: [id], map: "fk_op_consumo_materia")
+  ordem_producao         ordem_producao      @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_op_consumo_ordem")
+
+  @@unique([id_ordem_producao_item, id_materia_prima], map: "uk_op_consumo_item_materia")
+  @@index([id_materia_prima], map: "fk_op_consumo_materia")
+  @@index([id_ordem_producao], map: "fk_op_consumo_ordem")
+}
+
+model ordem_producao_fluxo_setor {
+  id                Int            @id @default(autoincrement())
+  id_ordem_producao Int
+  id_setor          Int
+  ordem             Int
+  ordem_producao    ordem_producao @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_op_fluxo_ordem")
+  setores           setores        @relation(fields: [id_setor], references: [id], map: "fk_op_fluxo_setor")
+
+  @@unique([id_ordem_producao, ordem], map: "uk_op_fluxo_ordem")
+  @@unique([id_ordem_producao, id_setor], map: "uk_op_fluxo_setor")
+  @@index([id_setor], map: "fk_op_fluxo_setor")
+}
+
+model ordem_producao_item {
+  id                               Int                                @id @default(autoincrement())
+  id_ordem_producao                Int
+  id_produto                       Int
+  id_cor                           Int?
+  id_tamanho                       Int?
+  tamanho                          String                             @db.VarChar(30)
+  quantidade                       Decimal                            @db.Decimal(15, 3)
+  quantidade_produzida             Decimal                            @default(0.000) @db.Decimal(15, 3)
+  ordem_producao_consumo_planejado ordem_producao_consumo_planejado[]
+  cores                            cores?                             @relation(fields: [id_cor], references: [id], map: "fk_op_item_cor")
+  ordem_producao                   ordem_producao                     @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_op_item_ordem")
+  produtos                         produtos                           @relation(fields: [id_produto], references: [id], map: "fk_op_item_produto")
+  tamanhos                         tamanhos?                          @relation(fields: [id_tamanho], references: [id], onDelete: Restrict, map: "fk_op_item_tamanho")
+  ordem_producao_movimentacao_item ordem_producao_movimentacao_item[]
+
+  @@index([id_cor], map: "fk_op_item_cor")
+  @@index([id_ordem_producao], map: "fk_op_item_ordem")
+  @@index([id_produto], map: "fk_op_item_produto")
+  @@index([id_tamanho], map: "fk_op_item_tamanho")
+}
+
+model ordem_producao_movimentacao_item {
+  id                                Int                               @id @default(autoincrement())
+  id_movimentacao                   Int
+  id_ordem_producao_item            Int
+  quantidade                        Decimal                           @db.Decimal(15, 2)
+  ordem_producao_item               ordem_producao_item               @relation(fields: [id_ordem_producao_item], references: [id], onDelete: Cascade, map: "fk_op_mov_item_item")
+  ordem_producao_movimentacao_setor ordem_producao_movimentacao_setor @relation(fields: [id_movimentacao], references: [id], onDelete: Cascade, map: "fk_op_mov_item_mov")
+
+  @@unique([id_movimentacao, id_ordem_producao_item], map: "uk_op_mov_item")
+  @@index([id_ordem_producao_item], map: "idx_op_mov_item_op")
+}
+
+model ordem_producao_movimentacao_setor {
+  id                                                                          Int                                      @id @default(autoincrement())
+  id_ordem_producao                                                           Int
+  id_setor_origem                                                             Int?
+  id_setor_destino                                                            Int
+  quantidade                                                                  Decimal?                                 @db.Decimal(15, 2)
+  id_usuario_envio                                                            Int?
+  id_usuario_recebimento                                                      Int?
+  status                                                                      ordem_producao_movimentacao_setor_status @default(ENTREGUE)
+  data_envio                                                                  DateTime                                 @default(now()) @db.DateTime(0)
+  data_recebimento                                                            DateTime?                                @db.DateTime(0)
+  observacao                                                                  String?                                  @db.VarChar(255)
+  ordem_producao_movimentacao_item                                            ordem_producao_movimentacao_item[]
+  setores_ordem_producao_movimentacao_setor_id_setor_destinoTosetores         setores                                  @relation("ordem_producao_movimentacao_setor_id_setor_destinoTosetores", fields: [id_setor_destino], references: [id], onUpdate: NoAction, map: "fk_op_movimentacao_destino")
+  ordem_producao                                                              ordem_producao                           @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_op_movimentacao_ordem")
+  setores_ordem_producao_movimentacao_setor_id_setor_origemTosetores          setores?                                 @relation("ordem_producao_movimentacao_setor_id_setor_origemTosetores", fields: [id_setor_origem], references: [id], onUpdate: NoAction, map: "fk_op_movimentacao_origem")
+  usuarios_ordem_producao_movimentacao_setor_id_usuario_envioTousuarios       usuarios?                                @relation("ordem_producao_movimentacao_setor_id_usuario_envioTousuarios", fields: [id_usuario_envio], references: [id], onUpdate: NoAction, map: "fk_op_movimentacao_usuario_envio")
+  usuarios_ordem_producao_movimentacao_setor_id_usuario_recebimentoTousuarios usuarios?                                @relation("ordem_producao_movimentacao_setor_id_usuario_recebimentoTousuarios", fields: [id_usuario_recebimento], references: [id], onUpdate: NoAction, map: "fk_op_movimentacao_usuario_recebimento")
+
+  @@index([id_setor_destino], map: "fk_op_movimentacao_destino")
+  @@index([id_setor_origem], map: "fk_op_movimentacao_origem")
+  @@index([id_usuario_envio], map: "fk_op_movimentacao_usuario_envio")
+  @@index([id_usuario_recebimento], map: "fk_op_movimentacao_usuario_recebimento")
+  @@index([id_ordem_producao, data_envio], map: "idx_op_movimentacao_ordem")
+}
+
+model pedido_compra {
+  id                   Int                  @id @default(autoincrement())
+  id_empresa           Int
+  id_fornecedor        Int
+  id_requisicao_compra Int?
+  id_ordem_producao    Int?
+  id_usuario           Int
+  numero               String               @db.VarChar(50)
+  data_pedido          DateTime             @default(now()) @db.Timestamp(0)
+  status               pedido_compra_status @default(RASCUNHO)
+  observacao           String?              @db.VarChar(255)
+  compras              compras?
+  item_pedido_compra   item_pedido_compra[]
+  nota_fiscal          nota_fiscal[]
+  empresas             empresas             @relation(fields: [id_empresa], references: [id], map: "fk_pedido_compra_empresa")
+  fornecedores         fornecedores         @relation(fields: [id_fornecedor], references: [id], map: "fk_pedido_compra_fornecedor")
+  ordem_producao       ordem_producao?      @relation(fields: [id_ordem_producao], references: [id], map: "fk_pedido_compra_op")
+  requisicao_compra    requisicao_compra?   @relation(fields: [id_requisicao_compra], references: [id], map: "fk_pedido_compra_requisicao")
+  usuarios             usuarios             @relation(fields: [id_usuario], references: [id], map: "fk_pedido_compra_usuario")
+
+  @@unique([id_empresa, numero], map: "uk_pedido_compra_empresa_numero")
+  @@index([id_fornecedor], map: "fk_pedido_compra_fornecedor")
+  @@index([id_ordem_producao], map: "fk_pedido_compra_op")
+  @@index([id_requisicao_compra], map: "fk_pedido_compra_requisicao")
+  @@index([id_usuario], map: "fk_pedido_compra_usuario")
+}
+
+model permissoes_setor {
+  id       Int     @id @default(autoincrement())
+  id_setor Int
+  recurso  String  @db.VarChar(100)
+  setores  setores @relation(fields: [id_setor], references: [id], onDelete: Cascade, map: "fk_permissoes_setor_setor")
+
+  @@unique([id_setor, recurso], map: "uk_permissao_setor_recurso")
+}
+
+model permissoes_usuario {
+  id                 Int                        @id @default(autoincrement())
+  id_usuario_empresa Int
+  recurso            permissoes_usuario_recurso
+  pode_ler           Boolean                    @default(false)
+  pode_criar         Boolean                    @default(false)
+  pode_editar        Boolean                    @default(false)
+  pode_excluir       Boolean                    @default(false)
+  usuario_empresa    usuario_empresa            @relation(fields: [id_usuario_empresa], references: [id], onDelete: Cascade, map: "fk_permissao_usuario_empresa")
+
+  @@unique([id_usuario_empresa, recurso], map: "uk_permissao_usuario_recurso")
+}
+
+model produto_empresa {
+  id                     Int                    @id @default(autoincrement())
+  id_empresa             Int
+  id_produto             Int
+  id_cor                 Int?
+  id_tamanho             Int?
+  codigo_interno         String?                @db.VarChar(100)
+  preco_venda            Decimal                @default(0.00) @db.Decimal(15, 2)
+  custo_atual            Decimal                @default(0.00) @db.Decimal(15, 2)
+  valor_estoque_atual    Decimal                @default(0.00) @db.Decimal(15, 2)
+  estoque_minimo         Decimal                @default(0.000) @db.Decimal(15, 3)
+  unidade_estoque_minimo String                 @default("UNIDADE") @db.VarChar(20)
+  estoque_maximo         Decimal?               @db.Decimal(15, 3)
+  status                 produto_empresa_status @default(ATIVO)
+  cores                  cores?                 @relation(fields: [id_cor], references: [id], map: "fk_produto_empresa_cor")
+  empresas               empresas               @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_produto_empresa_empresa")
+  produtos               produtos               @relation(fields: [id_produto], references: [id], map: "fk_produto_empresa_produto")
+  tamanhos               tamanhos?              @relation(fields: [id_tamanho], references: [id], map: "fk_produto_empresa_tamanho")
+
+  @@unique([id_empresa, codigo_interno], map: "uk_codigo_interno_empresa")
+  @@unique([id_empresa, id_produto], map: "uk_produto_empresa")
+  @@index([id_cor], map: "fk_produto_empresa_cor")
+  @@index([id_produto], map: "fk_produto_empresa_produto")
+  @@index([id_tamanho], map: "fk_produto_empresa_tamanho")
+}
+
+model produto_fornecedor {
+  id                        Int                       @id @default(autoincrement())
+  id_empresa                Int
+  id_produto                Int
+  id_fornecedor             Int
+  codigo_produto_fornecedor String?                   @db.VarChar(100)
+  preco_ultima_compra       Decimal?                  @db.Decimal(15, 2)
+  prazo_entrega_dias        Int?
+  quantidade_minima         Decimal?                  @db.Decimal(15, 3)
+  fornecedor_principal      Boolean                   @default(false)
+  status                    produto_fornecedor_status @default(ATIVO)
+  empresas                  empresas                  @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_produto_fornecedor_empresa")
+  fornecedores              fornecedores              @relation(fields: [id_fornecedor], references: [id], map: "fk_produto_fornecedor_fornecedor")
+  produtos                  produtos                  @relation(fields: [id_produto], references: [id], map: "fk_produto_fornecedor_produto")
+
+  @@unique([id_empresa, id_produto, id_fornecedor], map: "uk_produto_fornecedor")
+  @@index([id_fornecedor], map: "fk_produto_fornecedor_fornecedor")
+  @@index([id_produto], map: "fk_produto_fornecedor_produto")
+}
+
+model produto_variacoes {
+  id         Int                      @id @default(autoincrement())
+  id_empresa Int
+  id_produto Int
+  id_cor     Int?
+  id_tamanho Int?
+  status     produto_variacoes_status @default(ATIVO)
+  cores      cores?                   @relation(fields: [id_cor], references: [id], onDelete: Restrict, map: "fk_produto_variacao_cor")
+  empresas   empresas                 @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_produto_variacao_empresa")
+  produtos   produtos                 @relation(fields: [id_produto], references: [id], onDelete: Cascade, map: "fk_produto_variacao_produto")
+  tamanhos   tamanhos?                @relation(fields: [id_tamanho], references: [id], onDelete: Restrict, map: "fk_produto_variacao_tamanho")
+
+  @@unique([id_empresa, id_produto, id_cor, id_tamanho], map: "uk_produto_variacao")
+  @@index([id_cor], map: "fk_produto_variacao_cor")
+  @@index([id_produto], map: "fk_produto_variacao_produto")
+  @@index([id_tamanho], map: "fk_produto_variacao_tamanho")
+}
+
+model produtos {
+  id                               Int                                @id @default(autoincrement())
+  id_tipo_produto                  Int
+  id_categoria                     Int?
+  nome                             String                             @db.VarChar(150)
+  codigo                           String                             @db.VarChar(100)
+  descricao                        String?                            @db.VarChar(255)
+  unidade                          String                             @default("UN") @db.VarChar(20)
+  controla_estoque                 Boolean                            @default(true)
+  permite_venda                    Boolean                            @default(false)
+  permite_compra                   Boolean                            @default(false)
+  permite_producao                 Boolean                            @default(false)
+  status                           produtos_status                    @default(ATIVO)
+  data_cadastro                    DateTime                           @default(now()) @db.Timestamp(0)
+  compra_itens                     compra_itens[]
+  consumo_producao                 consumo_producao[]
+  estoque                          estoque[]
+  ficha_tecnica                    ficha_tecnica[]
+  ficha_tecnica_item               ficha_tecnica_item[]
+  item_nota_fiscal                 item_nota_fiscal[]
+  item_pedido_compra               item_pedido_compra[]
+  item_requisicao_compra           item_requisicao_compra[]
+  item_venda                       item_venda[]
+  kardex                           kardex[]
+  movimentacao_estoque             movimentacao_estoque[]
+  necessidade_producao             necessidade_producao[]
+  ordem_producao_consumo_planejado ordem_producao_consumo_planejado[]
+  ordem_producao_item              ordem_producao_item[]
+  produto_empresa                  produto_empresa[]
+  produto_fornecedor               produto_fornecedor[]
+  produto_variacoes                produto_variacoes[]
+  categorias                       categorias?                        @relation(fields: [id_categoria], references: [id], map: "fk_produtos_categoria")
+  tipos_produto                    tipos_produto                      @relation(fields: [id_tipo_produto], references: [id], map: "fk_produtos_tipo")
+  reserva_estoque                  reserva_estoque[]
+
+  @@index([id_tipo_produto], map: "fk_produtos_tipo")
+  @@index([id_categoria], map: "idx_produto_categoria")
+  @@index([codigo], map: "idx_produto_codigo")
+}
+
+model refresh_tokens {
+  id             Int       @id @default(autoincrement())
+  id_usuario     Int
+  token          String    @unique(map: "uk_refresh_token") @db.VarChar(255)
+  data_criacao   DateTime  @db.DateTime(0)
+  data_expiracao DateTime  @db.DateTime(0)
+  revogado       Boolean   @default(false)
+  data_revogacao DateTime? @db.DateTime(0)
+  ip             String?   @db.VarChar(45)
+  user_agent     String?   @db.VarChar(255)
+  usuarios       usuarios  @relation(fields: [id_usuario], references: [id], onDelete: Cascade, map: "fk_refresh_token_usuario")
+
+  @@index([data_expiracao], map: "idx_refresh_expiracao")
+  @@index([id_usuario], map: "idx_refresh_usuario")
+}
+
+model requisicao_compra {
+  id                     Int                      @id @default(autoincrement())
+  id_empresa             Int
+  id_local_estoque       Int?
+  id_setor_solicitante   Int?
+  id_usuario_solicitante Int
+  numero                 String                   @db.VarChar(50)
+  status                 requisicao_compra_status @default(RASCUNHO)
+  data_solicitacao       DateTime                 @default(now()) @db.Timestamp(0)
+  observacao             String?                  @db.VarChar(255)
+  item_requisicao_compra item_requisicao_compra[]
+  pedido_compra          pedido_compra[]
+  empresas               empresas                 @relation(fields: [id_empresa], references: [id], map: "fk_req_compra_empresa")
+  locais_estoque         locais_estoque?          @relation(fields: [id_local_estoque], references: [id], onDelete: Restrict, map: "fk_req_compra_local")
+  setores                setores?                 @relation(fields: [id_setor_solicitante], references: [id], onDelete: Restrict, map: "fk_req_compra_setor")
+  usuarios               usuarios                 @relation(fields: [id_usuario_solicitante], references: [id], map: "fk_req_compra_usuario")
+
+  @@unique([id_empresa, numero], map: "uk_req_compra_empresa_numero")
+  @@index([id_local_estoque], map: "fk_req_compra_local")
+  @@index([id_setor_solicitante], map: "fk_req_compra_setor")
+  @@index([id_usuario_solicitante], map: "fk_req_compra_usuario")
+}
+
+model reserva_estoque {
+  id                      Int                         @id @default(autoincrement())
+  id_empresa              Int
+  id_local_estoque        Int?
+  id_setor                Int?
+  id_produto              Int
+  tipo_origem             reserva_estoque_tipo_origem
+  id_venda                Int?
+  id_ordem_producao       Int?
+  id_necessidade_producao Int?
+  quantidade              Decimal                     @db.Decimal(15, 3)
+  status                  reserva_estoque_status      @default(ATIVA)
+  id_usuario              Int
+  data_reserva            DateTime                    @default(now()) @db.Timestamp(0)
+  data_finalizacao        DateTime?                   @db.DateTime(0)
+  consumo_producao        consumo_producao[]
+  empresas                empresas                    @relation(fields: [id_empresa], references: [id], map: "fk_reserva_empresa")
+  locais_estoque          locais_estoque?             @relation(fields: [id_local_estoque], references: [id], onDelete: Restrict, map: "fk_reserva_estoque_local")
+  necessidade_producao    necessidade_producao?       @relation(fields: [id_necessidade_producao], references: [id], map: "fk_reserva_necessidade")
+  ordem_producao          ordem_producao?             @relation(fields: [id_ordem_producao], references: [id], map: "fk_reserva_ordem")
+  produtos                produtos                    @relation(fields: [id_produto], references: [id], map: "fk_reserva_produto")
+  setores                 setores?                    @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_reserva_setor")
+  usuarios                usuarios                    @relation(fields: [id_usuario], references: [id], map: "fk_reserva_usuario")
+  venda                   venda?                      @relation(fields: [id_venda], references: [id], map: "fk_reserva_venda")
+
+  @@index([id_empresa], map: "fk_reserva_empresa")
+  @@index([id_local_estoque], map: "fk_reserva_estoque_local")
+  @@index([id_necessidade_producao], map: "fk_reserva_necessidade")
+  @@index([id_ordem_producao], map: "fk_reserva_ordem")
+  @@index([id_produto], map: "fk_reserva_produto")
+  @@index([id_setor], map: "fk_reserva_setor")
+  @@index([id_usuario], map: "fk_reserva_usuario")
+  @@index([id_venda], map: "fk_reserva_venda")
+}
+
+model sequencias_automaticas {
+  id_empresa    Int
+  entidade      String   @db.VarChar(60)
+  ultimo_numero BigInt   @default(0) @db.UnsignedBigInt
+  empresas      empresas @relation(fields: [id_empresa], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_sequencia_empresa")
+
+  @@id([id_empresa, entidade])
+}
+
+model setores {
+  id                                                                                            Int                                 @id @default(autoincrement())
+  id_empresa                                                                                    Int
+  nome                                                                                          String                              @db.VarChar(100)
+  tipo                                                                                          String                              @default("Outro") @db.VarChar(80)
+  descricao                                                                                     String?                             @db.VarChar(255)
+  status                                                                                        setores_status                      @default(ATIVO)
+  consumo_producao                                                                              consumo_producao[]
+  estoque                                                                                       estoque[]
+  kardex                                                                                        kardex[]
+  movimentacao_estoque                                                                          movimentacao_estoque[]
+  nota_fiscal                                                                                   nota_fiscal[]
+  ordem_producao                                                                                ordem_producao[]
+  ordem_producao_fluxo_setor                                                                    ordem_producao_fluxo_setor[]
+  ordem_producao_movimentacao_setor_ordem_producao_movimentacao_setor_id_setor_destinoTosetores ordem_producao_movimentacao_setor[] @relation("ordem_producao_movimentacao_setor_id_setor_destinoTosetores")
+  ordem_producao_movimentacao_setor_ordem_producao_movimentacao_setor_id_setor_origemTosetores  ordem_producao_movimentacao_setor[] @relation("ordem_producao_movimentacao_setor_id_setor_origemTosetores")
+  permissoes_setor                                                                              permissoes_setor[]
+  requisicao_compra                                                                             requisicao_compra[]
+  reserva_estoque                                                                               reserva_estoque[]
+  empresas                                                                                      empresas                            @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_setores_empresa")
+  usuario_empresa                                                                               usuario_empresa[]
+
+  @@unique([id_empresa, nome], map: "uk_setor_empresa_nome")
+}
+
+model tamanhos {
+  id                  Int                   @id @default(autoincrement())
+  id_empresa          Int
+  nome                String                @db.VarChar(50)
+  descricao           String?               @db.VarChar(255)
+  ordem               Int                   @default(0)
+  status              tamanhos_status       @default(ATIVO)
+  compra_itens        compra_itens[]
+  item_nota_fiscal    item_nota_fiscal[]
+  ordem_producao_item ordem_producao_item[]
+  produto_empresa     produto_empresa[]
+  produto_variacoes   produto_variacoes[]
+  empresas            empresas              @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_tamanhos_empresa")
+
+  @@unique([id_empresa, nome], map: "uk_tamanho_empresa_nome")
+}
+
+model tipos_produto {
+  id        Int        @id @default(autoincrement())
+  nome      String     @unique(map: "uk_tipo_produto_nome") @db.VarChar(100)
+  descricao String?    @db.VarChar(255)
+  produtos  produtos[]
+}
+
+model tipos_setor {
+  id         Int                @id @default(autoincrement())
+  id_empresa Int
+  nome       String             @db.VarChar(80)
+  status     tipos_setor_status @default(ATIVO)
+  empresas   empresas           @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_tipo_setor_empresa")
+
+  @@unique([id_empresa, nome], map: "uk_tipo_setor_empresa_nome")
+}
+
+model usuario_empresa {
+  id                 Int                          @id @default(autoincrement())
+  id_usuario         Int
+  id_empresa         Int
+  id_cargo           Int
+  id_setor           Int?
+  nivel_acesso       usuario_empresa_nivel_acesso @default(USUARIO)
+  status             usuario_empresa_status       @default(ATIVO)
+  data_vinculo       DateTime                     @default(now()) @db.Timestamp(0)
+  permissoes_usuario permissoes_usuario[]
+  cargos             cargos                       @relation(fields: [id_cargo], references: [id], map: "fk_usuario_empresa_cargo")
+  empresas           empresas                     @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_empresa")
+  setores            setores?                     @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_usuario_empresa_setor")
+  usuarios           usuarios                     @relation(fields: [id_usuario], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_usuario")
+
+  @@unique([id_usuario, id_empresa], map: "uk_usuario_empresa")
+  @@index([id_cargo], map: "fk_usuario_empresa_cargo")
+  @@index([id_empresa], map: "fk_usuario_empresa_empresa")
+  @@index([id_setor], map: "fk_usuario_empresa_setor")
+}
+
+model usuarios {
+  id                                                                                                   Int                                 @id @default(autoincrement())
+  nome                                                                                                 String                              @db.VarChar(150)
+  email                                                                                                String                              @unique(map: "uk_usuario_email") @db.VarChar(150)
+  senha                                                                                                String                              @db.VarChar(255)
+  nivel_acesso                                                                                         usuarios_nivel_acesso               @default(USUARIO)
+  status                                                                                               usuarios_status                     @default(ATIVO)
+  data_cadastro                                                                                        DateTime                            @default(now()) @db.Timestamp(0)
+  auditoria                                                                                            auditoria[]
+  compras                                                                                              compras[]
+  consumo_producao                                                                                     consumo_producao[]
+  movimentacao_estoque                                                                                 movimentacao_estoque[]
+  ordem_producao                                                                                       ordem_producao[]
+  ordem_producao_movimentacao_setor_ordem_producao_movimentacao_setor_id_usuario_envioTousuarios       ordem_producao_movimentacao_setor[] @relation("ordem_producao_movimentacao_setor_id_usuario_envioTousuarios")
+  ordem_producao_movimentacao_setor_ordem_producao_movimentacao_setor_id_usuario_recebimentoTousuarios ordem_producao_movimentacao_setor[] @relation("ordem_producao_movimentacao_setor_id_usuario_recebimentoTousuarios")
+  pedido_compra                                                                                        pedido_compra[]
+  refresh_tokens                                                                                       refresh_tokens[]
+  requisicao_compra                                                                                    requisicao_compra[]
+  reserva_estoque                                                                                      reserva_estoque[]
+  usuario_empresa                                                                                      usuario_empresa[]
+  venda                                                                                                venda[]
+}
+
+model venda {
+  id              Int               @id @default(autoincrement())
+  id_empresa      Int
+  id_cliente      Int
+  id_usuario      Int
+  numero          String            @db.VarChar(50)
+  status          venda_status      @default(RASCUNHO)
+  data_venda      DateTime          @default(now()) @db.Timestamp(0)
+  data_entrega    DateTime?         @db.DateTime(0)
+  valor_total     Decimal           @default(0.00) @db.Decimal(15, 2)
+  item_venda      item_venda[]
+  reserva_estoque reserva_estoque[]
+  clientes        clientes          @relation(fields: [id_cliente], references: [id], map: "fk_venda_cliente")
+  empresas        empresas          @relation(fields: [id_empresa], references: [id], map: "fk_venda_empresa")
+  usuarios        usuarios          @relation(fields: [id_usuario], references: [id], map: "fk_venda_usuario")
+
+  @@unique([id_empresa, numero], map: "uk_venda_empresa_numero")
+  @@index([id_cliente], map: "fk_venda_cliente")
+  @@index([id_usuario], map: "fk_venda_usuario")
+}
+
+enum permissoes_usuario_recurso {
+  PRODUTOS
+  ESTOQUE
+  NOTAS_FISCAIS
+  ORDENS_PRODUCAO
+  CORES
+  MODELOS
+  CATEGORIAS
+  CLIENTES
+}
+
+enum tipos_setor_status {
+  ATIVO
+  INATIVO
+}
+
+enum administradores_gerais_status {
+  ATIVO
+  INATIVO
+}
+
+enum cargos_status {
+  ATIVO
+  INATIVO
+}
+
+enum categorias_status {
+  ATIVA
+  INATIVA
+}
+
+enum cores_status {
+  ATIVA
+  INATIVA
+}
+
+enum ficha_tecnica_status {
+  RASCUNHO
+  ATIVA
+  INATIVA
+}
+
+enum locais_estoque_status {
+  ATIVO
+  INATIVO
+}
+
+enum usuarios_nivel_acesso {
+  ADMIN
+  USUARIO
+}
+
+enum auditoria_acao {
+  INSERT
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+}
+
+enum movimentacao_estoque_tipo {
+  ENTRADA_NF
+  SAIDA_VENDA
+  ENTRADA_PRODUCAO
+  SAIDA_PRODUCAO
+  AJUSTE_ENTRADA
+  AJUSTE_SAIDA
+  TRANSFERENCIA_ENTRADA
+  TRANSFERENCIA_SAIDA
+}
+
+enum produto_variacoes_status {
+  ATIVO
+  INATIVO
+}
+
+enum reserva_estoque_tipo_origem {
+  VENDA
+  ORDEM_PRODUCAO
+}
+
+enum setores_status {
+  ATIVO
+  INATIVO
+}
+
+enum tamanhos_status {
+  ATIVO
+  INATIVO
+}
+
+enum usuario_empresa_nivel_acesso {
+  EMPRESA
+  USUARIO
+}
+
+enum usuarios_status {
+  ATIVO
+  INATIVO
+}
+
+enum venda_status {
+  RASCUNHO
+  CONFIRMADA
+  SEPARACAO
+  FATURADA
+  ENVIADA
+  ENTREGUE
+  CANCELADA
+}
+
+enum empresa_fornecedor_status {
+  ATIVO
+  INATIVO
+}
+
+enum kardex_tipo_movimentacao {
+  ENTRADA
+  SAIDA
+}
+
+enum necessidade_producao_status {
+  PENDENTE
+  PARCIAL
+  RESERVADA
+  CONSUMIDA
+  CANCELADA
+}
+
+enum ordem_producao_prioridade {
+  BAIXA
+  NORMAL
+  ALTA
+  URGENTE
+}
+
+enum requisicao_compra_status {
+  RASCUNHO
+  ABERTA
+  APROVADA
+  ATENDIDA
+  CANCELADA
+}
+
+enum usuario_empresa_status {
+  ATIVO
+  INATIVO
+}
+
+enum ordem_producao_movimentacao_setor_status {
+  EM_TRANSITO
+  ENTREGUE
+}
+
+enum compras_origem {
+  MANUAL
+  ORDEM_PRODUCAO
+}
+
+enum ordem_producao_status {
+  PLANEJADA
+  AGUARDANDO_MATERIAL
+  LIBERADA
+  EM_PRODUCAO
+  PAUSADA
+  CONCLUIDA
+  CANCELADA
+}
+
+enum pedido_compra_status {
+  RASCUNHO
+  EMITIDO
+  PARCIAL
+  RECEBIDO
+  CANCELADO
+}
+
+enum compras_status {
+  RASCUNHO
+  EMITIDA
+  ENTREGUE
+  CANCELADA
+}
+
+enum produto_fornecedor_status {
+  ATIVO
+  INATIVO
+}
+
+enum item_nota_fiscal_tipo_valor {
+  UNITARIO
+  METRO
+  TOTAL
+}
+
+enum nota_fiscal_status {
+  PENDENTE
+  RECEBIDA
+  CANCELADA
+}
+
+enum reserva_estoque_status {
+  ATIVA
+  ATENDIDA
+  CANCELADA
+}
+
+enum produtos_status {
+  ATIVO
+  INATIVO
+}
+
+enum produto_empresa_status {
+  ATIVO
+  INATIVO
+}
+
+enum clientes_status {
+  ATIVO
+  INATIVO
+}
+
+enum fornecedores_status {
+  ATIVO
+  INATIVO
+}
+
+enum empresas_status {
+  ATIVA
+  INATIVA
 }
