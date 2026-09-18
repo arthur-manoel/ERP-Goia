@@ -34,7 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 
-# Prisma Client é regenerado na instalação; migrations são versionadas.
+# Prisma Client é regenerado no npm install e no npm run db:pull.
 /src/generated/prisma/
 
 # vercel
