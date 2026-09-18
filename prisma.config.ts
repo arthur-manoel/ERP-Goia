@@ -3,11 +3,15 @@ import { defineConfig, env } from "prisma/config";
 
 loadEnvConfig(process.cwd());
 
-// migrate dev cria um segundo banco automaticamente, mesmo sem shadowDatabaseUrl.
-const args = process.argv.slice(2);
-if (args.some((arg, index) => arg === "migrate" && args[index + 1] === "dev")) {
+// Fluxo DB-first: a estrutura do banco é mantida direto no MySQL e trazida com db pull.
+// Bloqueia comandos que alterariam o banco compartilhado a partir do schema.
+const [command, subcommand] = process.argv.slice(2);
+const alteraEstrutura =
+  (command === "migrate" && subcommand !== "diff") ||
+  (command === "db" && subcommand === "push");
+if (alteraEstrutura) {
   throw new Error(
-    "migrate dev exige shadow database e não é permitido neste projeto. Use npm run db:migrate (migrate deploy), somente em joseev47_erp_dev.",
+    `prisma ${command} ${subcommand ?? ""} não é permitido: o banco é a fonte da verdade. Altere a estrutura no MySQL e rode npm run db:pull.`,
   );
 }
 
@@ -18,10 +22,6 @@ if (decodeURIComponent(new URL(databaseUrl).pathname.slice(1)) !== "joseev47_erp
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
-  migrations: {
-    path: "prisma/migrations",
-    seed: "node --conditions=react-server --import tsx prisma/seed.ts",
-  },
   datasource: {
     url: databaseUrl,
   },
