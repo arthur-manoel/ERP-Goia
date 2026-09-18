@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Guia de contribuição
+    url: https://github.com/arthur-manoel/ERP-Goia/blob/develop/CONTRIBUTING.md
+    about: Como configurar o ambiente, escolher uma tarefa e abrir um PR.
