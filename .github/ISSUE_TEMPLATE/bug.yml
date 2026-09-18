@@ -1,0 +1,36 @@
+name: Bug
+description: Algo não funciona como deveria.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: descricao
+    attributes:
+      label: O que aconteceu
+      description: Descreva o problema e, se houver, cole a mensagem de erro.
+    validations:
+      required: true
+  - type: textarea
+    id: passos
+    attributes:
+      label: Como reproduzir
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: O que era esperado
+    validations:
+      required: true
+  - type: input
+    id: tela
+    attributes:
+      label: Tela (URL)
+      placeholder: /estoque/movimentacoes
+  - type: textarea
+    id: capturas
+    attributes:
+      label: Capturas de tela

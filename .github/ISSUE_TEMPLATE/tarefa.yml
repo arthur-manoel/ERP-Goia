@@ -1,0 +1,48 @@
+name: Tarefa ou funcionalidade
+description: Uma tela, regra de negócio ou melhoria a implementar.
+labels: []
+body:
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto
+      description: Por que isso é necessário? Quais tabelas do banco estão envolvidas?
+    validations:
+      required: true
+  - type: textarea
+    id: escopo
+    attributes:
+      label: Escopo
+      description: O que precisa ser feito, em itens.
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: input
+    id: onde
+    attributes:
+      label: Onde trabalhar
+      placeholder: "src/app/(app)/... e src/features/..."
+  - type: input
+    id: depende
+    attributes:
+      label: Depende de
+      placeholder: "#12, #15"
+  - type: dropdown
+    id: modulo
+    attributes:
+      label: Módulo
+      options:
+        - Base / infraestrutura
+        - Acesso e segurança
+        - Administração
+        - Cadastros
+        - Produtos
+        - Estoque
+        - Compras
+        - Fiscal
+        - Produção
+        - Vendas
+        - Relatórios
+    validations:
+      required: true

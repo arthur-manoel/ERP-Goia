@@ -212,11 +212,11 @@ export default async function Page() {
 ## Regras obrigatórias
 
 1. **Multiempresa.** Toda leitura ou escrita em tabela com `id_empresa` filtra ou grava a empresa da sessão (`getEmpresaAtual()`). Nunca aceite `id_empresa` vindo do formulário. O mesmo vale para `id_usuario`: use `getSessao()`.
-   - Enquanto a autenticação não existe, `src/lib/sessao.ts` é **provisório** e lê `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` do `.env.local`. Use essas funções mesmo assim: quando o login entrar, só a implementação muda.
-2. **Permissão no servidor.** Toda Server Action verifica sessão e permissão antes de gravar (helper da issue "Controle de acesso"). Esconder um botão não protege nada.
-3. **Transações.** Operações que mexem em mais de uma tabela (estoque, kardex, reservas, produção, entrada de NF) usam `prisma.$transaction`. Movimentação de estoque passa **sempre** pelo serviço único de estoque (issue "Movimentação de estoque e kardex").
-4. **Numeração automática.** Números de pedido, compra, venda e OP vêm do helper de `sequencias_automaticas` (issue "Numeração automática"), nunca de `count() + 1`.
-5. **Auditoria.** Escritas relevantes chamam o helper de auditoria (issue "Auditoria").
+   - Enquanto a autenticação ([#11](https://github.com/arthur-manoel/ERP-Goia/issues/11), [#12](https://github.com/arthur-manoel/ERP-Goia/issues/12)) não existe, `src/lib/sessao.ts` é **provisório** e lê `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` do `.env.local`. Use essas funções mesmo assim: quando o login entrar, só a implementação muda.
+2. **Permissão no servidor.** Toda Server Action verifica sessão e permissão antes de gravar (helper de [#13](https://github.com/arthur-manoel/ERP-Goia/issues/13)). Esconder um botão não protege nada.
+3. **Transações.** Operações que mexem em mais de uma tabela (estoque, kardex, reservas, produção, entrada de NF) usam `prisma.$transaction`. Movimentação de estoque passa **sempre** pelo serviço único de estoque ([#30](https://github.com/arthur-manoel/ERP-Goia/issues/30)).
+4. **Numeração automática.** Números de pedido, compra, venda e OP vêm do helper de `sequencias_automaticas` ([#15](https://github.com/arthur-manoel/ERP-Goia/issues/15)), nunca de `count() + 1`.
+5. **Auditoria.** Escritas relevantes chamam o helper de auditoria ([#14](https://github.com/arthur-manoel/ERP-Goia/issues/14)).
 6. **Validação com zod** em toda Server Action, mesmo que o formulário já valide.
 7. **Prisma só no servidor.** `src/lib/prisma.ts` é `server-only`. Em Client Components, importe no máximo **tipos** (`import type`) e enums de `@/generated/prisma/enums`.
 8. **Decimal e BigInt não atravessam para Client Components.** Campos `Decimal` (valores e quantidades) e `BigInt` precisam ser convertidos antes de ir como props: formate no servidor (`formatarMoeda`) ou converta (`valor.toString()`).
