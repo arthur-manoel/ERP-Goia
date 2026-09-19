@@ -4,12 +4,6 @@ export class HttpError extends Error {
 export class ValidationError extends HttpError {
   constructor(message: string) { super(400, message); }
 }
-export class UnauthorizedError extends HttpError {
-  constructor(message = "Sessão inválida ou expirada.") { super(401, message); }
-}
-export class ForbiddenError extends HttpError {
-  constructor(message = "Acesso não permitido.") { super(403, message); }
-}
 export class NotFoundError extends HttpError {
   constructor(message = "Registro não encontrado.") { super(404, message); }
 }

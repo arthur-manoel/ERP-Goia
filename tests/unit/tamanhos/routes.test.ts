@@ -8,29 +8,20 @@ import { context, request, origin } from "../../helpers/http";
 const tamanho = { id: 1, id_empresa: 10, nome: "M", descricao: null, ordem: 0, status: "ATIVO" };
 const knownError = (code: string) => new Prisma.PrismaClientKnownRequestError("detalhe interno", { code, clientVersion: "7.10.0" });
 describe("/api/tamanhos", () => {
-  it("exige sessão antes de consultar o banco de tamanhos", async () => {
-    const response = await collection.GET(await request("/api/tamanhos", "GET", undefined, false));
-    expect(response.status).toBe(401);
-    expect(db.tamanhos.findMany).not.toHaveBeenCalled();
-  });
-  it("lista com filtros, contagem, paginação e ordenação estável dentro das empresas permitidas", async () => {
+  it("lista com filtros, contagem, paginação e ordenação estável", async () => {
     db.tamanhos.findMany.mockResolvedValue([tamanho]); db.tamanhos.count.mockResolvedValue(21);
     const response = await collection.GET(await request("/api/tamanhos?page=2&limit=20&id_empresa=10&status=ATIVO&nome=M"));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true,
       data: { rows: [tamanho], count: 21, page: 2, limit: 20, totalPages: 2 } });
     expect(db.tamanhos.findMany).toHaveBeenCalledWith({
-      where: { AND: [{ id_empresa: { in: [10] } }, { id_empresa: 10, status: "ATIVO", nome: "M" }] },
+      where: { id_empresa: 10, status: "ATIVO", nome: "M" },
       orderBy: [{ ordem: "asc" }, { nome: "asc" }, { id: "asc" }], skip: 20, take: 20,
     });
   });
   it.each(["page=0", "limit=101", "status=OUTRO", "page=1&page=2", "nome="])("rejeita query %s", async (query) => {
     const response = await collection.GET(await request(`/api/tamanhos?${query}`));
     expect(response.status).toBe(400); expect((await response.json()).error).toBeTruthy();
-  });
-  it("impede consultar outra empresa", async () => {
-    expect((await collection.GET(await request("/api/tamanhos?id_empresa=99"))).status).toBe(403);
-    expect(db.tamanhos.findMany).not.toHaveBeenCalled();
   });
   it("cria usando os defaults do modelo atual", async () => {
     db.tamanhos.create.mockResolvedValue(tamanho);
@@ -44,12 +35,10 @@ describe("/api/tamanhos", () => {
     expect((await collection.POST(await request("/api/tamanhos", "POST", input))).status).toBe(400);
     expect(db.tamanhos.create).not.toHaveBeenCalled();
   });
-  it("rejeita JSON quebrado e escrita de outra origem", async () => {
+  it("rejeita JSON quebrado", async () => {
     const valid = await request("/api/tamanhos", "POST");
     const malformed = new Request(origin + "/api/tamanhos", { method: "POST", headers: valid.headers, body: "{" });
     expect((await collection.POST(malformed)).status).toBe(400);
-    valid.headers.set("origin", "https://outro.example");
-    expect((await collection.POST(valid)).status).toBe(403);
   });
   it.each([["P2002", 409], ["P2003", 400]])("traduz erro %s para %i", async (code, status) => {
     db.tamanhos.create.mockRejectedValue(knownError(String(code)));
@@ -70,8 +59,8 @@ describe("/api/tamanhos/:id", () => {
     const response = await item.GET(await request("/api/tamanhos/1"), context());
     expect(response.status).toBe(200); expect((await response.json()).data).toEqual(tamanho);
   });
-  it.each([null, { ...tamanho, id_empresa: 99 }])("não expõe registro ausente ou de outra empresa", async (row) => {
-    db.tamanhos.findUnique.mockResolvedValue(row);
+  it("retorna 404 quando não existe", async () => {
+    db.tamanhos.findUnique.mockResolvedValue(null);
     expect((await item.GET(await request("/api/tamanhos/1"), context())).status).toBe(404);
   });
   it("valida ID", async () => {
@@ -81,15 +70,11 @@ describe("/api/tamanhos/:id", () => {
     db.tamanhos.update.mockResolvedValue({ ...tamanho, descricao: null, status: "INATIVO" });
     const response = await item.PUT(await request("/api/tamanhos/1", "PUT", { descricao: null }), context());
     expect(response.status).toBe(200);
-    expect(db.tamanhos.update).toHaveBeenCalledWith({ where: { id: 1, id_empresa: { in: [10] } }, data: { descricao: null } });
+    expect(db.tamanhos.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { descricao: null } });
     expect((await response.json()).data.status).toBe("INATIVO");
   });
   it.each([{}, { id: 2 }, { ordem: 0.5 }, { status: "OUTRO" }])("rejeita atualização inválida %j", async (input) => {
     expect((await item.PUT(await request("/api/tamanhos/1", "PUT", input), context())).status).toBe(400);
-  });
-  it("impede transferir para empresa sem vínculo", async () => {
-    expect((await item.PUT(await request("/api/tamanhos/1", "PUT", { id_empresa: 99 }), context())).status).toBe(403);
-    expect(db.tamanhos.update).not.toHaveBeenCalled();
   });
   it("retorna conflito ao renomear para nome já existente na empresa", async () => {
     db.tamanhos.update.mockRejectedValue(knownError("P2002"));
@@ -104,7 +89,7 @@ describe("/api/tamanhos/:id", () => {
     db.tamanhos.update.mockResolvedValue({ ...tamanho, status: "INATIVO" });
     const response = await item.DELETE(await request("/api/tamanhos/1", "DELETE"), context());
     expect(response.status).toBe(200);
-    expect(db.tamanhos.update).toHaveBeenCalledWith({ where: { id: 1, id_empresa: { in: [10] } }, data: { status: "INATIVO" } });
+    expect(db.tamanhos.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { status: "INATIVO" } });
     expect(await response.json()).toEqual({ success: true, data: { message: "Tamanho inativado com sucesso." } });
   });
 });

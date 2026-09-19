@@ -5,7 +5,7 @@ import { handleRequest, readJson } from "../../../lib/produtos/http";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
-  return handleRequest(request, async () => {
+  return handleRequest( async () => {
     const query: Record<string, string> = {};
     for (const [key, value] of request.nextUrl.searchParams) {
       if (Object.hasOwn(query, key)) throw new ValidationError(`Parâmetro repetido: ${key}.`);
@@ -16,5 +16,5 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: Request) {
-  return handleRequest(request, async () => createProduto(await readJson(request)), 201);
+  return handleRequest( async () => createProduto(await readJson(request)), 201);
 }

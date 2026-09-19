@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ForbiddenError, HttpError, ValidationError } from "./errors";
+import { HttpError, ValidationError } from "./errors";
 
 export function validate<T>(schema: z.ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input);
@@ -24,14 +24,6 @@ export function readQuery(request: Request) {
     query[key] = value;
   }
   return query;
-}
-
-// Cookies são credenciais automáticas: toda escrita deve vir da mesma origem.
-export function assertSameOrigin(request: Request) {
-  if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return;
-  if (request.headers.get("origin") !== new URL(request.url).origin) {
-    throw new ForbiddenError("Origem da requisição não permitida.");
-  }
 }
 
 export function errorResponse(error: unknown) {

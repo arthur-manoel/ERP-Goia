@@ -72,8 +72,5 @@ retorna 400; código duplicado detectado na consulta retorna 409. Violações de
 constraints UNIQUE (P2002), quando existentes no banco, também retornam 409. Erros
 inesperados são registrados internamente e retornam apenas `Erro interno do servidor.`
 
-Todas as rotas agora exigem uma sessão autenticada. Escritas exigem `Origin` da
-mesma origem da API. Consulte `../auth/README.md` para login e renovação de sessão.
-
 Os testes foram centralizados em `tests/unit/produtos`:
 `npm test -- tests/unit/produtos`.

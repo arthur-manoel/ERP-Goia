@@ -1,5 +1,5 @@
 import { Prisma } from "../../generated/prisma/client";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../api/errors";
+import { ConflictError, NotFoundError, ValidationError } from "../api/errors";
 import { validate } from "../api/http";
 import * as repository from "./repository";
 import { createTamanhoSchema, updateTamanhoSchema, listTamanhosSchema, tamanhoIdSchema } from "./schema";
@@ -15,40 +15,30 @@ async function write<T>(operation: () => Promise<T>): Promise<T> {
     throw error;
   }
 }
-function allowEmpresa(id: number, empresas: number[]) {
-  if (!empresas.includes(id)) throw new ForbiddenError("Sem acesso a esta empresa.");
-}
-export async function createTamanho(input: unknown, usuarioId: number) {
+export async function createTamanho(input: unknown) {
   const data = validate(createTamanhoSchema, input);
-  allowEmpresa(data.id_empresa, await repository.findEmpresasDoUsuario(usuarioId));
   return write(() => repository.create(data));
 }
-export async function listTamanhos(input: unknown, usuarioId: number) {
+export async function listTamanhos(input: unknown) {
   const { page, limit, ...filters } = validate(listTamanhosSchema, input);
-  const empresas = await repository.findEmpresasDoUsuario(usuarioId);
-  if (filters.id_empresa !== undefined) allowEmpresa(filters.id_empresa, empresas);
-  const result = await repository.findAll(filters, { page, limit }, empresas);
+  const result = await repository.findAll(filters, { page, limit });
   return { ...result, page, limit, totalPages: Math.ceil(result.count / limit) };
 }
-export async function getTamanho(idInput: unknown, usuarioId: number) {
+export async function getTamanho(idInput: unknown) {
   const id = validate(tamanhoIdSchema, idInput);
-  const empresas = await repository.findEmpresasDoUsuario(usuarioId);
   const row = await repository.findById(id);
-  if (!row || !empresas.includes(row.id_empresa)) throw new NotFoundError("Tamanho não encontrado.");
-  return row;
-}
-export async function updateTamanho(idInput: unknown, input: unknown, usuarioId: number) {
-  const id = validate(tamanhoIdSchema, idInput);
-  const data = validate(updateTamanhoSchema, input);
-  const empresas = await repository.findEmpresasDoUsuario(usuarioId);
-  if (data.id_empresa !== undefined) allowEmpresa(data.id_empresa, empresas);
-  const row = await write(() => repository.update(id, data, empresas));
   if (!row) throw new NotFoundError("Tamanho não encontrado.");
   return row;
 }
-export async function deleteTamanho(idInput: unknown, usuarioId: number) {
+export async function updateTamanho(idInput: unknown, input: unknown) {
   const id = validate(tamanhoIdSchema, idInput);
-  const empresas = await repository.findEmpresasDoUsuario(usuarioId);
-  if (!await write(() => repository.inactivate(id, empresas))) throw new NotFoundError("Tamanho não encontrado.");
+  const data = validate(updateTamanhoSchema, input);
+  const row = await write(() => repository.update(id, data));
+  if (!row) throw new NotFoundError("Tamanho não encontrado.");
+  return row;
+}
+export async function deleteTamanho(idInput: unknown) {
+  const id = validate(tamanhoIdSchema, idInput);
+  if (!await write(() => repository.inactivate(id))) throw new NotFoundError("Tamanho não encontrado.");
   return { message: "Tamanho inativado com sucesso." };
 }
