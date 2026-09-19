@@ -70,7 +70,10 @@ export function GraficoTendencia({
   const dados = valores.map((valor, indice) => ({ indice, valor }))
 
   return (
-    <ChartContainer config={config} className={cn("aspect-auto h-16 w-full", className)}>
+    <ChartContainer
+      config={config}
+      className={cn("aspect-auto h-16 w-full", className)}
+    >
       <LineChart data={dados} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
         <YAxis hide domain={["dataMin", "dataMax"]} />
         <Line

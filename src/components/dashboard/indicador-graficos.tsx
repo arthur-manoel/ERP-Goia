@@ -55,17 +55,23 @@ export function IndicadorRosca({
                 className="size-2.5 shrink-0 rounded-sm ring-1 ring-foreground/10"
                 style={{ backgroundColor: segmento.cor }}
               />
-              <span className="min-w-0 flex-1 break-words">{segmento.rotulo}</span>
+              <span className="min-w-0 flex-1 break-words">
+                {segmento.rotulo}
+              </span>
               <span
                 className={cn(
                   "font-medium tabular-nums",
-                  segmento.destaque && segmento.quantidade > 0 && "text-destructive",
+                  segmento.destaque &&
+                    segmento.quantidade > 0 &&
+                    "text-destructive",
                 )}
               >
                 {formatarQuantidade(segmento.quantidade, 0)}
               </span>
               <span className="w-10 text-right text-muted-foreground tabular-nums">
-                {total > 0 ? formatarPercentual(segmento.quantidade / total) : "-"}
+                {total > 0
+                  ? formatarPercentual(segmento.quantidade / total)
+                  : "-"}
               </span>
             </li>
           ))}

@@ -122,7 +122,9 @@ export function IndicadorComparativo({
 
   // Percentual só faz sentido quando o período anterior é positivo.
   const relativa =
-    anterior > 0 ? ` (${formatarPercentual(Math.abs(diferenca) / anterior)})` : ""
+    anterior > 0
+      ? ` (${formatarPercentual(Math.abs(diferenca) / anterior)})`
+      : ""
   const sinal = diferenca > 0 ? "+" : "-"
   const texto =
     diferenca === 0

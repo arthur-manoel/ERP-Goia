@@ -34,13 +34,17 @@ export function IndicadoresPrincipais({
         Indicadores principais
       </h2>
       <div className="grid grid-flow-dense gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <Suspense fallback={<IndicadorCardSkeleton className={larguraPedidos} />}>
+        <Suspense
+          fallback={<IndicadorCardSkeleton className={larguraPedidos} />}
+        >
           <PedidosAEntregar className={larguraPedidos} />
         </Suspense>
         <Suspense fallback={<IndicadorCardSkeleton />}>
           <InsumosAbaixoDoMinimo />
         </Suspense>
-        <Suspense fallback={<IndicadorCardSkeleton className={larguraOrdens} />}>
+        <Suspense
+          fallback={<IndicadorCardSkeleton className={larguraOrdens} />}
+        >
           <OrdensProducaoAbertas className={larguraOrdens} />
         </Suspense>
         {mostrarSaldo && (

@@ -197,14 +197,19 @@ export const obterPedidosAEntregar = cache(() => {
       "proximos.quantidade",
     )
     const janelaDias = contagemValida(bruto.proximos.janelaDias, "janelaDias")
-    if (janelaDias < 1 || janelaDias > 365) invalido("janelaDias fora do limite")
+    if (janelaDias < 1 || janelaDias > 365)
+      invalido("janelaDias fora do limite")
     if (atrasados + vencemHoje + quantidadeProximos > total) {
       invalido("contagens de pedidos maiores que o total")
     }
     const maiorAtrasoEmDias = opcional(bruto.maiorAtrasoEmDias, (v) =>
       contagemValida(v, "maiorAtrasoEmDias"),
     )
-    if (maiorAtrasoEmDias !== undefined && maiorAtrasoEmDias > 0 && atrasados === 0) {
+    if (
+      maiorAtrasoEmDias !== undefined &&
+      maiorAtrasoEmDias > 0 &&
+      atrasados === 0
+    ) {
       invalido("maior atraso sem pedidos atrasados")
     }
 

@@ -18,7 +18,11 @@ const plural = (n: number, singular: string, pluralizado: string) =>
  * dados dos cards (cache por requisição), então nunca mostra algo que os cards
  * não mostrem. Some por completo quando não há pendência.
  */
-export async function ResumoAtencao({ mostrarSaldo }: { mostrarSaldo: boolean }) {
+export async function ResumoAtencao({
+  mostrarSaldo,
+}: {
+  mostrarSaldo: boolean
+}) {
   const [insumos, ordens, pedidos, saldo] = await Promise.all([
     obterInsumosAbaixoDoMinimo(),
     obterOrdensProducaoAbertas(),
@@ -32,7 +36,11 @@ export async function ResumoAtencao({ mostrarSaldo }: { mostrarSaldo: boolean })
   if (pedidos.estado === "ok" && pedidos.dados.atrasados > 0) {
     pendencias.push({
       chave: "pedidos",
-      texto: plural(pedidos.dados.atrasados, "pedido atrasado", "pedidos atrasados"),
+      texto: plural(
+        pedidos.dados.atrasados,
+        "pedido atrasado",
+        "pedidos atrasados",
+      ),
       href: "/vendas",
     })
   }

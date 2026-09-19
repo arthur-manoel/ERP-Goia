@@ -23,11 +23,19 @@ const base = {
   link: { href: "/estoque", rotulo: "Ver estoque" },
 }
 
-export async function InsumosAbaixoDoMinimo({ className }: { className?: string }) {
+export async function InsumosAbaixoDoMinimo({
+  className,
+}: {
+  className?: string
+}) {
   const resultado = await obterInsumosAbaixoDoMinimo()
   if (resultado.estado !== "ok") {
     return (
-      <IndicadorIndisponivel {...base} className={className} estado={resultado.estado} />
+      <IndicadorIndisponivel
+        {...base}
+        className={className}
+        estado={resultado.estado}
+      />
     )
   }
 
@@ -44,7 +52,9 @@ export async function InsumosAbaixoDoMinimo({ className }: { className?: string 
         {total > 0 ? (
           <IndicadorAlertas>
             <IndicadorAlerta>
-              {semEstoque ? `${semEstoque} sem estoque` : "Atenção: repor estoque"}
+              {semEstoque
+                ? `${semEstoque} sem estoque`
+                : "Atenção: repor estoque"}
             </IndicadorAlerta>
           </IndicadorAlertas>
         ) : (
@@ -68,7 +78,8 @@ export async function InsumosAbaixoDoMinimo({ className }: { className?: string 
           <div className="flex flex-col gap-3">
             {maisCriticos.map((insumo) => {
               const minimo = Number(insumo.minimo)
-              const nivel = minimo > 0 ? (Number(insumo.saldo) / minimo) * 100 : 0
+              const nivel =
+                minimo > 0 ? (Number(insumo.saldo) / minimo) * 100 : 0
               return (
                 <IndicadorMedidor
                   key={insumo.id}

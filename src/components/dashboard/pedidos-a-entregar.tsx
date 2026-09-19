@@ -28,7 +28,11 @@ export async function PedidosAEntregar({ className }: { className?: string }) {
   const resultado = await obterPedidosAEntregar()
   if (resultado.estado !== "ok") {
     return (
-      <IndicadorIndisponivel {...base} className={className} estado={resultado.estado} />
+      <IndicadorIndisponivel
+        {...base}
+        className={className}
+        estado={resultado.estado}
+      />
     )
   }
 
@@ -45,7 +49,12 @@ export async function PedidosAEntregar({ className }: { className?: string }) {
   // "Demais" é aritmética simples (total menos os grupos acima), não um dado novo.
   const demais = total - atrasados - vencemHoje - proximos.quantidade
   const segmentos: SegmentoLegenda[] = [
-    { rotulo: "Atrasados", quantidade: atrasados, cor: "var(--destructive)", destaque: true },
+    {
+      rotulo: "Atrasados",
+      quantidade: atrasados,
+      cor: "var(--destructive)",
+      destaque: true,
+    },
     { rotulo: "Vencem hoje", quantidade: vencemHoje, cor: "var(--primary)" },
     {
       rotulo:
@@ -57,7 +66,11 @@ export async function PedidosAEntregar({ className }: { className?: string }) {
     },
   ]
   if (demais > 0) {
-    segmentos.push({ rotulo: "Demais pedidos", quantidade: demais, cor: "var(--border)" })
+    segmentos.push({
+      rotulo: "Demais pedidos",
+      quantidade: demais,
+      cor: "var(--border)",
+    })
   }
 
   const detalhes: DetalheIndicador[] = []
@@ -69,7 +82,10 @@ export async function PedidosAEntregar({ className }: { className?: string }) {
     })
   }
   if (valorPendente !== undefined) {
-    detalhes.push({ rotulo: "Valor pendente", valor: formatarMoeda(valorPendente) })
+    detalhes.push({
+      rotulo: "Valor pendente",
+      valor: formatarMoeda(valorPendente),
+    })
   }
 
   return (

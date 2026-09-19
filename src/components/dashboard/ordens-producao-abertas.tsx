@@ -19,11 +19,19 @@ const base = {
   link: { href: "/producao/ordens", rotulo: "Ver produção" },
 }
 
-export async function OrdensProducaoAbertas({ className }: { className?: string }) {
+export async function OrdensProducaoAbertas({
+  className,
+}: {
+  className?: string
+}) {
   const resultado = await obterOrdensProducaoAbertas()
   if (resultado.estado !== "ok") {
     return (
-      <IndicadorIndisponivel {...base} className={className} estado={resultado.estado} />
+      <IndicadorIndisponivel
+        {...base}
+        className={className}
+        estado={resultado.estado}
+      />
     )
   }
 

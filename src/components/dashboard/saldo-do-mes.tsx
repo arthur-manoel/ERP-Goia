@@ -33,11 +33,16 @@ export async function SaldoDoMes({ className }: { className?: string }) {
   const resultado = await obterSaldoDoMes()
   if (resultado.estado !== "ok") {
     return (
-      <IndicadorIndisponivel {...base} className={className} estado={resultado.estado} />
+      <IndicadorIndisponivel
+        {...base}
+        className={className}
+        estado={resultado.estado}
+      />
     )
   }
 
-  const { valor, entradas, saidas, evolucaoDiaria, comparativo } = resultado.dados
+  const { valor, entradas, saidas, evolucaoDiaria, comparativo } =
+    resultado.dados
   const negativo = Number(valor) < 0
 
   const detalhes: DetalheIndicador[] = []

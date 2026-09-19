@@ -1,5 +1,10 @@
 import Link from "next/link"
-import { ArrowRight, CircleAlert, TriangleAlert, type LucideIcon } from "lucide-react"
+import {
+  ArrowRight,
+  CircleAlert,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
@@ -39,11 +44,13 @@ export function IndicadorCard({
   const idTitulo = `${id}-titulo`
 
   return (
-    <Card role="group" aria-labelledby={idTitulo} className={cn("min-w-0", className)}>
+    <Card
+      role="group"
+      aria-labelledby={idTitulo}
+      className={cn("min-w-0", className)}
+    >
       <CardHeader>
-        <CardDescription id={idTitulo}>
-          {titulo}
-        </CardDescription>
+        <CardDescription id={idTitulo}>{titulo}</CardDescription>
         <CardAction>
           <div className="flex size-8 items-center justify-center rounded-lg bg-muted text-foreground">
             <Icone className="size-4" aria-hidden />
@@ -81,7 +88,7 @@ export function IndicadorValor({
 }) {
   return (
     <p className="flex flex-wrap items-baseline gap-x-1.5">
-      <span className="min-w-0 text-3xl font-semibold tracking-tight tabular-nums break-words">
+      <span className="min-w-0 text-3xl font-semibold tracking-tight break-words tabular-nums">
         {valor}
       </span>
       {unidade && (
@@ -131,9 +138,7 @@ export function IndicadorIndisponivel({
         <Alert variant="destructive">
           <CircleAlert aria-hidden />
           <AlertTitle>Não foi possível carregar.</AlertTitle>
-          <AlertDescription>
-            Atualize a página em instantes.
-          </AlertDescription>
+          <AlertDescription>Atualize a página em instantes.</AlertDescription>
         </Alert>
       ) : (
         <p className="text-sm text-muted-foreground">
