@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
+    "@hookform/resolvers": "^5.9.1",
     "@next/env": "16.3.5",
     "@prisma/adapter-mariadb": "7.10.0",
     "@prisma/client": "7.10.0",
@@ -35,6 +36,7 @@
     "react": "19.2.8",
     "react-day-picker": "^10.0.1",
     "react-dom": "19.2.8",
+    "react-hook-form": "^7.88.0",
     "react-resizable-panels": "^4.12.4",
     "recharts": "^3.8.0",
     "server-only": "0.0.1",
