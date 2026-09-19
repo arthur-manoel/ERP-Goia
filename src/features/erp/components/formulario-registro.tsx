@@ -10,11 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import type { ZodType } from "zod"
 import { Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
-import {
-  schemas,
-  type Collection,
-  type Data,
-} from "@/features/erp/tipos"
+import { schemas, type Collection, type Data } from "@/features/erp/tipos"
 import { unidades, calcularVenda } from "@/features/estoque/schemas"
 import { tiposEndereco as addressTypes } from "@/features/clientes/schemas"
 import { formatarMoeda as brl } from "@/lib/formatacao"

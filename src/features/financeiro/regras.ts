@@ -6,9 +6,7 @@ export function validarLancamento(
   lancamento: Omit<Lancamento, "id">,
   id?: string,
 ) {
-  const cadastro = dados.clients.find(
-    (row) => row.id === lancamento.partyId,
-  )
+  const cadastro = dados.clients.find((row) => row.id === lancamento.partyId)
   if (!cadastro)
     throw new Error("Selecione um cliente ou fornecedor cadastrado.")
 

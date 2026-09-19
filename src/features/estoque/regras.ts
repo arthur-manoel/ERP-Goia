@@ -34,11 +34,8 @@ export function validarMaterial(
     )
 
   for (const component of material.components) {
-    const alvo = dados.materials.find(
-      (row) => row.id === component.materialId,
-    )
-    if (!alvo)
-      throw new Error("Selecione componentes cadastrados no estoque.")
+    const alvo = dados.materials.find((row) => row.id === component.materialId)
+    if (!alvo) throw new Error("Selecione componentes cadastrados no estoque.")
     if (component.materialId === id)
       throw new Error("Um produto não pode conter a si mesmo.")
     if (unidadeInteira(alvo.unit) && !Number.isInteger(component.quantity))
@@ -77,9 +74,7 @@ export function validarExclusaoMaterial(dados: DadosErp, id: string) {
 
   if (
     dados.productions.some((row) => row.productId === id) ||
-    dados.orders.some((row) =>
-      row.items.some((item) => item.productId === id),
-    )
+    dados.orders.some((row) => row.items.some((item) => item.productId === id))
   )
     throw new Error(
       "Este produto possui ordens ou pedidos vinculados e não pode ser excluído.",

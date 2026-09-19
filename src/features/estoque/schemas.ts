@@ -1,9 +1,5 @@
 import { z } from "zod"
-import {
-  dinheiro,
-  numeroNaoNegativo,
-  texto,
-} from "@/features/erp/validacao"
+import { dinheiro, numeroNaoNegativo, texto } from "@/features/erp/validacao"
 
 export const unidades = [
   { value: "un.", label: "Unidade (un.)" },

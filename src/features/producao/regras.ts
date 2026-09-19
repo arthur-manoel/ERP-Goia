@@ -7,8 +7,7 @@ export function validarOrdemProducao(
 ) {
   if (
     !dados.materials.some(
-      (row) =>
-        row.id === ordem.productId && row.category === "Produto pronto",
+      (row) => row.id === ordem.productId && row.category === "Produto pronto",
     )
   )
     throw new Error("Selecione um produto pronto cadastrado.")
