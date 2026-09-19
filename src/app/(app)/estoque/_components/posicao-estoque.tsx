@@ -164,7 +164,10 @@ export function PosicaoEstoque() {
           onChange={(e) => setBusca(e.target.value)}
           className="max-w-xs"
         />
-        <Select value={local} onValueChange={setLocal}>
+        <Select
+          value={local}
+          onValueChange={(value) => setLocal(value ?? "todos")}
+        >
           <SelectTrigger>
             <SelectValue placeholder="Local de estoque" />
           </SelectTrigger>
