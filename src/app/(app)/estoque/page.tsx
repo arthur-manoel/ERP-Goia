@@ -1,17 +1,21 @@
 import type { Metadata } from "next"
-import { EmConstrucao } from "@/components/layout/em-construcao"
 import { PageHeader } from "@/components/layout/page-header"
+import {
+  ExportarPosicaoEstoqueButton,
+  PosicaoEstoque,
+} from "./_components/posicao-estoque"
 
-export const metadata: Metadata = { title: "Saldos de estoque" }
+export const metadata: Metadata = { title: "Relatório de posição de estoque" }
 
 export default function Page() {
   return (
     <>
       <PageHeader
-        titulo="Saldos de estoque"
-        descricao="Saldo por produto, local e setor."
+        titulo="Relatório de posição de estoque"
+        descricao="Posição atual por insumo e por variação de produto, com histórico de movimentação por período."
+        acoes={<ExportarPosicaoEstoqueButton />}
       />
-      <EmConstrucao tabelas={["estoque"]} />
+      <PosicaoEstoque />
     </>
   )
 }
