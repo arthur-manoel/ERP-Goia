@@ -1,17 +1,32 @@
 import type { Metadata } from "next"
-import { EmConstrucao } from "@/components/layout/em-construcao"
+import { TriangleAlert } from "lucide-react"
+import { MovimentacaoTela } from "@/components/movimentacao/movimentacao-tela"
 import { PageHeader } from "@/components/layout/page-header"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { obterOpcoesMovimentacao } from "@/lib/movimentacao/opcoes"
 
-export const metadata: Metadata = { title: "Movimentações de estoque" }
+export const metadata: Metadata = { title: "Movimentação" }
 
-export default function Page() {
+export default async function Page() {
+  const opcoes = await obterOpcoesMovimentacao()
+
   return (
     <>
       <PageHeader
-        titulo="Movimentações de estoque"
-        descricao="Entradas, saídas, ajustes e transferências."
+        titulo="Movimentação"
+        descricao="Registre entradas, saídas e transferências de estoque."
       />
-      <EmConstrucao tabelas={["movimentacao_estoque"]} />
+      {opcoes.estado === "ok" ? (
+        <MovimentacaoTela opcoes={opcoes.dados} />
+      ) : (
+        <Alert variant="destructive" className="max-w-2xl">
+          <TriangleAlert aria-hidden />
+          <AlertTitle>Não foi possível carregar itens e estoques</AlertTitle>
+          <AlertDescription>
+            Atualize a página para tentar de novo.
+          </AlertDescription>
+        </Alert>
+      )}
     </>
   )
 }
