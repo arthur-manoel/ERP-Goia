@@ -29,7 +29,7 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Módulo | Status | Tabelas do banco | Responsável | Branch/PR |
 | --- | :---: | --- | --- | --- |
 | Infraestrutura (Next, Prisma, shadcn, Git Flow) | ✅ | — | Arthur / Everton | `feature/prisma-db-pull`, `feature/shadcn-components` |
-| Acesso e segurança | ⬜ | `usuarios`, `refresh_tokens`, `administradores_gerais`, `usuario_empresa`, `cargos`, `permissoes_usuario`, `permissoes_setor` | — | — |
+| Acesso e segurança | 🟨 | `usuarios`, `refresh_tokens`, `administradores_gerais`, `usuario_empresa`, `cargos`, `permissoes_usuario`, `permissoes_setor` | — | — |
 | Empresas e estrutura | ⬜ | `empresas`, `setores`, `tipos_setor`, `sequencias_automaticas` | — | — |
 | Auditoria | ⬜ | `auditoria` | — | — |
 | Cadastros básicos | ⬜ | `clientes`, `fornecedores`, `empresa_fornecedor`, `categorias`, `cores`, `tamanhos`, `tipos_produto` | — | — |
@@ -59,7 +59,9 @@ As 48 tabelas do banco `joseev47_erp_dev` estão distribuídas acima; cada uma a
 
 - [ ] Layout principal (sidebar, header, seletor de empresa)
 - [ ] `ThemeProvider` (next-themes), `TooltipProvider` e `Toaster` no layout raiz
-- [ ] Autenticação (login, sessão, refresh token, logout)
+- [ ] Autenticação integrada (login, JWT, refresh token, logout)
+- [x] Helpers Argon2id, JWT de 15 minutos, refresh com rotação e RBAC por Bearer token
+- [ ] Conectar adapter de autenticação à persistência e definir mapeamento dos quatro perfis
 - [ ] Controle de acesso por nível, setor e permissão de recurso
 - [ ] Contexto multiempresa (todas as consultas filtradas por `id_empresa`)
 - [ ] Registro de auditoria nas operações de escrita
@@ -140,7 +142,7 @@ Abra [http://localhost:3000](http://localhost:3000).
 
 ## Banco de dados (DB-first)
 
-**O MySQL é a fonte da verdade.** A estrutura é alterada direto no banco e trazida para o código com introspecção. O projeto não usa migrations do Prisma.
+**O MySQL é a fonte da verdade.** A estrutura é alterada direto no banco e trazida para o código com introspecção. O banco compartilhado segue DB-first; a migração de refresh tokens está preparada para uma cópia local com baseline.
 
 ```bash
 npm run db:pull      # prisma db pull + prisma generate
@@ -287,6 +289,57 @@ git push origin main develop --tags
 
 ## Pendências e decisões
 
+### Contrato de autenticação
+
+Os helpers estão em `src/lib/{password,jwt,refreshToken,authorize}.ts`.
+`POST /api/auth/login` retorna `{ id, name, role, accessToken }` e grava o refresh
+no cookie `refresh_token`: httpOnly, secure em produção, sameSite lax,
+path `/api/auth`, validade de sete dias. `POST /api/auth/refresh` rotaciona o cookie
+e retorna `{ accessToken }`; token ausente, expirado, revogado ou reutilizado
+retorna 401. Reuso de token já rotacionado revoga todos os refresh tokens do usuário.
+`POST /api/auth/logout` revoga o refresh e limpa o cookie. O cookie antigo
+`session_id` é removido nos fluxos de autenticação.
+
+Configure `ACCESS_TOKEN_SECRET` com um segredo aleatório por ambiente (o `.env`
+local é ignorado pelo Git). Os JWTs usam HS256 e expiram em 15 minutos.
+O cliente envia `Authorization: Bearer <accessToken>` nas rotas protegidas e
+chama refresh para renovar o acesso; serialize as renovações, inclusive entre
+abas, pois reuso concorrente também causa revogação. Logout e alteração de perfil
+não invalidam JWTs já emitidos: eles permanecem válidos até expirar.
+
+O adapter `AuthDb` continua necessário: configure `configureAuthDb(db)` no
+bootstrap de cada processo com `getUserByEmail(email)` (incluindo passwordHash)
+e `getUserById(id)` (perfil atual). Retorne null para usuários inativos/inexistentes.
+Os IDs precisam corresponder a `usuarios.id` (inteiro); os perfis são
+`ADMINISTRACAO`, `PRODUCAO`, `VENDAS` e `FINANCEIRO`. O schema atual não define
+esses quatro perfis, portanto seu mapeamento permanece responsabilidade do adapter.
+A persistência dos refresh tokens usa Prisma diretamente, com hash SHA-256;
+`replacedBy` guarda o ID do registro sucessor. A tabela legada `refresh_tokens`
+é preservada e não é utilizada por este fluxo.
+
+```ts
+const auth = await requireRole(request, ["ADMINISTRACAO", "FINANCEIRO"]);
+if (auth.error) return auth.error;
+// auth.user contém id e role; nenhuma consulta ao banco nesta autorização.
+```
+
+A migration `prisma/migrations/20260919000000_add_refresh_token/migration.sql`
+adiciona a tabela `RefreshToken`, relacionada a `usuarios` com `userId Int`.
+Sua aplicação está pendente: este ambiente não possui DATABASE_URL configurada.
+O projeto veio de introspecção, sem histórico de migrations; foi gerado um baseline do schema anterior em `20260918000000_baseline`.
+Para uma cópia local existente, confira a equivalência do schema antes de registrar
+esse baseline com `npx prisma migrate resolve --applied 20260918000000_baseline`.
+Em banco vazio, as duas migrations serão aplicadas. O baseline reflete o Prisma;
+constraints não representadas pelo ORM precisam ser preservadas no dump local. Não aceite reset de um banco com dados a preservar. A configuração
+permite migrations apenas para localhost/127.0.0.1/::1; mantém a proteção do
+banco compartilhado. Depois de configurar a cópia local e o baseline, execute:
+
+```bash
+npx prisma migrate dev --name add_refresh_token
+npx prisma generate
+node --test tests/auth.test.mjs
+```
+
 | Item | Situação |
 | --- | --- |
 | Check constraint `chk_ordem_producao_status_quantidade` (`ordem_producao`) | O Prisma não a representa no schema. O banco continua aplicando a regra, então trate o erro de violação na aplicação. |
@@ -302,6 +355,8 @@ git push origin main develop --tags
 
 | Data | Autor | Branch | Descrição |
 | --- | --- | --- | --- |
+| 2026-09-19 | — | — | JWT com refresh tokens rotativos e hash SHA-256, detecção de reuso e RBAC por Bearer; aplicação da migration local pendente de conexão e baseline. |
+| 2026-09-18 | — | — | Autenticação Argon2id, sessões com cookie e RBAC; login/logout criados, aguardando adapter externo de persistência. |
 | 2026-09-18 | Everton | `feature/readme-acompanhamento` | README reescrito como painel de acompanhamento do desenvolvimento. |
 | 2026-09-18 | Everton | `feature/shadcn-components` | Todos os componentes shadcn (`base-nova`); alias `@/*` → `src/*`; correção da fonte Geist no tema. |
 | 2026-09-18 | Everton | `feature/prisma-db-pull` | Schema introspectado do MySQL (48 tabelas); fluxo DB-first com proteções; remoção do model e da migration de demonstração. |
