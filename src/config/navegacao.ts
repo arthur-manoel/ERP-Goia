@@ -43,7 +43,7 @@ export type GrupoNavegacao = {
 export const navegacao: GrupoNavegacao[] = [
   {
     titulo: "Geral",
-    itens: [{ titulo: "Início", href: "/", icone: LayoutDashboard }],
+    itens: [{ titulo: "Dashboard", href: "/", icone: LayoutDashboard }],
   },
   {
     titulo: "Cadastros",
