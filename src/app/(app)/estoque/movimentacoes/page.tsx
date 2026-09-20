@@ -3,6 +3,7 @@ import { TriangleAlert } from "lucide-react"
 import { PageHeader } from "@/components/layout/page-header"
 import { HistoricoMovimentacoes } from "@/components/movimentacao/historico-movimentacoes"
 import { MovimentacaoTela } from "@/components/movimentacao/movimentacao-tela"
+import { PosicaoAtual } from "@/components/movimentacao/posicao-atual"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { obterOpcoesMovimentacao } from "@/lib/movimentacao/opcoes"
@@ -16,14 +17,18 @@ export default async function Page() {
     <>
       <PageHeader
         titulo="Movimentação"
-        descricao="Registre entradas, saídas e transferências, e consulte o histórico por período."
+        descricao="Posição atual, registro de entradas/saídas/transferências e histórico por período."
       />
       {opcoes.estado === "ok" ? (
-        <Tabs defaultValue="nova">
+        <Tabs defaultValue="posicao">
           <TabsList>
+            <TabsTrigger value="posicao">Posição atual</TabsTrigger>
             <TabsTrigger value="nova">Nova movimentação</TabsTrigger>
             <TabsTrigger value="historico">Histórico</TabsTrigger>
           </TabsList>
+          <TabsContent value="posicao" className="pt-4">
+            <PosicaoAtual />
+          </TabsContent>
           <TabsContent value="nova" className="pt-4">
             <MovimentacaoTela opcoes={opcoes.dados} />
           </TabsContent>
