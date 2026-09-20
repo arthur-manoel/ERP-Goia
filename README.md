@@ -158,7 +158,7 @@ Fluxo para mudar a estrutura:
 **Proteções** (em `prisma.config.ts` e `src/lib/prisma.ts`):
 
 - `prisma migrate *` (exceto `migrate diff`) e `prisma db push` são bloqueados para que ninguém altere o banco compartilhado a partir do schema.
-- `DATABASE_URL` só é aceita se apontar para o banco `joseev47_erp_dev`.
+- No MySQL remoto, `DATABASE_URL` só aceita o banco `joseev47_erp_dev`. Em localhost/127.0.0.1/::1, também aceita outros nomes para bancos locais de testes, como `compet`.
 
 **Uso no código.** O cliente é `server-only` e roda somente no runtime Node.js. Use-o em Server Components, Server Actions e Route Handlers:
 
@@ -352,11 +352,12 @@ de collation, inteiros unsigned ou demais comportamentos específicos de MySQL.
 Para preparar um Supabase de teste vazio, execute `npm run db:setup:test`.
 O comando exige `?schema=erp_auth_test`, cria as tabelas nesse namespace em uma
 transação e não altera um schema que já exista. Não cria usuários nem senhas padrão.
-Os IDs usados na autenticação são `usuarios.id`. O MySQL continua restrito ao
-banco `joseev47_erp_dev`.
+Os IDs usados na autenticação são `usuarios.id`. O MySQL remoto continua restrito ao
+banco `joseev47_erp_dev`; bancos locais de testes podem usar outros nomes.
 A persistência dos refresh tokens usa Prisma diretamente, com hash SHA-256;
-`replacedBy` guarda o ID do registro sucessor. A tabela legada `refresh_tokens`
-é preservada e não é utilizada por este fluxo.
+o hash fica na coluna `token` da tabela existente `refresh_tokens`.
+`replaced_by` guarda o ID inteiro do registro sucessor e `data_revogacao`
+registra a rotação, o logout ou a revogação por reutilização.
 
 ```ts
 const auth = await requireRole(request, ["ADMINISTRACAO", "FINANCEIRO"]);
@@ -364,9 +365,11 @@ if (auth.error) return auth.error;
 // auth.user contém id e role; nenhuma consulta ao banco nesta autorização.
 ```
 
-A migration `prisma/migrations/20260919000000_add_refresh_token/migration.sql`
-adiciona a tabela `RefreshToken`, relacionada a `usuarios` com `userId Int`.
-Sua aplicação está pendente: este ambiente não possui DATABASE_URL configurada.
+A migration `prisma/migrations/20260920000000_refresh_token_rotation/migration.sql`
+adiciona somente `replaced_by INTEGER NULL` à tabela `refresh_tokens`.
+Aplique essa alteração antes de subir o código. A migration que criava a tabela
+paralela foi removida. Se ela já foi aplicada em algum ambiente, reconcilie o
+histórico antes do deploy; esta alteração não remove automaticamente tabelas existentes.
 O projeto veio de introspecção, sem histórico de migrations; foi gerado um baseline do schema anterior em `20260918000000_baseline`.
 Para uma cópia local existente, confira a equivalência do schema antes de registrar
 esse baseline com `npx prisma migrate resolve --applied 20260918000000_baseline`.
@@ -376,10 +379,43 @@ permite migrations apenas para localhost/127.0.0.1/::1; mantém a proteção do
 banco compartilhado. Depois de configurar a cópia local e o baseline, execute:
 
 ```bash
-npx prisma migrate dev --name add_refresh_token
+npx prisma migrate deploy
 npx prisma generate
 node --test tests/auth.test.mjs
 ```
+
+Teste de integração (Node >=22.15) com persistência e adapter de usuários reais:
+use uma cópia **local de testes** MySQL/MariaDB com o baseline e a migration
+acima aplicados. O teste cria usuários próprios e os remove ao terminar.
+Por padrão, ele exige `AUTH_TEST_DATABASE_URL` e não aplica DDL automaticamente.
+
+```bash
+DATABASE_URL=mysql://USER:PASSWORD@127.0.0.1:3306/joseev47_erp_dev npm run db:generate
+AUTH_TEST_DATABASE_URL=mysql://USER:PASSWORD@127.0.0.1:3306/joseev47_erp_dev node --test tests/auth.integration.test.mjs
+```
+
+Para usar o MySQL local configurado no `.env`, inclusive um banco chamado `compet`,
+execute `npm run db:generate` e `node tests/auth.integration.test.mjs --configured-db`
+após aplicar as migrations na cópia de testes.
+
+Para usar o PostgreSQL de testes já configurado no `.env`, com
+`?schema=erp_auth_test`, prepare a coluna de rotação nesse schema:
+
+```sql
+ALTER TABLE "erp_auth_test"."refresh_tokens"
+  ADD COLUMN IF NOT EXISTS "replaced_by" INTEGER NULL;
+```
+
+Depois, gere o client para o provider configurado e execute:
+
+```bash
+npm run db:generate
+node tests/auth.integration.test.mjs --configured-db
+```
+
+O teste PostgreSQL valida a persistência real do fluxo de autenticação; a migration
+MySQL precisa ser validada em MySQL/MariaDB. Sem `AUTH_TEST_DATABASE_URL` ou
+`--configured-db`, o teste de integração é marcado como ignorado.
 
 | Item | Situação |
 | --- | --- |

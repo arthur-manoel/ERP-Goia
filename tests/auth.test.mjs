@@ -24,7 +24,7 @@ function setup() {
   const table = {
     async findUnique({ where }) { return [...tokens.values()].find(row => matches(row, where)) ?? null; },
     async create({ data }) {
-      const row = { id: String(++sequence), revoked: false, replacedBy: null, ...data };
+      const row = { id: ++sequence, revogado: false, replaced_by: null, data_revogacao: null, ...data };
       tokens.set(row.id, row);
       return row;
     },
@@ -44,7 +44,7 @@ function setup() {
     async $transaction(fn) {
       const result = queue.then(async () => {
         const snapshot = structuredClone(tokens);
-        try { return await fn({ refreshToken: table, $queryRaw: async () => [], $queryRawUnsafe: async (sql, ...values) => { rawQueries.push({ sql, values }); return []; } }); }
+        try { return await fn({ refresh_tokens: table, $queryRaw: async () => [], $queryRawUnsafe: async (sql, ...values) => { rawQueries.push({ sql, values }); return []; } }); }
         catch (error) { tokens.clear(); for (const [id, row] of snapshot) tokens.set(id, row); throw error; }
       });
       queue = result.catch(() => {});
@@ -117,20 +117,22 @@ test("refresh: hash, rotação, reuso revoga todo o usuário, expiração e logo
   const otherUser = await issueRefreshToken(2);
   const row = [...tokens.values()][0];
   assert.match(first, /^[a-f0-9]{64}$/);
-  assert.notEqual(row.tokenHash, first);
-  assert.equal(row.tokenHash, nativeRequire("node:crypto").createHash("sha256").update(first).digest("hex"));
-  assert.ok(Math.abs(row.expiresAt - Date.now() - 604800000) < 2000);
+  assert.notEqual(row.token, first);
+  assert.equal(row.token, nativeRequire("node:crypto").createHash("sha256").update(first).digest("hex"));
+  assert.ok(Math.abs(row.data_expiracao - Date.now() - 604800000) < 2000);
   const next = await rotateRefreshToken(first);
   assert.equal(next.userId, 1);
   assert.notEqual(next.token, first);
-  assert.equal(row.revoked, true);
-  assert.ok(tokens.has(row.replacedBy));
+  assert.equal(row.revogado, true);
+  assert.ok(row.data_revogacao instanceof Date);
+  assert.equal(typeof row.replaced_by, "number");
+  assert.ok(tokens.has(row.replaced_by));
   assert.equal(await rotateRefreshToken(first), null);
   assert.equal(await rotateRefreshToken(next.token), null);
   assert.equal(await rotateRefreshToken(otherSession), null);
   assert.ok(await rotateRefreshToken(otherUser));
   const expired = await issueRefreshToken(3);
-  [...tokens.values()].find(t => t.userId === 3).expiresAt = new Date(0);
+  [...tokens.values()].find(t => t.id_usuario === 3).data_expiracao = new Date(0);
   assert.equal(await rotateRefreshToken(expired), null);
   const revoked = await issueRefreshToken(4);
   await revokeRefreshToken(revoked);
@@ -145,7 +147,7 @@ test("rotação concorrente: somente uma vence e o reuso revoga a sucessora", as
   const token = await issueRefreshToken(1);
   const results = await Promise.all([rotateRefreshToken(token), rotateRefreshToken(token)]);
   assert.equal(results.filter(Boolean).length, 1);
-  assert.ok([...tokens.values()].every(t => t.revoked));
+  assert.ok([...tokens.values()].every(t => t.revogado));
 });
 
 test("rotas: login, refresh, perfil atual, cookies, reuso e logout", async () => {
@@ -178,17 +180,17 @@ test("rotas: login, refresh, perfil atual, cookies, reuso e logout", async () =>
   assert.notEqual(jar.get("refresh_token"), first);
   jar.set("refresh_token", first);
   assert.equal((await refresh()).status, 401);
-  assert.ok([...tokens.values()].every(t => t.revoked));
+  assert.ok([...tokens.values()].every(t => t.revogado));
   await login(credentials("senha"));
   assert.deepEqual(await (await logout()).json(), { ok: true });
   assert.equal(options.get("refresh_token").maxAge, 0);
   assert.equal(options.get("refresh_token").path, "/api/auth");
-  assert.ok([...tokens.values()].every(t => t.revoked));
+  assert.ok([...tokens.values()].every(t => t.revogado));
   assert.equal((await logout()).status, 200);
   await login(credentials("senha"));
   users.delete(1);
   assert.equal((await refresh()).status, 401);
-  assert.ok([...tokens.values()].every(t => t.revoked));
+  assert.ok([...tokens.values()].every(t => t.revogado));
 });
 
 test("schema: limites e normalização preservam o contrato de login", () => {
@@ -306,7 +308,9 @@ test("configuração de banco: MySQL preservado e PostgreSQL com schema validado
   const { load } = setup();
   const { databaseProvider, postgresqlNamespace } = load("src/lib/database-config.ts");
   assert.equal(databaseProvider("mysql://localhost/joseev47_erp_dev"), "mysql");
-  assert.throws(() => databaseProvider("mysql://localhost/outro"));
+  assert.equal(databaseProvider("mysql://localhost/compet"), "mysql");
+  assert.throws(() => databaseProvider("mysql://localhost/"));
+  assert.throws(() => databaseProvider("mysql://remote.example/outro"));
   assert.equal(databaseProvider("postgresql://localhost/postgres"), "postgresql");
   assert.equal(databaseProvider("postgres://localhost/postgres"), "postgresql");
   assert.throws(() => databaseProvider("https://localhost/postgres"));

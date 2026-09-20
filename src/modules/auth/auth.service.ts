@@ -78,17 +78,17 @@ export async function rotateRefreshToken(oldToken: string): Promise<{ token: str
   return repository.withRefreshToken(hash, async (tokens) => {
     const old = await tokens.findRefreshTokenByHash(hash);
     if (!old) return null;
-    if (old.replacedBy) {
-      await tokens.revokeAllUserTokens(old.userId);
+    if (old.replaced_by) {
+      await tokens.revokeAllUserTokens(old.id_usuario);
       // Retornar confirma a revogação; lançar faria rollback da transação.
       return null;
     }
-    if (old.revoked || old.expiresAt.getTime() <= Date.now()) return null;
+    if (old.revogado || old.data_expiracao.getTime() <= Date.now()) return null;
     const token = generate();
     await tokens.rotateRefreshToken(old.id, {
-      userId: old.userId, tokenHash: tokenHash(token), expiresAt: expiresAt(),
+      userId: old.id_usuario, tokenHash: tokenHash(token), expiresAt: expiresAt(),
     });
-    return { token, userId: old.userId };
+    return { token, userId: old.id_usuario };
   });
 }
 

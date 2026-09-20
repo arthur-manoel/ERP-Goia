@@ -789,6 +789,7 @@ model refresh_tokens {
   data_expiracao DateTime  @db.DateTime(0)
   revogado       Boolean   @default(false)
   data_revogacao DateTime? @db.DateTime(0)
+  replaced_by    Int?
   ip             String?   @db.VarChar(45)
   user_agent     String?   @db.VarChar(255)
   usuarios       usuarios  @relation(fields: [id_usuario], references: [id], onDelete: Cascade, map: "fk_refresh_token_usuario")
@@ -944,21 +945,7 @@ model usuario_empresa {
   @@index([id_setor], map: "fk_usuario_empresa_setor")
 }
 
-model RefreshToken {
-  id         String   @id @default(cuid())
-  tokenHash  String   @unique
-  userId     Int
-  user       usuarios @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt  DateTime
-  revoked    Boolean  @default(false)
-  replacedBy String?
-  createdAt  DateTime @default(now())
-
-  @@index([userId])
-}
-
 model usuarios {
-  refreshTokens RefreshToken[]
   id                                                                                                   Int                                 @id @default(autoincrement())
   nome                                                                                                 String                              @db.VarChar(150)
   email                                                                                                String                              @unique(map: "uk_usuario_email") @db.VarChar(150)

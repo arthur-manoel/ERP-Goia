@@ -4,8 +4,10 @@ export function databaseProvider(databaseUrl: string): "mysql" | "postgresql" {
   if (url.protocol !== "mysql:") {
     throw new Error("DATABASE_URL deve usar mysql:// ou postgresql://.");
   }
-  if (decodeURIComponent(url.pathname.slice(1)) !== "joseev47_erp_dev") {
-    throw new Error("O banco MySQL deve ser joseev47_erp_dev.");
+  const database = decodeURIComponent(url.pathname.slice(1));
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  if (!database || (!local && database !== "joseev47_erp_dev")) {
+    throw new Error("Informe um banco MySQL local ou use joseev47_erp_dev no servidor remoto.");
   }
   return "mysql";
 }

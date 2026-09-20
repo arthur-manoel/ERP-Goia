@@ -29,28 +29,40 @@ interface NewRefreshToken {
   expiresAt: Date;
 }
 
+function tokenData(data: NewRefreshToken) {
+  return {
+    id_usuario: data.userId,
+    // A coluna legada guarda somente o hash, nunca o token enviado ao cliente.
+    token: data.tokenHash,
+    data_criacao: new Date(),
+    data_expiracao: data.expiresAt,
+  };
+}
+
 function tokenOperations(tx: Prisma.TransactionClient) {
   return {
     findRefreshTokenByHash(tokenHash: string) {
-      return tx.refreshToken.findUnique({ where: { tokenHash } });
+      return tx.refresh_tokens.findUnique({ where: { token: tokenHash } });
     },
     createRefreshToken(data: NewRefreshToken) {
-      return tx.refreshToken.create({ data });
+      return tx.refresh_tokens.create({ data: tokenData(data) });
     },
-    async rotateRefreshToken(oldId: string, data: NewRefreshToken) {
-      const next = await tx.refreshToken.create({ data });
-      await tx.refreshToken.update({
-        where: { id: oldId }, data: { revoked: true, replacedBy: next.id },
+    async rotateRefreshToken(oldId: number, data: NewRefreshToken) {
+      const next = await tx.refresh_tokens.create({ data: tokenData(data) });
+      await tx.refresh_tokens.update({
+        where: { id: oldId }, data: { revogado: true, data_revogacao: new Date(), replaced_by: next.id },
       });
       return next;
     },
     revokeAllUserTokens(userId: number) {
-      return tx.refreshToken.updateMany({
-        where: { userId, revoked: false }, data: { revoked: true },
+      return tx.refresh_tokens.updateMany({
+        where: { id_usuario: userId, revogado: false },
+        data: { revogado: true, data_revogacao: new Date() },
       });
     },
     revokeRefreshTokenByHash(tokenHash: string) {
-      return tx.refreshToken.updateMany({ where: { tokenHash }, data: { revoked: true } });
+      return tx.refresh_tokens.updateMany({ where: { token: tokenHash, revogado: false },
+        data: { revogado: true, data_revogacao: new Date() } });
     },
   };
 }
@@ -75,9 +87,9 @@ export async function withRefreshToken<T>(
 ): Promise<T | null> {
   const { prisma } = await import("@/lib/prisma");
   return prisma.$transaction(async (tx) => {
-    const owner = await tx.refreshToken.findUnique({ where: { tokenHash }, select: { userId: true } });
+    const owner = await tx.refresh_tokens.findUnique({ where: { token: tokenHash }, select: { id_usuario: true } });
     if (!owner) return null;
-    await lockUser(tx, owner.userId);
+    await lockUser(tx, owner.id_usuario);
     return operation(tokenOperations(tx));
   }, { isolationLevel: "ReadCommitted" });
 }
