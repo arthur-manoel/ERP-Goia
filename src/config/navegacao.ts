@@ -76,7 +76,7 @@ export const navegacao: GrupoNavegacao[] = [
     itens: [
       { titulo: "Saldos", href: "/estoque", icone: Warehouse },
       {
-        titulo: "Movimentações",
+        titulo: "Movimentação",
         href: "/estoque/movimentacoes",
         icone: ArrowLeftRight,
       },
