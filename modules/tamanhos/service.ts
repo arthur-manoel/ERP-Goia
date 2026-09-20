@@ -1,10 +1,10 @@
-import { Prisma } from "../../generated/prisma/client";
-import { ConflictError, NotFoundError, ValidationError } from "../api/errors";
-import { validate } from "../api/http";
+import { Prisma } from "../../src/generated/prisma/client";
+import { ConflictError, NotFoundError, ValidationError } from "../../src/lib/api/errors";
+import { validate } from "../../src/lib/api/http";
 import * as repository from "./repository";
 import { createTamanhoSchema, updateTamanhoSchema, listTamanhosSchema, tamanhoIdSchema } from "./schema";
 
-export { ConflictError, NotFoundError, ValidationError } from "../api/errors";
+export { ConflictError, NotFoundError, ValidationError } from "../../src/lib/api/errors";
 async function write<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {

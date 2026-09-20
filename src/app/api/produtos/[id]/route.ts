@@ -1,5 +1,5 @@
-import { getProduto, updateProduto, deleteProduto } from "../../../../lib/produtos/service";
-import { handleRequest, readJson } from "../../../../lib/produtos/http";
+import { getProduto, updateProduto, deleteProduto } from "../../../../../modules/produtos/service";
+import { handleRequest, readJson } from "../../../../../modules/produtos/http";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };

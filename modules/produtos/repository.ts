@@ -1,5 +1,5 @@
-import { Prisma, type produtos as Produto } from "../../generated/prisma/client";
-import { prisma } from "../prisma";
+import { Prisma, type produtos as Produto } from "../../src/generated/prisma/client";
+import { prisma } from "../../src/lib/prisma";
 import type { CreateProdutoData, UpdateProdutoData, ProdutoFilters, Pagination } from "./schema";
 
 export type { Produto };

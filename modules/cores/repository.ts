@@ -1,5 +1,5 @@
-import { Prisma, type cores as Cor } from "../../generated/prisma/client";
-import { prisma } from "../prisma";
+import { Prisma, type cores as Cor } from "../../src/generated/prisma/client";
+import { prisma } from "../../src/lib/prisma";
 import type { CreateCorData, UpdateCorData, CorFilters, Pagination } from "./schema";
 
 export type { Cor };

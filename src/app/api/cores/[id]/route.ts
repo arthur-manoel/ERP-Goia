@@ -1,5 +1,5 @@
 import { handleRequest, readJson } from "../../../../lib/api/http";
-import { getCor, updateCor, deleteCor } from "../../../../lib/cores/service";
+import { getCor, updateCor, deleteCor } from "../../../../../modules/cores/service";
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, context: Context) {

@@ -1,5 +1,5 @@
 import { handleRequest, readJson, readQuery } from "../../../lib/api/http";
-import { createTamanho, listTamanhos } from "../../../lib/tamanhos/service";
+import { createTamanho, listTamanhos } from "../../../../modules/tamanhos/service";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
   return handleRequest( () => listTamanhos(readQuery(request)));

@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
-import { createProduto, listProdutos, ValidationError } from "../../../lib/produtos/service";
-import { handleRequest, readJson } from "../../../lib/produtos/http";
+import { createProduto, listProdutos, ValidationError } from "../../../../modules/produtos/service";
+import { handleRequest, readJson } from "../../../../modules/produtos/http";
 
 export const runtime = "nodejs";
 

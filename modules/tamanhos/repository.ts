@@ -1,5 +1,5 @@
-import { Prisma, type tamanhos as Tamanho } from "../../generated/prisma/client";
-import { prisma } from "../prisma";
+import { Prisma, type tamanhos as Tamanho } from "../../src/generated/prisma/client";
+import { prisma } from "../../src/lib/prisma";
 import type { CreateTamanhoData, UpdateTamanhoData, TamanhoFilters, Pagination } from "./schema";
 
 export type { Tamanho };

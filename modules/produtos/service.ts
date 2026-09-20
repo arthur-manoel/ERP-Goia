@@ -1,4 +1,4 @@
-import { Prisma } from "../../generated/prisma/client";
+import { Prisma } from "../../src/generated/prisma/client";
 import { z } from "zod";
 import * as repository from "./repository";
 import { createProdutoSchema, updateProdutoSchema, listProdutosSchema, produtoIdSchema } from "./schema";

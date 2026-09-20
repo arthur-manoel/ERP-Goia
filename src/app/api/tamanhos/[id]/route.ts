@@ -1,5 +1,5 @@
 import { handleRequest, readJson } from "../../../../lib/api/http";
-import { getTamanho, updateTamanho, deleteTamanho } from "../../../../lib/tamanhos/service";
+import { getTamanho, updateTamanho, deleteTamanho } from "../../../../../modules/tamanhos/service";
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, context: Context) {

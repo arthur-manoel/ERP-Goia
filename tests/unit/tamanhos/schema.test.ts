@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createTamanhoSchema, updateTamanhoSchema } from "../../../src/lib/tamanhos/schema";
+import { createTamanhoSchema, updateTamanhoSchema } from "../../../modules/tamanhos/schema";
 it("segue os limites e defaults da tabela real", () => {
   expect(createTamanhoSchema.parse({ id_empresa: 1, nome: " M " })).toEqual({ id_empresa: 1, nome: "M", ordem: 0, status: "ATIVO" });
   expect(createTamanhoSchema.safeParse({ id_empresa: 1, nome: "x".repeat(50), descricao: "x".repeat(255) }).success).toBe(true);

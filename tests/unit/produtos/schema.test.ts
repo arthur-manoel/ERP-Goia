@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { createProdutoSchema, updateProdutoSchema, listProdutosSchema, produtoIdSchema } from "../../../src/lib/produtos/schema";
+import { createProdutoSchema, updateProdutoSchema, listProdutosSchema, produtoIdSchema } from "../../../modules/produtos/schema";
 
 const input = {
   codigo: " P001 ", nome: "Produto", id_tipo_produto: 1, unidade: "UN",
