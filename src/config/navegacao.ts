@@ -74,6 +74,7 @@ export const navegacao: GrupoNavegacao[] = [
   {
     titulo: "Estoque",
     itens: [
+      { titulo: "Insumos", href: "/estoque/insumos", icone: Package },
       { titulo: "Saldos", href: "/estoque", icone: Warehouse },
       {
         titulo: "Movimentação",

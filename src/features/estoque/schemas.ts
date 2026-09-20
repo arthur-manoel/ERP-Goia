@@ -22,6 +22,35 @@ export const unidades = [
 export const unidadeInteira = (unidade: string) =>
   ["un.", "pc", "par", "dz", "cx", "pct", "rolo"].includes(unidade)
 
+const quantidadeInsumo = numeroNaoNegativo.refine(
+  (value) => Math.abs(value * 1000 - Math.round(value * 1000)) < 0.000001,
+  "Use no máximo três casas decimais.",
+)
+
+export const insumoSchema = z
+  .object({
+    name: texto("Nome", 3),
+    code: texto("Código"),
+    category: z.enum(["Tecido", "Aviamento"]),
+    unit: z.enum(unidades.map((item) => item.value)),
+    cost: dinheiro,
+    quantity: quantidadeInsumo,
+    minimum: quantidadeInsumo,
+    description: z.string().trim().max(500, "Use até 500 caracteres."),
+  })
+  .superRefine((data, ctx) => {
+    if (!unidadeInteira(data.unit)) return
+    for (const key of ["quantity", "minimum"] as const)
+      if (!Number.isInteger(data[key]))
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: "Use uma quantidade inteira para esta unidade.",
+        })
+  })
+
+export type Insumo = z.infer<typeof insumoSchema>
+
 export function calcularVenda(custo: number, margem: number) {
   if (
     !Number.isFinite(custo) ||
