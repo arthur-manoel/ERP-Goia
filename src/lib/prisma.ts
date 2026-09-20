@@ -1,4 +1,6 @@
 import "server-only";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { databaseProvider, postgresqlNamespace } from "./database-config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "../generated/prisma/client";
 
@@ -10,13 +12,14 @@ function createPrismaClient() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("Defina DATABASE_URL no .env.local.");
 
+  if (databaseProvider(databaseUrl) === "postgresql") {
+    return new PrismaClient({ adapter: new PrismaPg({
+      connectionString: databaseUrl,
+      max: 5,
+      connectionTimeoutMillis: 10000,
+    }, { schema: postgresqlNamespace(databaseUrl) }) });
+  }
   const url = new URL(databaseUrl);
-  if (url.protocol !== "mysql:") {
-    throw new Error("DATABASE_URL deve usar o protocolo mysql://.");
-  }
-  if (decodeURIComponent(url.pathname.slice(1)) !== "joseev47_erp_dev") {
-    throw new Error("DATABASE_URL deve apontar somente para joseev47_erp_dev.");
-  }
   const adapter = new PrismaMariaDb({
     host: url.hostname,
     port: Number(url.port || 3306),

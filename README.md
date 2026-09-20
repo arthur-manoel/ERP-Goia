@@ -291,7 +291,13 @@ git push origin main develop --tags
 
 ### Contrato de autenticação
 
-Os helpers estão em `src/lib/{password,jwt,refreshToken,authorize}.ts`.
+A autenticação está em `src/modules/auth/`: `auth.schema.ts` valida entradas com
+Zod, `auth.repository.ts` concentra a persistência, `auth.service.ts` implementa
+as regras e `router.ts` cuida de HTTP e cookies. As rotas apenas reexportam os
+handlers. Os helpers antigos em `src/lib/{password,jwt,refreshToken,auth-cookies}.ts`
+reexportam as implementações para manter compatibilidade; `authorize.ts` mantém RBAC.
+As operações de refresh do repository são expostas dentro de callbacks
+transacionais, mantendo o bloqueio por usuário durante as decisões do service.
 `POST /api/auth/login` retorna `{ id, name, role, accessToken }` e grava o refresh
 no cookie `refresh_token`: httpOnly, secure em produção, sameSite lax,
 path `/api/auth`, validade de sete dias. `POST /api/auth/refresh` rotaciona o cookie
@@ -307,12 +313,47 @@ chama refresh para renovar o acesso; serialize as renovações, inclusive entre
 abas, pois reuso concorrente também causa revogação. Logout e alteração de perfil
 não invalidam JWTs já emitidos: eles permanecem válidos até expirar.
 
-O adapter `AuthDb` continua necessário: configure `configureAuthDb(db)` no
-bootstrap de cada processo com `getUserByEmail(email)` (incluindo passwordHash)
-e `getUserById(id)` (perfil atual). Retorne null para usuários inativos/inexistentes.
-Os IDs precisam corresponder a `usuarios.id` (inteiro); os perfis são
-`ADMINISTRACAO`, `PRODUCAO`, `VENDAS` e `FINANCEIRO`. O schema atual não define
-esses quatro perfis, portanto seu mapeamento permanece responsabilidade do adapter.
+O `src/instrumentation.ts` registra automaticamente o adapter Prisma em cada
+instância Node.js do Next, antes de atender requisições, usando o singleton de
+`src/lib/prisma.ts`. Não é necessário configurar o adapter nas rotas.
+O adapter consulta `usuarios`, traduz `nome`/`senha` para `name`/`passwordHash`
+e rejeita usuários inativos. O perfil é recalculado no login e no refresh:
+
+- `usuarios.nivel_acesso = ADMIN` corresponde a `ADMINISTRACAO`.
+- Para `USUARIO`, são considerados nomes de cargos ativos e nomes/tipos de
+  setores ativos em vínculos e empresas ativos. Os nomes reconhecidos são
+  `ADMINISTRACAO`/`ADMINISTRATIVO`, `PRODUCAO`, `VENDAS`/`COMERCIAL` e `FINANCEIRO`,
+  ignorando acentos, espaços nas extremidades e maiúsculas/minúsculas.
+- Nomes não reconhecidos não concedem perfil. Nenhum perfil reconhecido, ou mais
+  de um perfil distinto, impede autenticação: o JWT atual comporta um único perfil.
+  O nível `EMPRESA` de um vínculo não concede administração global automaticamente.
+
+O `.env.example` mantém MySQL/MariaDB como configuração principal. Para testar no
+Supabase, use `DATABASE_URL=postgresql://.../postgres?schema=erp_auth_test` no `.env`
+ou `.env.local`; `DIRECT_URL` é opcional para a conexão direta/session pooler da CLI.
+O driver é escolhido pela URL. A autenticação continua própria (tabela `usuarios`
+e senhas Argon2id); contas do Supabase Auth não são usuários do ERP automaticamente.
+
+Ao alternar de MySQL para PostgreSQL ou vice-versa, pare o Next e execute:
+
+```bash
+npm run db:generate
+npm run db:validate
+npm run dev
+```
+
+O Prisma gera um client para o provider selecionado. Para PostgreSQL, o config
+deriva `prisma/postgresql/schema.prisma` do schema principal, adaptando tipos
+nativos e nomes de constraints; esse arquivo é ignorado pelo Git. O schema e as
+migrations originais de MySQL são preservados. `db:pull` continua exclusivo do MySQL.
+A versão PostgreSQL serve para testes funcionais; não reproduz particularidades
+de collation, inteiros unsigned ou demais comportamentos específicos de MySQL.
+
+Para preparar um Supabase de teste vazio, execute `npm run db:setup:test`.
+O comando exige `?schema=erp_auth_test`, cria as tabelas nesse namespace em uma
+transação e não altera um schema que já exista. Não cria usuários nem senhas padrão.
+Os IDs usados na autenticação são `usuarios.id`. O MySQL continua restrito ao
+banco `joseev47_erp_dev`.
 A persistência dos refresh tokens usa Prisma diretamente, com hash SHA-256;
 `replacedBy` guarda o ID do registro sucessor. A tabela legada `refresh_tokens`
 é preservada e não é utilizada por este fluxo.
