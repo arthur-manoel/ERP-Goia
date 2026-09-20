@@ -17,6 +17,7 @@ export const pedidoSchema = z
       .array(
         z.object({
           productId: z.string().min(1, "Selecione um produto."),
+          variationId: z.string().optional(),
           quantity: inteiroPositivo,
           price: dinheiro.refine(
             (value) => value > 0,
@@ -35,13 +36,15 @@ export const pedidoSchema = z
       })
     const encontrados = new Set<string>()
     data.items.forEach((item, index) => {
-      if (encontrados.has(item.productId))
+      const chave = JSON.stringify([item.productId, item.variationId ?? ""])
+      if (encontrados.has(chave))
         ctx.addIssue({
           code: "custom",
           path: ["items", index, "productId"],
-          message: "Produto repetido. Ajuste a quantidade do item existente.",
+          message:
+            "Produto e variação repetidos. Ajuste a quantidade do item existente.",
         })
-      encontrados.add(item.productId)
+      encontrados.add(chave)
     })
   })
 

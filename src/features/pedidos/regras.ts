@@ -6,6 +6,20 @@ export function validarPedido(
   pedido: Omit<Pedido, "id">,
   id?: string,
 ) {
+  for (const item of pedido.items) {
+    const produto = dados.materials.find((row) => row.id === item.productId)
+    if (produto?.variations?.length && !item.variationId)
+      throw new Error(
+        "Selecione o tamanho e a cor de cada produto com variações.",
+      )
+    if (
+      item.variationId &&
+      !produto?.variations?.some((row) => row.id === item.variationId)
+    )
+      throw new Error(
+        "Uma variação do pedido não está cadastrada para o produto.",
+      )
+  }
   const cliente = dados.clients.find((row) => row.id === pedido.clientId)
   if (!cliente || cliente.role === "Fornecedor")
     throw new Error("Cliente não encontrado ou perfil incompatível.")

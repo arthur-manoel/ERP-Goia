@@ -48,6 +48,14 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 
 As 48 tabelas do banco `joseev47_erp_dev` estão distribuídas acima; cada uma aparece em um único módulo.
 
+### Interface de pedidos de venda
+
+O formulário de novo pedido e edição em `/vendas/pedidos` possui seleção de cliente, produto, tamanho e cor, preço sugerido pelo cadastro, subtotais e total automático. A disponibilidade por variação considera o saldo, outros pedidos abertos e ordens planejadas ou em produção com conclusão até a entrega. Uma insuficiência gera aviso e permite salvar para planejamento.
+
+As variações podem ser cadastradas nos produtos prontos do estoque (unidades ou peças) e selecionadas nas ordens de produção. Produtos sem grade continuam compatíveis. O saldo geral deve corresponder à soma das variações; uma variação vinculada não pode ser removida ou renomeada.
+
+**Status: front-end com adaptador temporário em memória.** Não cria reservas, não persiste após recarregar e não está conectado ao banco. Cadastros separados de cores/tamanhos, numeração automática e integração com as tabelas reais continuam pendentes. Nenhum dado de demonstração é carregado na aplicação.
+
 ---
 
 ## Roadmap

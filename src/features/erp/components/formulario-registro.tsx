@@ -14,6 +14,7 @@ import { schemas, type Collection, type Data } from "@/features/erp/tipos"
 import { unidades, calcularVenda } from "@/features/estoque/schemas"
 import { tiposEndereco as addressTypes } from "@/features/clientes/schemas"
 import { formatarMoeda as brl } from "@/lib/formatacao"
+
 import { useErp } from "./provedor"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,6 +35,7 @@ import {
 } from "@/components/ui/field"
 import { SearchSelect, type Option } from "./seletor-pesquisavel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { FormularioPedido } from "@/features/pedidos/components/formulario-pedido"
 
 type FormField = {
   key: string
@@ -45,7 +47,20 @@ type FormField = {
 }
 const options = (values: string[]) =>
   values.map((value) => ({ value, label: value }))
-export function RecordForm({
+type RecordFormProps = {
+  collection: Collection
+  initial: FieldValues
+  title: string
+  onClose: () => void
+  returnFocus: () => void
+}
+
+export function RecordForm(props: RecordFormProps) {
+  if (props.collection === "orders") return <FormularioPedido {...props} />
+  return <FormularioRegistro {...props} />
+}
+
+function FormularioRegistro({
   collection,
   initial,
   title,
@@ -69,7 +84,11 @@ export function RecordForm({
     control: form.control,
     name: "components",
   })
-  const items = useFieldArray({ control: form.control, name: "items" })
+
+  const variations = useFieldArray({
+    control: form.control,
+    name: "variations",
+  })
   const addresses = useFieldArray({ control: form.control, name: "addresses" })
   const values = useWatch({ control: form.control })
   const db = data as Data
@@ -146,6 +165,23 @@ export function RecordForm({
     productions: [
       { key: "code", label: "Código da ordem" },
       { key: "productId", label: "Produto pronto", options: productOptions },
+      ...(db.materials.find((produto) => produto.id === values.productId)
+        ?.variations?.length
+        ? [
+            {
+              key: "variationId",
+              label: "Tamanho / cor",
+              optional: true,
+              options: (
+                db.materials.find((produto) => produto.id === values.productId)
+                  ?.variations ?? []
+              ).map((variacao) => ({
+                value: variacao.id,
+                label: `${variacao.size} · ${variacao.color}`,
+              })),
+            },
+          ]
+        : []),
       { key: "quantity", label: "Quantidade de peças", type: "number" },
       {
         key: "status",
@@ -252,6 +288,14 @@ export function RecordForm({
                 options={field.options ?? []}
                 onValueChange={(value) => {
                   control.onChange(value)
+                  if (collection === "productions" && field.key === "productId")
+                    form.setValue("variationId", "")
+                  if (
+                    collection === "materials" &&
+                    field.key === "category" &&
+                    value !== "Produto pronto"
+                  )
+                    variations.replace([])
                   if (
                     collection === "materials" &&
                     ((field.key === "category" && value !== "Produto pronto") ||
@@ -382,6 +426,79 @@ export function RecordForm({
                 estoque, sem incluir impostos ou despesas adicionais.
               </p>
             )}
+            {collection === "materials" &&
+              values.category === "Produto pronto" && (
+                <section
+                  aria-label="Variações do produto"
+                  className="space-y-4 rounded-lg border p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-medium">
+                        Tamanhos e cores (opcional)
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        Cadastre as combinações vendidas por unidade ou peça. A
+                        soma dos saldos deve corresponder ao saldo atual do
+                        produto.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={variations.fields.length >= 100}
+                      onClick={() =>
+                        variations.append({
+                          id: crypto.randomUUID(),
+                          size: "",
+                          color: "",
+                          quantity: 0,
+                        })
+                      }
+                    >
+                      <Plus />
+                      Adicionar variação
+                    </Button>
+                  </div>
+                  {variations.fields.map((variacao, index) => (
+                    <div
+                      key={variacao.id}
+                      className="grid items-start gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]"
+                    >
+                      {renderField({
+                        key: `variations.${index}.size`,
+                        label: "Tamanho",
+                      })}
+                      {renderField({
+                        key: `variations.${index}.color`,
+                        label: "Cor",
+                      })}
+                      {renderField({
+                        key: `variations.${index}.quantity`,
+                        label: "Saldo",
+                        type: "number",
+                      })}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="sm:mt-7"
+                        aria-label={`Remover variação ${index + 1}`}
+                        onClick={() => variations.remove(index)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  ))}
+                  {form.formState.errors.variations && (
+                    <FieldError>
+                      Revise tamanhos, cores e saldos. Use combinações únicas e
+                      quantidades inteiras em um produto medido em unidades ou
+                      peças.
+                    </FieldError>
+                  )}
+                </section>
+              )}
             {collection === "materials" &&
               values.category === "Produto pronto" &&
               values.kind !== "Comprado" && (
@@ -578,80 +695,6 @@ export function RecordForm({
                   Cadastros antes de criar o lançamento.
                 </p>
               )}
-            {collection === "orders" && (
-              <section aria-label="Itens do pedido" className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Itens do pedido</h3>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      items.append({ productId: "", quantity: 1, price: 0 })
-                    }
-                  >
-                    <Plus />
-                    Adicionar item
-                  </Button>
-                </div>
-                {items.fields.map((item, index) => (
-                  <div
-                    className="grid gap-4 rounded-md border p-4 sm:grid-cols-[2fr_1fr_1fr_auto]"
-                    key={item.id}
-                  >
-                    {renderField({
-                      key: `items.${index}.productId`,
-                      label: `Produto ${index + 1}`,
-                      options: productOptions,
-                    })}
-                    {renderField({
-                      key: `items.${index}.quantity`,
-                      label: "Quantidade",
-                      type: "number",
-                    })}
-                    {renderField({
-                      key: `items.${index}.price`,
-                      label: "Preço (R$)",
-                      type: "number",
-                    })}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      type="button"
-                      className="sm:mt-7"
-                      aria-label={`Remover item ${index + 1}`}
-                      onClick={() => items.remove(index)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                ))}
-                {form.formState.errors.items && (
-                  <FieldError>
-                    Revise os itens: selecione produtos distintos, quantidades
-                    inteiras maiores que zero e preços positivos com até duas
-                    casas decimais.
-                  </FieldError>
-                )}
-                <p className="text-right font-medium">
-                  Total:{" "}
-                  {brl(
-                    (values.items ?? []).reduce(
-                      (
-                        total: number,
-                        item: { quantity: number; price: number },
-                      ) =>
-                        total +
-                        (Number.isFinite(item.price) &&
-                        Number.isFinite(item.quantity)
-                          ? (Math.round(item.price * 100) * item.quantity) / 100
-                          : 0),
-                      0,
-                    ),
-                  )}
-                </p>
-              </section>
-            )}
             {form.formState.errors.root?.server && (
               <Alert variant="destructive">
                 <AlertDescription>
