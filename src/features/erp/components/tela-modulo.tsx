@@ -620,7 +620,11 @@ export function TelaModulo({
               }[initialTab]
             : titles[module][0]
         }
-        descricao={titles[module][1]}
+        descricao={
+          collection === "orders"
+            ? "Monte pedidos e acompanhe valores, disponibilidade e prazos de entrega."
+            : titles[module][1]
+        }
         acoes={
           <Button ref={newButton} onClick={() => openForm()}>
             <Plus />

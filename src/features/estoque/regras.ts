@@ -18,6 +18,25 @@ export function validarMaterial(
     )
 
   const anterior = dados.materials.find((row) => row.id === id)
+  for (const variacao of anterior?.variations ?? []) {
+    const vinculada =
+      dados.orders.some((pedido) =>
+        pedido.items.some(
+          (item) => item.productId === id && item.variationId === variacao.id,
+        ),
+      ) ||
+      dados.productions.some(
+        (ordem) => ordem.productId === id && ordem.variationId === variacao.id,
+      )
+    const atual = material.variations?.find((item) => item.id === variacao.id)
+    if (
+      vinculada &&
+      (!atual || atual.size !== variacao.size || atual.color !== variacao.color)
+    )
+      throw new Error(
+        "Uma variação usada em pedidos ou ordens não pode ser removida nem ter tamanho ou cor alterados.",
+      )
+  }
   if (
     anterior &&
     anterior.unit !== material.unit &&

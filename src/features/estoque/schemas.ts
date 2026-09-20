@@ -50,6 +50,18 @@ export const materialSchema = z
     ),
     salePrice: dinheiro,
     kind: z.enum(["Comprado", "Fabricado", "Kit"]),
+    // Grade temporária do front-end, até a integração com produto_variacoes.
+    variations: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          size: texto("Tamanho", 1),
+          color: texto("Cor", 1),
+          quantity: numeroNaoNegativo.int("Use uma quantidade inteira."),
+        }),
+      )
+      .max(100, "Use até 100 variações.")
+      .optional(),
     components: z
       .array(
         z.object({
@@ -62,6 +74,42 @@ export const materialSchema = z
       .max(100, "Use até 100 componentes."),
   })
   .superRefine((data, ctx) => {
+    const variacoes = data.variations ?? []
+    const chaves = new Set<string>()
+    variacoes.forEach((variacao, index) => {
+      const chave = JSON.stringify([
+        variacao.size.toLocaleLowerCase("pt-BR"),
+        variacao.color.toLocaleLowerCase("pt-BR"),
+      ])
+      if (chaves.has(chave))
+        ctx.addIssue({
+          code: "custom",
+          path: ["variations", index, "color"],
+          message: "Esta combinação de tamanho e cor já existe.",
+        })
+      chaves.add(chave)
+    })
+    if (
+      variacoes.length &&
+      (data.category !== "Produto pronto" || !["un.", "pc"].includes(data.unit))
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["variations"],
+        message:
+          "Use variações somente em produtos prontos medidos em unidades ou peças.",
+      })
+    if (
+      variacoes.length &&
+      variacoes.reduce((total, item) => total + item.quantity, 0) !==
+        data.quantity
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["quantity"],
+        message:
+          "O saldo atual deve ser igual à soma dos saldos das variações.",
+      })
     if (unidadeInteira(data.unit))
       for (const key of ["quantity", "minimum"] as const)
         if (!Number.isInteger(data[key]))

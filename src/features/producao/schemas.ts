@@ -5,6 +5,7 @@ export const ordemProducaoSchema = z
   .object({
     code: texto("Código"),
     productId: z.string().min(1, "Selecione um produto pronto."),
+    variationId: z.string().optional(),
     quantity: inteiroPositivo,
     startDate: dataIso,
     dueDate: dataIso,
