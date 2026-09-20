@@ -119,7 +119,16 @@ export const navegacao: GrupoNavegacao[] = [
   },
   {
     titulo: "Vendas",
-    itens: [{ titulo: "Vendas", href: "/vendas", icone: BadgeDollarSign }],
+    itens: [
+      { titulo: "Pedidos de venda", href: "/vendas/pedidos", icone: FileText },
+      { titulo: "Vendas", href: "/vendas", icone: BadgeDollarSign },
+    ],
+  },
+  {
+    titulo: "Financeiro",
+    itens: [
+      { titulo: "Lançamentos", href: "/financeiro", icone: BadgeDollarSign },
+    ],
   },
   {
     titulo: "Administração",
