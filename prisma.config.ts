@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { databaseProvider } from "./src/lib/database-config";
 import { postgresqlSchema } from "./scripts/postgresql-schema";
 
-loadEnvConfig(process.cwd());
+loadEnvConfig(process.cwd())
 
 // O banco compartilhado continua protegido; migrations só no MySQL local.
 const [command, subcommand] = process.argv.slice(2);
@@ -22,7 +22,7 @@ const alteraEstrutura =
 if (alteraEstrutura && !localMigration) {
   throw new Error(
     `prisma ${command} ${subcommand ?? ""} não é permitido: o banco é a fonte da verdade. Altere a estrutura no MySQL e rode npm run db:pull.`,
-  );
+  )
 }
 
 let schema = "prisma/schema.prisma";
@@ -40,4 +40,4 @@ export default defineConfig({
   datasource: {
     url: cliUrl,
   },
-});
+})
