@@ -1,32 +1,35 @@
-import "server-only";
-import type { Prisma } from "@/generated/prisma/client";
-import { postgresqlNamespace } from "@/lib/database-config";
-import { getAuthDb, type SessionUser } from "@/lib/auth-db";
+import "server-only"
+import type { Prisma } from "@/generated/prisma/client"
+import { postgresqlNamespace } from "@/lib/database-config"
+import { getAuthDb, type SessionUser } from "@/lib/auth-db"
 
 // O adapter existente resolve os perfis que não estão representados no schema Prisma.
 export function findUserByEmail(email: string) {
-  return getAuthDb().getUserByEmail(email);
+  return getAuthDb().getUserByEmail(email)
 }
 
 export function findUserById(id: SessionUser["id"]) {
-  return getAuthDb().getUserById(id);
+  return getAuthDb().getUserById(id)
 }
 
 async function lockUser(tx: Prisma.TransactionClient, userId: number) {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL
   if (url && /^postgres(?:ql)?:/.test(url)) {
-    const schema = postgresqlNamespace(url);
+    const schema = postgresqlNamespace(url)
     // O identificador é validado; o ID continua parametrizado.
-    await tx.$queryRawUnsafe(`SELECT id FROM "${schema}"."usuarios" WHERE id = $1 FOR UPDATE`, userId);
+    await tx.$queryRawUnsafe(
+      `SELECT id FROM "${schema}"."usuarios" WHERE id = $1 FOR UPDATE`,
+      userId,
+    )
   } else {
-    await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${userId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${userId} FOR UPDATE`
   }
 }
 
 interface NewRefreshToken {
-  userId: number;
-  tokenHash: string;
-  expiresAt: Date;
+  userId: number
+  tokenHash: string
+  expiresAt: Date
 }
 
 function tokenData(data: NewRefreshToken) {
@@ -36,60 +39,76 @@ function tokenData(data: NewRefreshToken) {
     token: data.tokenHash,
     data_criacao: new Date(),
     data_expiracao: data.expiresAt,
-  };
+  }
 }
 
 function tokenOperations(tx: Prisma.TransactionClient) {
   return {
     findRefreshTokenByHash(tokenHash: string) {
-      return tx.refresh_tokens.findUnique({ where: { token: tokenHash } });
+      return tx.refresh_tokens.findUnique({ where: { token: tokenHash } })
     },
     createRefreshToken(data: NewRefreshToken) {
-      return tx.refresh_tokens.create({ data: tokenData(data) });
+      return tx.refresh_tokens.create({ data: tokenData(data) })
     },
     async rotateRefreshToken(oldId: number, data: NewRefreshToken) {
-      const next = await tx.refresh_tokens.create({ data: tokenData(data) });
+      const next = await tx.refresh_tokens.create({ data: tokenData(data) })
       await tx.refresh_tokens.update({
-        where: { id: oldId }, data: { revogado: true, data_revogacao: new Date(), replaced_by: next.id },
-      });
-      return next;
+        where: { id: oldId },
+        data: {
+          revogado: true,
+          data_revogacao: new Date(),
+          replaced_by: next.id,
+        },
+      })
+      return next
     },
     revokeAllUserTokens(userId: number) {
       return tx.refresh_tokens.updateMany({
         where: { id_usuario: userId, revogado: false },
         data: { revogado: true, data_revogacao: new Date() },
-      });
+      })
     },
     revokeRefreshTokenByHash(tokenHash: string) {
-      return tx.refresh_tokens.updateMany({ where: { token: tokenHash, revogado: false },
-        data: { revogado: true, data_revogacao: new Date() } });
+      return tx.refresh_tokens.updateMany({
+        where: { token: tokenHash, revogado: false },
+        data: { revogado: true, data_revogacao: new Date() },
+      })
     },
-  };
+  }
 }
 
-export type RefreshTokenRepository = ReturnType<typeof tokenOperations>;
+export type RefreshTokenRepository = ReturnType<typeof tokenOperations>
 
 /** Mantém leitura, rotação e revogação sob o mesmo bloqueio por usuário. */
 export async function withUserTokens<T>(
   userId: number,
   operation: (repository: RefreshTokenRepository) => Promise<T>,
 ): Promise<T> {
-  const { prisma } = await import("@/lib/prisma");
-  return prisma.$transaction(async (tx) => {
-    await lockUser(tx, userId);
-    return operation(tokenOperations(tx));
-  }, { isolationLevel: "ReadCommitted" });
+  const { prisma } = await import("@/lib/prisma")
+  return prisma.$transaction(
+    async (tx) => {
+      await lockUser(tx, userId)
+      return operation(tokenOperations(tx))
+    },
+    { isolationLevel: "ReadCommitted" },
+  )
 }
 
 export async function withRefreshToken<T>(
   tokenHash: string,
   operation: (repository: RefreshTokenRepository) => Promise<T>,
 ): Promise<T | null> {
-  const { prisma } = await import("@/lib/prisma");
-  return prisma.$transaction(async (tx) => {
-    const owner = await tx.refresh_tokens.findUnique({ where: { token: tokenHash }, select: { id_usuario: true } });
-    if (!owner) return null;
-    await lockUser(tx, owner.id_usuario);
-    return operation(tokenOperations(tx));
-  }, { isolationLevel: "ReadCommitted" });
+  const { prisma } = await import("@/lib/prisma")
+  return prisma.$transaction(
+    async (tx) => {
+      const owner = await tx.refresh_tokens.findUnique({
+        where: { token: tokenHash },
+        select: { id_usuario: true },
+      })
+      if (!owner) return null
+      await lockUser(tx, owner.id_usuario)
+      return operation(tokenOperations(tx))
+    },
+    { isolationLevel: "ReadCommitted" },
+  )
 }

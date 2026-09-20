@@ -1,1 +1,5 @@
-export { signAccessToken, verifyAccessToken, type AccessTokenPayload } from "@/modules/auth/auth.service";
+export {
+  signAccessToken,
+  verifyAccessToken,
+  type AccessTokenPayload,
+} from "@/modules/auth/auth.service"

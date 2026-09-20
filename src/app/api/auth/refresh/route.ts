@@ -1,1 +1,1 @@
-export { refreshHandler as POST } from "@/modules/auth/router";
+export { refreshHandler as POST } from "@/modules/auth/router"
