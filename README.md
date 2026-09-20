@@ -56,6 +56,14 @@ As variações podem ser cadastradas nos produtos prontos do estoque (unidades o
 
 **Status: front-end com adaptador temporário em memória.** Não cria reservas, não persiste após recarregar e não está conectado ao banco. Cadastros separados de cores/tamanhos, numeração automática e integração com as tabelas reais continuam pendentes. Nenhum dado de demonstração é carregado na aplicação.
 
+### Interface de insumos
+
+A tela `/estoque/insumos` reúne tecidos e aviamentos com busca, filtros por tipo e situação, indicadores clicáveis de estoque e formulário de cadastro e edição. Os destaques de reposição usam o saldo atual e o estoque mínimo informados no cadastro.
+
+A tela `/estoque` consolida os saldos de insumos e produtos prontos em modo de consulta. Cadastros de tecidos e aviamentos são feitos somente em `/estoque/insumos`; alterações de saldo devem passar pelas movimentações de estoque.
+
+**Status: front-end com adaptador temporário em memória.** Os cadastros não persistem após recarregar e ainda não estão conectados ao banco.
+
 ---
 
 ## Roadmap
