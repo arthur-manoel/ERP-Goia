@@ -22,7 +22,9 @@ import {
   ShoppingCart,
   Tags,
   Truck,
+  TrendingUp,
   UserCog,
+  Wallet,
   Users,
   Warehouse,
   type LucideIcon,
@@ -74,7 +76,6 @@ export const navegacao: GrupoNavegacao[] = [
   {
     titulo: "Estoque",
     itens: [
-      { titulo: "Insumos", href: "/estoque/insumos", icone: Package },
       { titulo: "Saldos", href: "/estoque", icone: Warehouse },
       {
         titulo: "Movimentação",
@@ -129,6 +130,16 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Financeiro",
     itens: [
       { titulo: "Lançamentos", href: "/financeiro", icone: BadgeDollarSign },
+      {
+        titulo: "Fluxo de caixa",
+        href: "/financeiro/fluxo-caixa",
+        icone: Wallet,
+      },
+      {
+        titulo: "Relatório de resultado",
+        href: "/financeiro/resultado",
+        icone: TrendingUp,
+      },
     ],
   },
   {
