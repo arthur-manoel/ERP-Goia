@@ -24,6 +24,7 @@ import {
   Truck,
   UserCog,
   Users,
+  Wallet,
   Warehouse,
   type LucideIcon,
 } from "lucide-react"
@@ -129,6 +130,11 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Financeiro",
     itens: [
       { titulo: "Lançamentos", href: "/financeiro", icone: BadgeDollarSign },
+      {
+        titulo: "Fluxo de caixa",
+        href: "/financeiro/fluxo-caixa",
+        icone: Wallet,
+      },
     ],
   },
   {
