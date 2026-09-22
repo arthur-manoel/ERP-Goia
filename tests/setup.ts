@@ -1,9 +1,12 @@
-import { beforeEach, vi } from "vitest";
-import { db } from "./helpers/prisma";
+import { beforeEach, vi } from "vitest"
+import { db } from "./helpers/prisma"
 
-vi.mock("../src/lib/prisma", async () => ({ prisma: (await import("./helpers/prisma")).db }));
+vi.mock("../src/lib/prisma", async () => ({
+  prisma: (await import("./helpers/prisma")).db,
+}))
 beforeEach(() => {
-  vi.resetAllMocks();
+  vi.resetAllMocks()
   db.$transaction.mockImplementation(async (operation) =>
-    typeof operation === "function" ? operation(db) : Promise.all(operation));
-});
+    typeof operation === "function" ? operation(db) : Promise.all(operation),
+  )
+})

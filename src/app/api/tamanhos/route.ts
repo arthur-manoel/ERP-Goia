@@ -1,9 +1,12 @@
-import { handleRequest, readJson, readQuery } from "../../../lib/api/http";
-import { createTamanho, listTamanhos } from "../../../../modules/tamanhos/service";
-export const runtime = "nodejs";
+import { handleRequest, readJson, readQuery } from "../../../lib/api/http"
+import {
+  createTamanho,
+  listTamanhos,
+} from "../../../../modules/tamanhos/service"
+export const runtime = "nodejs"
 export async function GET(request: Request) {
-  return handleRequest( () => listTamanhos(readQuery(request)));
+  return handleRequest(() => listTamanhos(readQuery(request)))
 }
 export async function POST(request: Request) {
-  return handleRequest( async () => createTamanho(await readJson(request)), 201);
+  return handleRequest(async () => createTamanho(await readJson(request)), 201)
 }

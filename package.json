@@ -9,6 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
     "db:pull": "prisma db pull && prisma generate",
     "db:generate": "prisma generate",
