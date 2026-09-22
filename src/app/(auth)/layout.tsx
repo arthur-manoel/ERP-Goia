@@ -1,6 +1,7 @@
+import type { ReactNode } from "react"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
 
-export default function AuthLayout({ children }: LayoutProps<"/">) {
+export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <main className="relative flex min-h-svh items-center justify-center bg-muted/40 px-4 py-20">
       <div className="absolute top-4 right-4">
