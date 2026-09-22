@@ -64,9 +64,8 @@ function setup() {
         try {
           return await fn({
             refresh_tokens: table,
-            $queryRaw: async () => [],
-            $queryRawUnsafe: async (sql, ...values) => {
-              rawQueries.push({ sql, values })
+            $queryRaw: async (parts, ...values) => {
+              rawQueries.push({ sql: parts.join("?"), values })
               return []
             },
           })
@@ -475,46 +474,31 @@ test("instrumentation: inicializa adapter Prisma antes do login e ignora Edge", 
   }
 })
 
-test("configuração de banco: MySQL preservado e PostgreSQL com schema validado", () => {
+test("configuração de banco: aceita somente MySQL e preserva a proteção do banco remoto", () => {
   const { load } = setup()
-  const { databaseProvider, postgresqlNamespace } = load(
-    "src/lib/database-config.ts",
-  )
-  assert.equal(databaseProvider("mysql://localhost/joseev47_erp_dev"), "mysql")
+  const { databaseProvider } = load("src/lib/database-config.ts")
   assert.equal(databaseProvider("mysql://localhost/compet"), "mysql")
-  assert.throws(() => databaseProvider("mysql://localhost/"))
-  assert.throws(() => databaseProvider("mysql://remote.example/outro"))
   assert.equal(
-    databaseProvider("postgresql://localhost/postgres"),
-    "postgresql",
+    databaseProvider("mysql://remote.example/joseev47_erp_dev"),
+    "mysql",
   )
-  assert.equal(databaseProvider("postgres://localhost/postgres"), "postgresql")
-  assert.throws(() => databaseProvider("https://localhost/postgres"))
-  assert.equal(postgresqlNamespace("postgresql://localhost/postgres"), "public")
-  assert.equal(
-    postgresqlNamespace("postgresql://localhost/postgres?schema=erp_auth_test"),
-    "erp_auth_test",
-  )
-  assert.throws(() =>
-    postgresqlNamespace("postgresql://localhost/postgres?schema=bad%22schema"),
-  )
+  for (const url of [
+    "mysql://localhost/",
+    "mysql://remote.example/outro",
+    "postgresql://localhost/test",
+    "postgres://localhost/test",
+    "https://localhost/test",
+  ])
+    assert.throws(() => databaseProvider(url))
 })
 
-test("PostgreSQL: bloqueio de rotação qualifica schema e parametriza ID", async () => {
+test("MySQL: bloqueio de rotação parametriza o ID do usuário", async () => {
   const { load, rawQueries } = setup()
-  const previousUrl = process.env.DATABASE_URL
-  try {
-    process.env.DATABASE_URL =
-      "postgresql://localhost/postgres?schema=erp_auth_test"
-    await load("src/modules/auth/auth.service.ts").issueRefreshToken(42)
-    assert.deepEqual(rawQueries, [
-      {
-        sql: 'SELECT id FROM "erp_auth_test"."usuarios" WHERE id = $1 FOR UPDATE',
-        values: [42],
-      },
-    ])
-  } finally {
-    if (previousUrl === undefined) delete process.env.DATABASE_URL
-    else process.env.DATABASE_URL = previousUrl
-  }
+  await load("src/modules/auth/auth.service.ts").issueRefreshToken(42)
+  assert.deepEqual(rawQueries, [
+    {
+      sql: "SELECT id FROM usuarios WHERE id = ? FOR UPDATE",
+      values: [42],
+    },
+  ])
 })

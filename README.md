@@ -372,32 +372,12 @@ e rejeita usuários inativos. O perfil é recalculado no login e no refresh:
   de um perfil distinto, impede autenticação: o JWT atual comporta um único perfil.
   O nível `EMPRESA` de um vínculo não concede administração global automaticamente.
 
-O `.env.example` mantém MySQL/MariaDB como configuração principal. Para testar no
-Supabase, use `DATABASE_URL=postgresql://.../postgres?schema=erp_auth_test` no `.env`
-ou `.env.local`; `DIRECT_URL` é opcional para a conexão direta/session pooler da CLI.
-O driver é escolhido pela URL. A autenticação continua própria (tabela `usuarios`
-e senhas Argon2id); contas do Supabase Auth não são usuários do ERP automaticamente.
+O projeto usa exclusivamente MySQL/MariaDB, com `DATABASE_URL=mysql://...`.
+O Prisma utiliza `prisma/schema.prisma` e o adapter MariaDB também nas integrações
+com MySQL. O banco remoto continua restrito a `joseev47_erp_dev`; bancos locais
+de testes podem usar outros nomes. Após instalar as dependências, gere e valide
+o client com `npm run db:generate` e `npm run db:validate`.
 
-Ao alternar de MySQL para PostgreSQL ou vice-versa, pare o Next e execute:
-
-```bash
-npm run db:generate
-npm run db:validate
-npm run dev
-```
-
-O Prisma gera um client para o provider selecionado. Para PostgreSQL, o config
-deriva `prisma/postgresql/schema.prisma` do schema principal, adaptando tipos
-nativos e nomes de constraints; esse arquivo é ignorado pelo Git. O schema e as
-migrations originais de MySQL são preservados. `db:pull` continua exclusivo do MySQL.
-A versão PostgreSQL serve para testes funcionais; não reproduz particularidades
-de collation, inteiros unsigned ou demais comportamentos específicos de MySQL.
-
-Para preparar um Supabase de teste vazio, execute `npm run db:setup:test`.
-O comando exige `?schema=erp_auth_test`, cria as tabelas nesse namespace em uma
-transação e não altera um schema que já exista. Não cria usuários nem senhas padrão.
-Os IDs usados na autenticação são `usuarios.id`. O MySQL remoto continua restrito ao
-banco `joseev47_erp_dev`; bancos locais de testes podem usar outros nomes.
 A persistência dos refresh tokens usa Prisma diretamente, com hash SHA-256;
 o hash fica na coluna `token` da tabela existente `refresh_tokens`.
 `replaced_by` guarda o ID inteiro do registro sucessor e `data_revogacao`
@@ -442,24 +422,8 @@ Para usar o MySQL local configurado no `.env`, inclusive um banco chamado `compe
 execute `npm run db:generate` e `node tests/auth.integration.test.mjs --configured-db`
 após aplicar as migrations na cópia de testes.
 
-Para usar o PostgreSQL de testes já configurado no `.env`, com
-`?schema=erp_auth_test`, prepare a coluna de rotação nesse schema:
-
-```sql
-ALTER TABLE "erp_auth_test"."refresh_tokens"
-  ADD COLUMN IF NOT EXISTS "replaced_by" INTEGER NULL;
-```
-
-Depois, gere o client para o provider configurado e execute:
-
-```bash
-npm run db:generate
-node tests/auth.integration.test.mjs --configured-db
-```
-
-O teste PostgreSQL valida a persistência real do fluxo de autenticação; a migration
-MySQL precisa ser validada em MySQL/MariaDB. Sem `AUTH_TEST_DATABASE_URL` ou
-`--configured-db`, o teste de integração é marcado como ignorado.
+Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
+é marcado como ignorado. Os testes de integração aceitam somente MySQL local.
 
 | Item | Situação |
 | --- | --- |

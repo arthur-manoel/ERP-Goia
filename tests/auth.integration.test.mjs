@@ -22,16 +22,12 @@ test(
   },
   async () => {
     const url = new URL(databaseUrl)
-    if (["postgres:", "postgresql:"].includes(url.protocol)) {
-      assert.equal(url.searchParams.get("schema"), "erp_auth_test")
-    } else {
-      assert.equal(url.protocol, "mysql:")
-      assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
-      assert.ok(
-        url.pathname.length > 1,
-        "Informe o nome do banco local de testes",
-      )
-    }
+    assert.equal(url.protocol, "mysql:")
+    assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+    assert.ok(
+      url.pathname.length > 1,
+      "Informe o nome do banco local de testes",
+    )
     process.env.DATABASE_URL = databaseUrl
     process.env.ACCESS_TOKEN_SECRET = "integration-test-secret-only"
 

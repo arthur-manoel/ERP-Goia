@@ -1,6 +1,5 @@
 import "server-only"
 import type { Prisma } from "@/generated/prisma/client"
-import { postgresqlNamespace } from "@/lib/database-config"
 import { getAuthDb, type SessionUser } from "@/lib/auth-db"
 
 // O adapter existente resolve os perfis que não estão representados no schema Prisma.
@@ -13,17 +12,7 @@ export function findUserById(id: SessionUser["id"]) {
 }
 
 async function lockUser(tx: Prisma.TransactionClient, userId: number) {
-  const url = process.env.DATABASE_URL
-  if (url && /^postgres(?:ql)?:/.test(url)) {
-    const schema = postgresqlNamespace(url)
-    // O identificador é validado; o ID continua parametrizado.
-    await tx.$queryRawUnsafe(
-      `SELECT id FROM "${schema}"."usuarios" WHERE id = $1 FOR UPDATE`,
-      userId,
-    )
-  } else {
-    await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${userId} FOR UPDATE`
-  }
+  await tx.$queryRaw`SELECT id FROM usuarios WHERE id = ${userId} FOR UPDATE`
 }
 
 interface NewRefreshToken {
