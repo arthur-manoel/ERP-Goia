@@ -87,9 +87,11 @@ export function RelatorioResultado() {
   const client = (id: string) =>
     data.clients.find((row) => row.id === id)?.name ?? "Cadastro não encontrado"
 
-  const noPeriodo = data.transactions.filter(
-    (row) => row.dueDate >= de && row.dueDate <= ate,
-  )
+  const periodoValido = Boolean(de) && Boolean(ate) && de <= ate
+
+  const noPeriodo = periodoValido
+    ? data.transactions.filter((row) => row.dueDate >= de && row.dueDate <= ate)
+    : []
 
   const receita = noPeriodo
     .filter((row) => row.type === "Receber")
@@ -111,6 +113,7 @@ export function RelatorioResultado() {
             aria-label="De"
             value={de}
             onChange={(e) => setDe(e.target.value)}
+            aria-invalid={!periodoValido}
             className="w-[160px]"
           />
           <span className="text-sm text-muted-foreground">até</span>
@@ -119,9 +122,17 @@ export function RelatorioResultado() {
             aria-label="Até"
             value={ate}
             onChange={(e) => setAte(e.target.value)}
+            aria-invalid={!periodoValido}
             className="w-[160px]"
           />
         </div>
+        {!periodoValido && (
+          <span className="text-sm text-destructive">
+            {!de || !ate
+              ? "Preencha as duas datas do período."
+              : 'A data "De" não pode ser depois da data "Até".'}
+          </span>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -218,10 +229,15 @@ export function RelatorioResultado() {
                     <TableCell colSpan={5} className="h-32 text-center">
                       <Empty>
                         <EmptyHeader>
-                          <EmptyTitle>Nenhum lançamento no período.</EmptyTitle>
+                          <EmptyTitle>
+                            {periodoValido
+                              ? "Nenhum lançamento no período."
+                              : "Selecione um período válido."}
+                          </EmptyTitle>
                           <EmptyDescription>
-                            Altere as datas ou cadastre lançamentos em
-                            Financeiro.
+                            {periodoValido
+                              ? "Altere as datas ou cadastre lançamentos em Financeiro."
+                              : 'Preencha as duas datas, com "De" antes ou igual a "Até".'}
                           </EmptyDescription>
                         </EmptyHeader>
                       </Empty>
