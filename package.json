@@ -7,10 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "next typegen && tsc --noEmit",
-    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format:check": "prettier --check .",
-    "prepare": "husky",
+    "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
     "db:pull": "prisma db pull && prisma generate",
     "db:generate": "prisma generate",
@@ -64,7 +64,8 @@
     "prettier-plugin-tailwindcss": "^0.8.1",
     "prisma": "7.10.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": "^20.19 || ^22.12 || >=24.0"
