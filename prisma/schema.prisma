@@ -789,6 +789,7 @@ model refresh_tokens {
   data_expiracao DateTime  @db.DateTime(0)
   revogado       Boolean   @default(false)
   data_revogacao DateTime? @db.DateTime(0)
+  replaced_by    Int?
   ip             String?   @db.VarChar(45)
   user_agent     String?   @db.VarChar(255)
   usuarios       usuarios  @relation(fields: [id_usuario], references: [id], onDelete: Cascade, map: "fk_refresh_token_usuario")

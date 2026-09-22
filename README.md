@@ -204,7 +204,7 @@ Fluxo para mudar a estrutura:
 **Proteções** (em `prisma.config.ts` e `src/lib/prisma.ts`):
 
 - `prisma migrate *` (exceto `migrate diff`) e `prisma db push` são bloqueados para que ninguém altere o banco compartilhado a partir do schema.
-- `DATABASE_URL` só é aceita se apontar para o banco `joseev47_erp_dev`.
+- No MySQL remoto, `DATABASE_URL` só aceita o banco `joseev47_erp_dev`. Em localhost/127.0.0.1/::1, também aceita outros nomes para bancos locais de testes, como `compet`.
 
 **Uso no código.** O cliente é `server-only`. Use-o em Server Components, Server Actions e Route Handlers, sempre filtrando pela empresa da sessão. O padrão completo está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md#anatomia-de-um-módulo).
 
@@ -332,6 +332,98 @@ git push origin main develop --tags
 ---
 
 ## Pendências e decisões
+
+### Contrato de autenticação
+
+A autenticação está em `src/modules/auth/`: `auth.schema.ts` valida entradas com
+Zod, `auth.repository.ts` concentra a persistência, `auth.service.ts` implementa
+as regras e `router.ts` cuida de HTTP e cookies. As rotas apenas reexportam os
+handlers. Os helpers antigos em `src/lib/{password,jwt,refreshToken,auth-cookies}.ts`
+reexportam as implementações para manter compatibilidade; `authorize.ts` mantém RBAC.
+As operações de refresh do repository são expostas dentro de callbacks
+transacionais, mantendo o bloqueio por usuário durante as decisões do service.
+`POST /api/auth/login` retorna `{ id, name, role, accessToken }` e grava o refresh
+no cookie `refresh_token`: httpOnly, secure em produção, sameSite lax,
+path `/api/auth`, validade de sete dias. `POST /api/auth/refresh` rotaciona o cookie
+e retorna `{ accessToken }`; token ausente, expirado, revogado ou reutilizado
+retorna 401. Reuso de token já rotacionado revoga todos os refresh tokens do usuário.
+`POST /api/auth/logout` revoga o refresh e limpa o cookie. O cookie antigo
+`session_id` é removido nos fluxos de autenticação.
+
+Configure `ACCESS_TOKEN_SECRET` com um segredo aleatório por ambiente (o `.env`
+local é ignorado pelo Git). Os JWTs usam HS256 e expiram em 15 minutos.
+O cliente envia `Authorization: Bearer <accessToken>` nas rotas protegidas e
+chama refresh para renovar o acesso; serialize as renovações, inclusive entre
+abas, pois reuso concorrente também causa revogação. Logout e alteração de perfil
+não invalidam JWTs já emitidos: eles permanecem válidos até expirar.
+
+O `src/instrumentation.ts` registra automaticamente o adapter Prisma em cada
+instância Node.js do Next, antes de atender requisições, usando o singleton de
+`src/lib/prisma.ts`. Não é necessário configurar o adapter nas rotas.
+O adapter consulta `usuarios`, traduz `nome`/`senha` para `name`/`passwordHash`
+e rejeita usuários inativos. O perfil é recalculado no login e no refresh:
+
+- `usuarios.nivel_acesso = ADMIN` corresponde a `ADMINISTRACAO`.
+- Para `USUARIO`, são considerados nomes de cargos ativos e nomes/tipos de
+  setores ativos em vínculos e empresas ativos. Os nomes reconhecidos são
+  `ADMINISTRACAO`/`ADMINISTRATIVO`, `PRODUCAO`, `VENDAS`/`COMERCIAL` e `FINANCEIRO`,
+  ignorando acentos, espaços nas extremidades e maiúsculas/minúsculas.
+- Nomes não reconhecidos não concedem perfil. Nenhum perfil reconhecido, ou mais
+  de um perfil distinto, impede autenticação: o JWT atual comporta um único perfil.
+  O nível `EMPRESA` de um vínculo não concede administração global automaticamente.
+
+O projeto usa exclusivamente MySQL/MariaDB, com `DATABASE_URL=mysql://...`.
+O Prisma utiliza `prisma/schema.prisma` e o adapter MariaDB também nas integrações
+com MySQL. O banco remoto continua restrito a `joseev47_erp_dev`; bancos locais
+de testes podem usar outros nomes. Após instalar as dependências, gere e valide
+o client com `npm run db:generate` e `npm run db:validate`.
+
+A persistência dos refresh tokens usa Prisma diretamente, com hash SHA-256;
+o hash fica na coluna `token` da tabela existente `refresh_tokens`.
+`replaced_by` guarda o ID inteiro do registro sucessor e `data_revogacao`
+registra a rotação, o logout ou a revogação por reutilização.
+
+```ts
+const auth = await requireRole(request, ["ADMINISTRACAO", "FINANCEIRO"]);
+if (auth.error) return auth.error;
+// auth.user contém id e role; nenhuma consulta ao banco nesta autorização.
+```
+
+A migration `prisma/migrations/20260920000000_refresh_token_rotation/migration.sql`
+adiciona somente `replaced_by INTEGER NULL` à tabela `refresh_tokens`.
+Aplique essa alteração antes de subir o código. A migration que criava a tabela
+paralela foi removida. Se ela já foi aplicada em algum ambiente, reconcilie o
+histórico antes do deploy; esta alteração não remove automaticamente tabelas existentes.
+O projeto veio de introspecção, sem histórico de migrations; foi gerado um baseline do schema anterior em `20260918000000_baseline`.
+Para uma cópia local existente, confira a equivalência do schema antes de registrar
+esse baseline com `npx prisma migrate resolve --applied 20260918000000_baseline`.
+Em banco vazio, as duas migrations serão aplicadas. O baseline reflete o Prisma;
+constraints não representadas pelo ORM precisam ser preservadas no dump local. Não aceite reset de um banco com dados a preservar. A configuração
+permite migrations apenas para localhost/127.0.0.1/::1; mantém a proteção do
+banco compartilhado. Depois de configurar a cópia local e o baseline, execute:
+
+```bash
+npx prisma migrate deploy
+npx prisma generate
+node --test tests/auth.test.mjs
+```
+
+Teste de integração (Node >=22.15) com persistência e adapter de usuários reais:
+use uma cópia **local de testes** MySQL/MariaDB com o baseline e a migration
+acima aplicados. O teste cria usuários próprios e os remove ao terminar.
+Por padrão, ele exige `AUTH_TEST_DATABASE_URL` e não aplica DDL automaticamente.
+
+```bash
+DATABASE_URL=mysql://USER:PASSWORD@127.0.0.1:3306/joseev47_erp_dev npm run db:generate
+AUTH_TEST_DATABASE_URL=mysql://USER:PASSWORD@127.0.0.1:3306/joseev47_erp_dev node --test tests/auth.integration.test.mjs
+```
+
+Para usar o MySQL local configurado no `.env`, inclusive um banco chamado `compet`,
+execute `npm run db:generate` e `node tests/auth.integration.test.mjs --configured-db`
+após aplicar as migrations na cópia de testes.
+
+Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
+é marcado como ignorado. Os testes de integração aceitam somente MySQL local.
 
 | Item | Situação |
 | --- | --- |
