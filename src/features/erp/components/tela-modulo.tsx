@@ -74,7 +74,10 @@ const statusBadge = (value: string, danger = false) => (
   <Badge variant={danger ? "destructive" : "outline"}>{value}</Badge>
 )
 const titles = {
-  estoque: ["Controle de estoque", "Tecidos, aviamentos e produtos prontos."],
+  estoque: [
+    "Saldos de estoque",
+    "Consulte os saldos de tecidos, aviamentos e produtos prontos.",
+  ],
   producao: [
     "Ordens de produção",
     "Organize os lotes, prazos e etapas da confecção.",
@@ -120,6 +123,7 @@ export function TelaModulo({
   const [busy, setBusy] = useState(false)
   const newButton = useRef<HTMLButtonElement>(null)
   const returnTo = useRef<HTMLElement | null>(null)
+  const somenteConsulta = module === "estoque"
   if (error)
     return (
       <Alert variant="destructive">
@@ -542,9 +546,11 @@ export function TelaModulo({
                   )}
                 </TableHead>
               ))}
-              <TableHead>
-                <span className="sr-only">Ações</span>
-              </TableHead>
+              {!somenteConsulta && (
+                <TableHead>
+                  <span className="sr-only">Ações</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -556,69 +562,75 @@ export function TelaModulo({
                       {cell}
                     </TableCell>
                   ))}
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-1">
-                      {collection === "transactions" &&
-                        "status" in row.raw &&
-                        row.raw.status === "Em aberto" && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            aria-label={`Dar baixa em ${row.label}`}
-                            onClick={() => openForm(row.raw, true)}
-                          >
-                            <CircleCheck />
-                            Dar baixa
-                          </Button>
-                        )}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
+                  {!somenteConsulta && (
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        {collection === "transactions" &&
+                          "status" in row.raw &&
+                          row.raw.status === "Em aberto" && (
                             <Button
-                              size="icon"
-                              variant="ghost"
-                              aria-label={`Ações de ${row.label}`}
-                            />
-                          }
-                        >
-                          <MoreHorizontal />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuGroup>
-                            <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => openForm(row.raw)}>
-                              Editar
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => {
-                                returnTo.current =
-                                  document.activeElement as HTMLElement
-                                setDeleting(row)
-                              }}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              aria-label={`Dar baixa em ${row.label}`}
+                              onClick={() => openForm(row.raw, true)}
                             >
-                              Excluir
-                            </DropdownMenuItem>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </TableCell>
+                              <CircleCheck />
+                              Dar baixa
+                            </Button>
+                          )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                aria-label={`Ações de ${row.label}`}
+                              />
+                            }
+                          >
+                            <MoreHorizontal />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuGroup>
+                              <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                              <DropdownMenuItem
+                                onClick={() => openForm(row.raw)}
+                              >
+                                Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={() => {
+                                  returnTo.current =
+                                    document.activeElement as HTMLElement
+                                  setDeleting(row)
+                                }}
+                              >
+                                Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={headings.length + 1}
+                  colSpan={headings.length + (somenteConsulta ? 0 : 1)}
                   className="h-32 text-center"
                 >
                   <Empty>
                     <EmptyHeader>
                       <EmptyTitle>Nenhum registro encontrado.</EmptyTitle>
                       <EmptyDescription>
-                        Altere os filtros ou adicione um novo cadastro.
+                        {somenteConsulta
+                          ? "Altere os filtros ou cadastre os itens nas telas correspondentes."
+                          : "Altere os filtros ou adicione um novo cadastro."}
                       </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
@@ -680,12 +692,14 @@ export function TelaModulo({
             : titles[module][1]
         }
         acoes={
-          <Button ref={newButton} onClick={() => openForm()}>
-            <Plus />
-            {collection === "productions"
-              ? "Nova ordem"
-              : `Novo ${collection === "clients" && tab === "suppliers" ? "fornecedor" : singular[collection]}`}
-          </Button>
+          somenteConsulta ? undefined : (
+            <Button ref={newButton} onClick={() => openForm()}>
+              <Plus />
+              {collection === "productions"
+                ? "Nova ordem"
+                : `Novo ${collection === "clients" && tab === "suppliers" ? "fornecedor" : singular[collection]}`}
+            </Button>
+          )
         }
       />
       {module === "financeiro" && (
@@ -730,7 +744,7 @@ export function TelaModulo({
       ) : (
         table
       )}
-      {form && (
+      {!somenteConsulta && form && (
         <RecordForm
           key={String(form.initial.id ?? "new")}
           collection={collection}
@@ -747,48 +761,50 @@ export function TelaModulo({
           }}
         />
       )}
-      <AlertDialog
-        open={!!deleting}
-        onOpenChange={(value) => {
-          if (!value && !busy) setDeleting(null)
-        }}
-      >
-        <AlertDialogContent finalFocus={newButton}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir registro?</AlertDialogTitle>
-            <AlertDialogDescription>
-              “{deleting?.label}” será excluído. Registros vinculados serão
-              preservados.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={busy}
-              onClick={async (event) => {
-                event.preventDefault()
-                if (!deleting) return
-                setBusy(true)
-                try {
-                  await remove(collection, deleting.id)
-                  setDeleting(null)
-                  toast.success("Registro excluído.")
-                } catch (error) {
-                  toast.error(
-                    error instanceof Error
-                      ? error.message
-                      : "Não foi possível excluir.",
-                  )
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              {busy ? "Excluindo…" : "Excluir"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {!somenteConsulta && (
+        <AlertDialog
+          open={!!deleting}
+          onOpenChange={(value) => {
+            if (!value && !busy) setDeleting(null)
+          }}
+        >
+          <AlertDialogContent finalFocus={newButton}>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir registro?</AlertDialogTitle>
+              <AlertDialogDescription>
+                “{deleting?.label}” será excluído. Registros vinculados serão
+                preservados.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={busy}
+                onClick={async (event) => {
+                  event.preventDefault()
+                  if (!deleting) return
+                  setBusy(true)
+                  try {
+                    await remove(collection, deleting.id)
+                    setDeleting(null)
+                    toast.success("Registro excluído.")
+                  } catch (error) {
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "Não foi possível excluir.",
+                    )
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+              >
+                {busy ? "Excluindo…" : "Excluir"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   )
 }

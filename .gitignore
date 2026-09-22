@@ -36,6 +36,7 @@ yarn-error.log*
 
 # Prisma Client é regenerado no npm install e no npm run db:pull.
 /src/generated/prisma/
+/prisma/postgresql/schema.prisma
 
 # vercel
 .vercel
