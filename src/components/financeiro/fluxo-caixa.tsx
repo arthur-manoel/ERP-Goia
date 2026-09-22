@@ -77,9 +77,11 @@ export function FluxoCaixa() {
   const client = (id: string) =>
     data.clients.find((row) => row.id === id)?.name ?? "Cadastro não encontrado"
 
-  const dentroDoPeriodo = data.transactions.filter(
-    (row) => row.dueDate >= de && row.dueDate <= ate,
-  )
+  const periodoValido = Boolean(de) && Boolean(ate) && de <= ate
+
+  const dentroDoPeriodo = periodoValido
+    ? data.transactions.filter((row) => row.dueDate >= de && row.dueDate <= ate)
+    : []
 
   const entradas = dentroDoPeriodo
     .filter((row) => row.type === "Receber")
@@ -93,9 +95,11 @@ export function FluxoCaixa() {
 
   // Saldo projetado: tudo que está em aberto com vencimento até a data final
   // escolhida (inclui atrasados e futuros dentro do período).
-  const emAbertoAteData = data.transactions.filter(
-    (row) => row.status === "Em aberto" && row.dueDate <= ate,
-  )
+  const emAbertoAteData = periodoValido
+    ? data.transactions.filter(
+        (row) => row.status === "Em aberto" && row.dueDate <= ate,
+      )
+    : []
   const saldoProjetado = emAbertoAteData.reduce(
     (soma, row) => soma + (row.type === "Receber" ? row.amount : -row.amount),
     0,
@@ -114,6 +118,7 @@ export function FluxoCaixa() {
             aria-label="De"
             value={de}
             onChange={(e) => setDe(e.target.value)}
+            aria-invalid={!periodoValido}
             className="w-[160px]"
           />
           <span className="text-sm text-muted-foreground">até</span>
@@ -122,9 +127,17 @@ export function FluxoCaixa() {
             aria-label="Até"
             value={ate}
             onChange={(e) => setAte(e.target.value)}
+            aria-invalid={!periodoValido}
             className="w-[160px]"
           />
         </div>
+        {!periodoValido && (
+          <span className="text-sm text-destructive">
+            {!de || !ate
+              ? "Preencha as duas datas do período."
+              : 'A data "De" não pode ser depois da data "Até".'}
+          </span>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -161,8 +174,9 @@ export function FluxoCaixa() {
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Saldo projetado até{" "}
-              {new Date(ate + "T00:00:00").toLocaleDateString("pt-BR")}
+              Saldo projetado
+              {periodoValido &&
+                ` até ${new Date(ate + "T00:00:00").toLocaleDateString("pt-BR")}`}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-semibold tabular-nums">
@@ -241,11 +255,14 @@ export function FluxoCaixa() {
                       <Empty>
                         <EmptyHeader>
                           <EmptyTitle>
-                            Nenhuma movimentação no período.
+                            {periodoValido
+                              ? "Nenhuma movimentação no período."
+                              : "Selecione um período válido."}
                           </EmptyTitle>
                           <EmptyDescription>
-                            Altere as datas ou cadastre lançamentos em
-                            Financeiro.
+                            {periodoValido
+                              ? "Altere as datas ou cadastre lançamentos em Financeiro."
+                              : 'Preencha as duas datas, com "De" antes ou igual a "Até".'}
                           </EmptyDescription>
                         </EmptyHeader>
                       </Empty>
