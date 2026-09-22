@@ -21,11 +21,11 @@ import {
   Shapes,
   ShoppingCart,
   Tags,
-  Truck,
   TrendingUp,
+  Truck,
   UserCog,
-  Wallet,
   Users,
+  Wallet,
   Warehouse,
   type LucideIcon,
 } from "lucide-react"
@@ -76,6 +76,7 @@ export const navegacao: GrupoNavegacao[] = [
   {
     titulo: "Estoque",
     itens: [
+      { titulo: "Insumos", href: "/estoque/insumos", icone: Package },
       { titulo: "Saldos", href: "/estoque", icone: Warehouse },
       {
         titulo: "Movimentação",
