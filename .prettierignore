@@ -1,0 +1,8 @@
+# Gerados
+.next/
+src/generated/
+next-env.d.ts
+package-lock.json
+
+# Markdown fica fora para as tabelas de acompanhamento continuarem fáceis de editar
+*.md
