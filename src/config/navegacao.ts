@@ -21,9 +21,11 @@ import {
   Shapes,
   ShoppingCart,
   Tags,
+  TrendingUp,
   Truck,
   UserCog,
   Users,
+  Wallet,
   Warehouse,
   type LucideIcon,
 } from "lucide-react"
@@ -129,6 +131,16 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Financeiro",
     itens: [
       { titulo: "Lançamentos", href: "/financeiro", icone: BadgeDollarSign },
+      {
+        titulo: "Fluxo de caixa",
+        href: "/financeiro/fluxo-caixa",
+        icone: Wallet,
+      },
+      {
+        titulo: "Relatório de resultado",
+        href: "/financeiro/resultado",
+        icone: TrendingUp,
+      },
     ],
   },
   {
