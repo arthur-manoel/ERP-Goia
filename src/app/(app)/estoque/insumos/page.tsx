@@ -1,8 +1,21 @@
 import type { Metadata } from "next"
-import { TelaInsumos } from "@/features/estoque/components/tela-insumos"
+import { connection } from "next/server"
+import { TelaPosicoesEstoque } from "@/features/estoque-minimo/components/tela-posicoes-estoque"
+import { carregarPosicoesEstoque } from "@/features/estoque-minimo/queries"
 
 export const metadata: Metadata = { title: "Insumos" }
 
-export default function Page() {
-  return <TelaInsumos />
+export default async function Page() {
+  await connection()
+  const { posicoes, podeEditar } = await carregarPosicoesEstoque({
+    somenteInsumos: true,
+  })
+  return (
+    <TelaPosicoesEstoque
+      posicoes={posicoes}
+      podeEditar={podeEditar}
+      titulo="Insumos"
+      descricao="Tecidos, aviamentos e demais insumos por local de estoque."
+    />
+  )
 }

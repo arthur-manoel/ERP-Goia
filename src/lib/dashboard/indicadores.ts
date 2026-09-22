@@ -9,7 +9,6 @@ import {
   consultarSaldoDoMes,
 } from "./indicadores-reais"
 import {
-  mockInsumosAbaixoDoMinimo,
   mockOrdensProducaoAbertas,
   mockPedidosAEntregar,
   mockSaldoDoMes,
@@ -82,11 +81,17 @@ function comparativoMonetario(c: ComparativoMonetario): ComparativoMonetario {
 }
 
 function insumoCritico(i: InsumoCritico): InsumoCritico {
+  if (!["SEM_ESTOQUE", "ABAIXO_MINIMO", "NO_MINIMO"].includes(i.estado))
+    invalido("insumo.estado")
   return {
     id: contagemValida(i.id, "insumo.id"),
     nome: textoValido(i.nome, "insumo.nome", 120),
+    tipo: textoValido(i.tipo, "insumo.tipo", 100),
+    local: textoValido(i.local, "insumo.local", 100),
     saldo: decimalValido(i.saldo, "insumo.saldo"),
     minimo: decimalValido(i.minimo, "insumo.minimo"),
+    deficit: decimalValido(i.deficit, "insumo.deficit"),
+    estado: i.estado,
     unidade: textoValido(i.unidade, "insumo.unidade", 10),
   }
 }
@@ -116,9 +121,8 @@ async function carregar<T>(
 
 export const obterInsumosAbaixoDoMinimo = cache(() => {
   return carregar("insumos-abaixo-do-minimo", async () => {
-    const bruto: InsumosAbaixoDoMinimo = usarDadosMock()
-      ? await mockInsumosAbaixoDoMinimo()
-      : await consultarInsumosAbaixoDoMinimo()
+    // O estoque é integrado e nunca volta ao adaptador de demonstração.
+    const bruto: InsumosAbaixoDoMinimo = await consultarInsumosAbaixoDoMinimo()
 
     const total = contagemValida(bruto.total, "total")
     const semEstoque = opcional(bruto.semEstoque, (v) =>
@@ -126,6 +130,9 @@ export const obterInsumosAbaixoDoMinimo = cache(() => {
     )
     const totalMonitorados = opcional(bruto.totalMonitorados, (v) =>
       contagemValida(v, "totalMonitorados"),
+    )
+    const semMinimo = opcional(bruto.semMinimo, (v) =>
+      contagemValida(v, "semMinimo"),
     )
     if (semEstoque !== undefined && semEstoque > total) {
       invalido("semEstoque maior que o total")
@@ -137,6 +144,7 @@ export const obterInsumosAbaixoDoMinimo = cache(() => {
     const dados: InsumosAbaixoDoMinimo = {
       total,
       semEstoque,
+      semMinimo,
       totalMonitorados,
       maisCriticos: opcional(bruto.maisCriticos, (lista) =>
         lista.slice(0, MAX_INSUMOS_CRITICOS).map(insumoCritico),

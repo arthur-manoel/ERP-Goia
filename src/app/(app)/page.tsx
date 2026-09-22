@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { connection } from "next/server"
 import { Suspense } from "react"
 import { AvisoDadosMock } from "@/components/dashboard/aviso-dados-mock"
 import { IndicadoresPrincipais } from "@/components/dashboard/indicadores-principais"
@@ -10,6 +11,7 @@ import { podeVerSaldoDoMes } from "@/lib/dashboard/permissoes"
 export const metadata: Metadata = { title: "Dashboard" }
 
 export default async function Page() {
+  await connection()
   // Decidido no servidor, antes de renderizar: sem permissão, o card do saldo
   // nem entra na página (e obterSaldoDoMes confere a permissão de novo).
   const mostrarSaldo = await podeVerSaldoDoMes()

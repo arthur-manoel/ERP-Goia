@@ -60,8 +60,23 @@ export async function ResumoAtencao({
     pendencias.push({
       chave: "insumos",
       texto: semEstoque
-        ? plural(semEstoque, "insumo sem estoque", "insumos sem estoque")
-        : plural(total, "insumo abaixo do mínimo", "insumos abaixo do mínimo"),
+        ? plural(semEstoque, "posição sem estoque", "posições sem estoque")
+        : plural(total, "posição crítica", "posições críticas"),
+      href: "/estoque",
+    })
+  }
+  if (
+    insumos.estado === "ok" &&
+    insumos.dados.total === 0 &&
+    (insumos.dados.semMinimo ?? 0) > 0
+  ) {
+    pendencias.push({
+      chave: "estoque-sem-minimo",
+      texto: plural(
+        insumos.dados.semMinimo ?? 0,
+        "posição sem mínimo local",
+        "posições sem mínimo local",
+      ),
       href: "/estoque",
     })
   }

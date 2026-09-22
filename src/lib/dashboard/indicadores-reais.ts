@@ -1,5 +1,7 @@
 import "server-only"
+import { carregarPosicoesEstoque } from "@/features/estoque-minimo/queries"
 import { IndicadorNaoIntegradoError } from "./erros"
+import { montarIndicadorEstoque } from "./estoque"
 import type {
   InsumosAbaixoDoMinimo,
   OrdensProducaoAbertas,
@@ -10,10 +12,8 @@ import type {
 /*
  * Consultas REAIS da Dashboard (Prisma).
  *
- * PENDENTE DE INTEGRAÇÃO: estas funções ainda não consultam o banco. Não há
- * schema Prisma nem regra de negócio definidos para estes indicadores, e não
- * vamos inventar nomes de campos. Por isso lançam IndicadorNaoIntegradoError e a
- * tela mostra "indicador em integração" em vez de um número falso.
+ * Cada indicador permanece independente. O estoque mínimo já usa a consulta
+ * real por empresa/local; os demais continuam explicitamente não integrados.
  *
  * Ao implementar cada uma:
  *  - obtenha a empresa SEMPRE de getEmpresaAtual() (lib/sessao). Estas funções
@@ -26,7 +26,8 @@ import type {
  */
 
 export async function consultarInsumosAbaixoDoMinimo(): Promise<InsumosAbaixoDoMinimo> {
-  throw new IndicadorNaoIntegradoError("insumos-abaixo-do-minimo")
+  const { posicoes } = await carregarPosicoesEstoque()
+  return montarIndicadorEstoque(posicoes)
 }
 
 export async function consultarOrdensProducaoAbertas(): Promise<OrdensProducaoAbertas> {

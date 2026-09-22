@@ -10,7 +10,6 @@ import {
   IndicadorValor,
 } from "./indicador-card"
 import {
-  IndicadorComparativo,
   IndicadorDetalhes,
   IndicadorMedidor,
   IndicadorSecao,
@@ -18,7 +17,7 @@ import {
 
 const base = {
   id: "indicador-insumos",
-  titulo: "Insumos abaixo do mínimo",
+  titulo: "Estoque crítico por local",
   icone: Warehouse,
   link: { href: "/estoque", rotulo: "Ver estoque" },
 }
@@ -39,7 +38,7 @@ export async function InsumosAbaixoDoMinimo({
     )
   }
 
-  const { total, semEstoque, totalMonitorados, maisCriticos, comparativo } =
+  const { total, semEstoque, semMinimo, totalMonitorados, maisCriticos } =
     resultado.dados
 
   return (
@@ -47,45 +46,43 @@ export async function InsumosAbaixoDoMinimo({
       <IndicadorResumo>
         <IndicadorValor
           valor={formatarQuantidade(total, 0)}
-          unidade={total === 1 ? "item" : "itens"}
+          unidade={total === 1 ? "posição" : "posições"}
         />
         {total > 0 ? (
           <IndicadorAlertas>
             <IndicadorAlerta>
               {semEstoque
-                ? `${semEstoque} sem estoque`
-                : "Atenção: repor estoque"}
+                ? `${semEstoque} sem estoque físico`
+                : "Há reposição necessária"}
             </IndicadorAlerta>
           </IndicadorAlertas>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Todos os insumos estão dentro do mínimo.
+            Nenhuma posição monitorada está no mínimo ou abaixo.
           </p>
         )}
-        {comparativo && (
-          <IndicadorComparativo
-            atual={total}
-            anterior={comparativo.valorAnterior}
-            rotulo={comparativo.rotulo}
-            melhorQuando="menor"
-            formatarDiferenca={(n) => formatarQuantidade(n, 0)}
-          />
+        {!!semMinimo && (
+          <IndicadorAlertas>
+            <IndicadorAlerta>
+              {semMinimo} {semMinimo === 1 ? "posição sem" : "posições sem"}
+              {" mínimo configurado"}
+            </IndicadorAlerta>
+          </IndicadorAlertas>
         )}
       </IndicadorResumo>
 
       {maisCriticos && maisCriticos.length > 0 && (
-        <IndicadorSecao titulo="Mais críticos (nível em relação ao mínimo)">
+        <IndicadorSecao titulo="Mais críticos por depósito/localização">
           <div className="flex flex-col gap-3">
-            {maisCriticos.map((insumo) => {
-              const minimo = Number(insumo.minimo)
-              const nivel =
-                minimo > 0 ? (Number(insumo.saldo) / minimo) * 100 : 0
+            {maisCriticos.map((item) => {
+              const minimo = Number(item.minimo)
+              const nivel = minimo > 0 ? (Number(item.saldo) / minimo) * 100 : 0
               return (
                 <IndicadorMedidor
-                  key={insumo.id}
-                  rotulo={insumo.nome}
+                  key={item.id}
+                  rotulo={`${item.nome} · ${item.local}`}
                   percentual={Math.round(nivel)}
-                  detalhe={`Saldo ${formatarQuantidade(insumo.saldo)} de ${formatarQuantidade(insumo.minimo)} ${insumo.unidade}`}
+                  detalhe={`${item.tipo} · Saldo ${formatarQuantidade(item.saldo)} de ${formatarQuantidade(item.minimo)} ${item.unidade} · Déficit ${formatarQuantidade(item.deficit)}`}
                 />
               )
             })}
@@ -93,14 +90,26 @@ export async function InsumosAbaixoDoMinimo({
         </IndicadorSecao>
       )}
 
-      {totalMonitorados !== undefined && (
+      {(totalMonitorados !== undefined || semMinimo !== undefined) && (
         <IndicadorSecao>
           <IndicadorDetalhes
             itens={[
-              {
-                rotulo: "Insumos monitorados",
-                valor: formatarQuantidade(totalMonitorados, 0),
-              },
+              ...(totalMonitorados !== undefined
+                ? [
+                    {
+                      rotulo: "Posições monitoradas",
+                      valor: formatarQuantidade(totalMonitorados, 0),
+                    },
+                  ]
+                : []),
+              ...(semMinimo !== undefined
+                ? [
+                    {
+                      rotulo: "Sem mínimo local",
+                      valor: formatarQuantidade(semMinimo, 0),
+                    },
+                  ]
+                : []),
             ]}
           />
         </IndicadorSecao>
