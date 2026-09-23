@@ -1,6 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
 import {
   Check,
   CircleAlert,
@@ -12,6 +13,7 @@ import {
   TriangleAlert,
 } from "lucide-react"
 import { PageHeader } from "@/components/layout/page-header"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -23,6 +25,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -33,6 +36,10 @@ import {
 } from "@/components/ui/table"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import { formatarQuantidade } from "@/lib/formatacao"
+import {
+  mensagemErro,
+  useAutenticacao,
+} from "@/features/autenticacao/provedor-autenticacao"
 import type { EstadoPosicaoEstoque, PosicaoEstoque } from "../tipos"
 import { FormularioMinimoLocal } from "./formulario-minimo-local"
 
@@ -51,6 +58,20 @@ const normalizar = (valor: string) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+
+async function consultarPosicoes(
+  requisitar: (url: string, init?: RequestInit) => Promise<Response>,
+  somenteInsumos: boolean,
+) {
+  const response = await requisitar(
+    `/api/estoque-minimo${somenteInsumos ? "?somenteInsumos=true" : ""}`,
+  )
+  if (!response.ok) throw new Error(await mensagemErro(response))
+  return (await response.json()) as {
+    posicoes: PosicaoEstoque[]
+    podeEditar: boolean
+  }
+}
 
 function BadgeEstado({ estado }: { estado: EstadoPosicaoEstoque }) {
   if (estado === "SEM_ESTOQUE")
@@ -85,19 +106,80 @@ function BadgeEstado({ estado }: { estado: EstadoPosicaoEstoque }) {
 }
 
 export function TelaPosicoesEstoque({
-  posicoes,
-  podeEditar,
+  somenteInsumos = false,
   titulo,
   descricao,
 }: {
-  posicoes: PosicaoEstoque[]
-  podeEditar: boolean
+  somenteInsumos?: boolean
   titulo: string
   descricao: string
 }) {
+  const {
+    estado: estadoAutenticacao,
+    usuario,
+    empresas,
+    empresa,
+    selecionarEmpresa,
+    requisitar,
+  } = useAutenticacao()
+  const [posicoes, setPosicoes] = useState<PosicaoEstoque[]>([])
+  const [podeEditar, setPodeEditar] = useState(false)
+  const chave = usuario && empresa ? `${usuario.email}:${empresa.id}` : null
+  const [chaveCarregada, setChaveCarregada] = useState<string | null>(null)
+  const [erro, setErro] = useState<{
+    chave: string
+    mensagem: string
+  } | null>(null)
+  const versao = useRef(0)
   const [busca, setBusca] = useState("")
   const [estado, setEstado] = useState<FiltroEstado>("TODOS")
   const [selecionada, setSelecionada] = useState<PosicaoEstoque | null>(null)
+
+  const recarregar = useCallback(async () => {
+    const atual = ++versao.current
+    try {
+      const body = await consultarPosicoes(requisitar, somenteInsumos)
+      if (atual !== versao.current) return
+      setPosicoes(body.posicoes)
+      setPodeEditar(body.podeEditar)
+      setChaveCarregada(chave)
+      setErro(null)
+    } catch (error) {
+      if (atual === versao.current)
+        setErro({
+          chave: chave ?? "",
+          mensagem:
+            error instanceof Error
+              ? error.message
+              : "Falha ao consultar estoque.",
+        })
+    }
+  }, [requisitar, somenteInsumos, chave])
+
+  useEffect(() => {
+    if (estadoAutenticacao === "autenticado" && empresa && chave) {
+      const atual = ++versao.current
+      void consultarPosicoes(requisitar, somenteInsumos).then(
+        (body) => {
+          if (atual !== versao.current) return
+          setPosicoes(body.posicoes)
+          setPodeEditar(body.podeEditar)
+          setChaveCarregada(chave)
+          setErro(null)
+        },
+        (error: unknown) => {
+          if (atual !== versao.current) return
+          setErro({
+            chave,
+            mensagem:
+              error instanceof Error
+                ? error.message
+                : "Falha ao consultar estoque.",
+          })
+        },
+      )
+    }
+  }, [estadoAutenticacao, empresa, chave, requisitar, somenteInsumos])
 
   const filtradas = useMemo(
     () =>
@@ -122,9 +204,106 @@ export function TelaPosicoesEstoque({
     (posicao) => posicao.estado === "NAO_CONFIGURADO",
   ).length
 
+  const cabecalho = <PageHeader titulo={titulo} descricao={descricao} />
+
+  if (estadoAutenticacao === "carregando")
+    return (
+      <>
+        {cabecalho}
+        <Skeleton
+          role="status"
+          aria-label="Carregando estoque"
+          className="h-80 w-full"
+        />
+      </>
+    )
+
+  if (estadoAutenticacao === "anonimo")
+    return (
+      <>
+        {cabecalho}
+        <Alert>
+          <AlertDescription>
+            Entre na sua conta para consultar o estoque.{" "}
+            <Link href="/login" className="underline">
+              Ir para o login
+            </Link>
+          </AlertDescription>
+        </Alert>
+      </>
+    )
+
+  if (empresas.length === 0)
+    return (
+      <>
+        {cabecalho}
+        <Alert>
+          <AlertDescription>
+            Seu usuário não tem acesso ao estoque em nenhuma empresa ativa.
+          </AlertDescription>
+        </Alert>
+      </>
+    )
+
+  const seletorEmpresa =
+    empresas.length > 1 ? (
+      <SearchSelect
+        value={empresa ? String(empresa.id) : ""}
+        onValueChange={(valor) => {
+          setSelecionada(null)
+          selecionarEmpresa(Number(valor))
+        }}
+        label="Empresa ativa"
+        className="w-full sm:w-80"
+        options={empresas.map((item) => ({
+          value: String(item.id),
+          label: item.nome,
+        }))}
+      />
+    ) : null
+
+  if (!empresa)
+    return (
+      <>
+        {cabecalho}
+        <p>Selecione a empresa para consultar o estoque.</p>
+        {seletorEmpresa}
+      </>
+    )
+
+  if (chaveCarregada !== chave && erro?.chave !== chave)
+    return (
+      <>
+        {cabecalho}
+        {seletorEmpresa}
+        <Skeleton
+          role="status"
+          aria-label="Carregando estoque"
+          className="h-80 w-full"
+        />
+      </>
+    )
+
+  if (erro?.chave === chave)
+    return (
+      <>
+        {cabecalho}
+        {seletorEmpresa}
+        <Alert variant="destructive" role="alert">
+          <AlertDescription className="space-y-3">
+            <p>{erro.mensagem}</p>
+            <Button variant="outline" onClick={() => void recarregar()}>
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      </>
+    )
+
   return (
     <>
-      <PageHeader titulo={titulo} descricao={descricao} />
+      {cabecalho}
+      {seletorEmpresa}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -276,12 +455,14 @@ export function TelaPosicoesEstoque({
         reservada não altera este alerta, que usa somente o estoque físico.
       </p>
 
-      {selecionada && (
-        <FormularioMinimoLocal
-          posicao={selecionada}
-          onClose={() => setSelecionada(null)}
-        />
-      )}
+      {selecionada &&
+        posicoes.some((item) => item.idEstoque === selecionada.idEstoque) && (
+          <FormularioMinimoLocal
+            posicao={selecionada}
+            onClose={() => setSelecionada(null)}
+            onSaved={recarregar}
+          />
+        )}
     </>
   )
 }

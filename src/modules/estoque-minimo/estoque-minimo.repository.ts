@@ -1,18 +1,97 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
-import { EstoqueMinimoError } from "./erros"
+import type {
+  ContextoEstoque,
+  PosicaoEstoque,
+} from "@/features/estoque-minimo/tipos"
 import {
-  configurarMinimoLocalSchema,
-  type ConfigurarMinimoLocalInput,
-} from "./schemas"
-import type { ContextoEstoque } from "./tipos"
+  calcularDeficit,
+  classificarPosicao,
+  ordenarPosicoes,
+} from "@/features/estoque-minimo/regras"
+import { EstoqueMinimoError } from "./estoque-minimo.error"
+import type { ConfigurarMinimoInput } from "./estoque-minimo.schema"
+
+export async function listarPosicoes(
+  contexto: ContextoEstoque,
+  somenteInsumos = false,
+): Promise<PosicaoEstoque[]> {
+  const registros = await prisma.estoque.findMany({
+    where: {
+      id_empresa: contexto.idEmpresa,
+      locais_estoque: { id_empresa: contexto.idEmpresa, status: "ATIVO" },
+      produtos: {
+        status: "ATIVO",
+        controla_estoque: true,
+        produto_empresa: {
+          some: { id_empresa: contexto.idEmpresa, status: "ATIVO" },
+        },
+        ...(somenteInsumos
+          ? { permite_compra: true, permite_venda: false }
+          : {}),
+      },
+    },
+    select: {
+      id: true,
+      id_local_estoque: true,
+      id_produto: true,
+      quantidade: true,
+      locais_estoque: { select: { nome: true } },
+      produtos: {
+        select: {
+          nome: true,
+          codigo: true,
+          unidade: true,
+          permite_compra: true,
+          permite_venda: true,
+          tipos_produto: { select: { nome: true } },
+          produto_empresa: {
+            where: { id_empresa: contexto.idEmpresa, status: "ATIVO" },
+            select: {
+              estoque_minimo_local: {
+                where: { id_empresa: contexto.idEmpresa },
+                select: { id_local_estoque: true, quantidade_minima: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  return ordenarPosicoes(
+    registros.map((registro) => {
+      const configuracao =
+        registro.produtos.produto_empresa[0]?.estoque_minimo_local.find(
+          (item) => item.id_local_estoque === registro.id_local_estoque,
+        )
+      const quantidade = registro.quantidade.toFixed(3)
+      const minimo = configuracao?.quantidade_minima.toFixed(3) ?? null
+      return {
+        idEstoque: registro.id,
+        idProduto: registro.id_produto,
+        idLocalEstoque: registro.id_local_estoque,
+        produto: registro.produtos.nome,
+        codigo: registro.produtos.codigo,
+        tipo: registro.produtos.tipos_produto.nome,
+        local: registro.locais_estoque.nome,
+        unidade: registro.produtos.unidade,
+        quantidade,
+        minimo,
+        deficit: calcularDeficit(quantidade, minimo),
+        estado: classificarPosicao(quantidade, minimo),
+        ehInsumo:
+          registro.produtos.permite_compra && !registro.produtos.permite_venda,
+      }
+    }),
+  )
+}
 
 export async function salvarMinimoLocal(
   contexto: ContextoEstoque,
-  entrada: ConfigurarMinimoLocalInput,
+  dados: ConfigurarMinimoInput,
 ) {
-  const dados = configurarMinimoLocalSchema.parse(entrada)
   try {
     return await prisma.$transaction(
       async (tx) => {
@@ -82,7 +161,12 @@ export async function salvarMinimoLocal(
             }),
           },
         })
-        return configuracao
+        return {
+          id: configuracao.id,
+          idProduto: configuracao.id_produto,
+          idLocalEstoque: configuracao.id_local_estoque,
+          quantidadeMinima: configuracao.quantidade_minima.toFixed(3),
+        }
       },
       { isolationLevel: "Serializable" },
     )

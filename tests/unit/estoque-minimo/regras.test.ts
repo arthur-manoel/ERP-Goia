@@ -4,7 +4,7 @@ import {
   classificarPosicao,
   ordenarPosicoes,
 } from "../../../src/features/estoque-minimo/regras"
-import { configurarMinimoLocalSchema } from "../../../src/features/estoque-minimo/schemas"
+import { configurarMinimoSchema } from "../../../src/modules/estoque-minimo/estoque-minimo.schema"
 import type { PosicaoEstoque } from "../../../src/features/estoque-minimo/tipos"
 import { montarIndicadorEstoque } from "../../../src/lib/dashboard/estoque"
 
@@ -79,12 +79,12 @@ describe("alerta de estoque físico por local", () => {
 })
 
 describe("validação da configuração", () => {
-  it("normaliza vírgula e preserva três casas", () => {
+  it("aceita o contrato JSON decimal com três casas", () => {
     expect(
-      configurarMinimoLocalSchema.parse({
-        idProduto: "1",
-        idLocalEstoque: "2",
-        quantidadeMinima: "12,345",
+      configurarMinimoSchema.parse({
+        idProduto: 1,
+        idLocalEstoque: 2,
+        quantidadeMinima: "12.345",
       }),
     ).toEqual({
       idProduto: 1,
@@ -93,11 +93,11 @@ describe("validação da configuração", () => {
     })
   })
 
-  it.each(["-1", "1.0001", "", "1000000000000"])(
+  it.each(["-1", "1.0001", "", "1000000000000", "1,000"])(
     "recusa quantidade inválida %s",
     (quantidadeMinima) => {
       expect(
-        configurarMinimoLocalSchema.safeParse({
+        configurarMinimoSchema.safeParse({
           idProduto: 1,
           idLocalEstoque: 2,
           quantidadeMinima,

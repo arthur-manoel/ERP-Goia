@@ -1,8 +1,7 @@
 "use client"
 
-import { useActionState, useEffect } from "react"
+import { useState, type FormEvent } from "react"
 import { toast } from "sonner"
-import { configurarMinimoLocal } from "../actions"
 import type { PosicaoEstoque } from "../tipos"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -16,29 +15,56 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { estadoInicial } from "@/lib/formulario"
 import { formatarQuantidade } from "@/lib/formatacao"
+import {
+  mensagemErro,
+  useAutenticacao,
+} from "@/features/autenticacao/provedor-autenticacao"
+import { configurarMinimoSchema } from "@/modules/estoque-minimo/estoque-minimo.schema"
 
 export function FormularioMinimoLocal({
   posicao,
   onClose,
+  onSaved,
 }: {
   posicao: PosicaoEstoque
   onClose: () => void
+  onSaved: () => Promise<void>
 }) {
-  const [estado, acao, pendente] = useActionState(
-    configurarMinimoLocal,
-    estadoInicial,
-  )
+  const { requisitar } = useAutenticacao()
+  const [quantidade, setQuantidade] = useState(posicao.minimo ?? "")
+  const [erro, setErro] = useState("")
+  const [pendente, setPendente] = useState(false)
 
-  useEffect(() => {
-    if (!estado.ok) return
-    toast.success(estado.mensagem)
-    onClose()
-  }, [estado, onClose])
-
-  const erro = estado.erros?.quantidadeMinima?.[0]
-  const erroServidor = estado.erros?.servidor?.[0]
+  async function salvar(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault()
+    setErro("")
+    const dados = configurarMinimoSchema.safeParse({
+      idProduto: posicao.idProduto,
+      idLocalEstoque: posicao.idLocalEstoque,
+      quantidadeMinima: quantidade.trim().replace(",", "."),
+    })
+    if (!dados.success) {
+      setErro(dados.error.issues[0]?.message ?? "Quantidade inválida.")
+      return
+    }
+    setPendente(true)
+    try {
+      const response = await requisitar("/api/estoque-minimo", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dados.data),
+      })
+      if (!response.ok) throw new Error(await mensagemErro(response))
+      await onSaved()
+      toast.success("Estoque mínimo atualizado para este local.")
+      onClose()
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Falha ao salvar.")
+    } finally {
+      setPendente(false)
+    }
+  }
 
   return (
     <Dialog
@@ -55,13 +81,7 @@ export function FormularioMinimoLocal({
             {` ${posicao.local}`}.
           </DialogDescription>
         </DialogHeader>
-        <form action={acao} className="space-y-5">
-          <input type="hidden" name="idProduto" value={posicao.idProduto} />
-          <input
-            type="hidden"
-            name="idLocalEstoque"
-            value={posicao.idLocalEstoque}
-          />
+        <form onSubmit={salvar} className="space-y-5">
           <div className="rounded-lg border bg-muted/30 p-3 text-sm">
             <p className="font-medium">{posicao.produto}</p>
             <p className="text-muted-foreground">
@@ -78,12 +98,12 @@ export function FormularioMinimoLocal({
             </FieldLabel>
             <Input
               id="quantidade-minima"
-              name="quantidadeMinima"
               type="number"
               min="0"
               step="0.001"
               inputMode="decimal"
-              defaultValue={posicao.minimo ?? ""}
+              value={quantidade}
+              onChange={(evento) => setQuantidade(evento.target.value)}
               aria-invalid={!!erro}
               aria-describedby={erro ? "quantidade-minima-erro" : undefined}
               disabled={pendente}
@@ -93,9 +113,9 @@ export function FormularioMinimoLocal({
               <FieldError id="quantidade-minima-erro">{erro}</FieldError>
             )}
           </Field>
-          {erroServidor && (
-            <Alert variant="destructive">
-              <AlertDescription>{erroServidor}</AlertDescription>
+          {erro && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>{erro}</AlertDescription>
             </Alert>
           )}
           <DialogFooter>

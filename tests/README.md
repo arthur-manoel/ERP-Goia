@@ -25,4 +25,6 @@ fixtures e recusa hosts remotos.
 npm test -- tests/unit/estoque-minimo
 $env:ESTOQUE_MINIMO_TEST_DATABASE_URL="mysql://USER:PASSWORD@127.0.0.1:3306/BANCO_LOCAL"
 node --test tests/estoque-minimo.integration.test.mjs
+# Depois de npm run build, execute também o login e as rotas HTTP com Next em produção:
+node --test tests/estoque-minimo.integration.test.mjs --http
 ```

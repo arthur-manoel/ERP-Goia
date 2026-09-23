@@ -1,5 +1,10 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import { Warehouse } from "lucide-react"
-import { obterInsumosAbaixoDoMinimo } from "@/lib/dashboard/indicadores"
+import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
+import type { InsumosAbaixoDoMinimo as DadosEstoque } from "@/lib/dashboard/tipos"
 import { formatarQuantidade } from "@/lib/formatacao"
 import {
   IndicadorAlerta,
@@ -8,6 +13,7 @@ import {
   IndicadorIndisponivel,
   IndicadorResumo,
   IndicadorValor,
+  IndicadorCardSkeleton,
 } from "./indicador-card"
 import {
   IndicadorDetalhes,
@@ -22,24 +28,71 @@ const base = {
   link: { href: "/estoque", rotulo: "Ver estoque" },
 }
 
-export async function InsumosAbaixoDoMinimo({
-  className,
-}: {
-  className?: string
-}) {
-  const resultado = await obterInsumosAbaixoDoMinimo()
-  if (resultado.estado !== "ok") {
+export function InsumosAbaixoDoMinimo({ className }: { className?: string }) {
+  const { estado, usuario, empresas, empresa, requisitar } = useAutenticacao()
+  const chave = empresa && usuario ? `${usuario.email}:${empresa.id}` : null
+  const [resultado, setResultado] = useState<{
+    chave: string
+    dados?: DadosEstoque
+    falha?: boolean
+  } | null>(null)
+
+  useEffect(() => {
+    if (estado !== "autenticado" || !chave) return
+    let ativo = true
+    void requisitar("/api/estoque-minimo")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Falha ao consultar estoque.")
+        const body: { indicador: DadosEstoque } = await response.json()
+        if (ativo) setResultado({ chave, dados: body.indicador })
+      })
+      .catch(() => {
+        if (ativo) setResultado({ chave, falha: true })
+      })
+    return () => {
+      ativo = false
+    }
+  }, [estado, chave, requisitar])
+
+  const dados = resultado?.chave === chave ? resultado.dados : null
+  const falha = resultado?.chave === chave && resultado.falha === true
+
+  if (
+    estado === "carregando" ||
+    (estado === "autenticado" && empresa && !dados && !falha)
+  )
+    return <IndicadorCardSkeleton className={className} />
+
+  if (estado === "anonimo")
     return (
-      <IndicadorIndisponivel
-        {...base}
-        className={className}
-        estado={resultado.estado}
-      />
+      <IndicadorCard {...base} className={className}>
+        <p className="text-sm text-muted-foreground">
+          <Link href="/login" className="underline">
+            Entre
+          </Link>{" "}
+          para consultar o estoque.
+        </p>
+      </IndicadorCard>
+    )
+
+  if (!empresa)
+    return (
+      <IndicadorCard {...base} className={className}>
+        <p className="text-sm text-muted-foreground">
+          {empresas.length
+            ? "Selecione uma empresa na tela de estoque."
+            : "Sem acesso ao estoque em empresa ativa."}
+        </p>
+      </IndicadorCard>
+    )
+
+  if (falha || !dados) {
+    return (
+      <IndicadorIndisponivel {...base} className={className} estado="erro" />
     )
   }
 
-  const { total, semEstoque, semMinimo, totalMonitorados, maisCriticos } =
-    resultado.dados
+  const { total, semEstoque, semMinimo, totalMonitorados, maisCriticos } = dados
 
   return (
     <IndicadorCard {...base} className={className}>

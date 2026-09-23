@@ -2,7 +2,6 @@ import Link from "next/link"
 import { CircleAlert } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
-  obterInsumosAbaixoDoMinimo,
   obterOrdensProducaoAbertas,
   obterPedidosAEntregar,
   obterSaldoDoMes,
@@ -23,8 +22,7 @@ export async function ResumoAtencao({
 }: {
   mostrarSaldo: boolean
 }) {
-  const [insumos, ordens, pedidos, saldo] = await Promise.all([
-    obterInsumosAbaixoDoMinimo(),
+  const [ordens, pedidos, saldo] = await Promise.all([
     obterOrdensProducaoAbertas(),
     obterPedidosAEntregar(),
     // O saldo só entra se o usuário pode vê-lo (e a função ainda confere no servidor).
@@ -53,31 +51,6 @@ export async function ResumoAtencao({
         "ordens de produção atrasadas",
       ),
       href: "/producao/ordens",
-    })
-  }
-  if (insumos.estado === "ok" && insumos.dados.total > 0) {
-    const { total, semEstoque } = insumos.dados
-    pendencias.push({
-      chave: "insumos",
-      texto: semEstoque
-        ? plural(semEstoque, "posição sem estoque", "posições sem estoque")
-        : plural(total, "posição crítica", "posições críticas"),
-      href: "/estoque",
-    })
-  }
-  if (
-    insumos.estado === "ok" &&
-    insumos.dados.total === 0 &&
-    (insumos.dados.semMinimo ?? 0) > 0
-  ) {
-    pendencias.push({
-      chave: "estoque-sem-minimo",
-      texto: plural(
-        insumos.dados.semMinimo ?? 0,
-        "posição sem mínimo local",
-        "posições sem mínimo local",
-      ),
-      href: "/estoque",
     })
   }
   if (saldo?.estado === "ok" && Number(saldo.dados.valor) < 0) {

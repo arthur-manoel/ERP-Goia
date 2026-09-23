@@ -176,6 +176,7 @@ DEV_ID_EMPRESA=1
 
 - Credenciais do banco: peça ao time em mensagem privada e nunca as versione. Caracteres especiais no usuário ou na senha precisam de URL encoding (`@` vira `%40`).
 - `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` alimentam a **sessão provisória** (`src/lib/sessao.ts`) até a autenticação ([#11](https://github.com/arthur-manoel/ERP-Goia/issues/11)) existir. Use ids que existam no banco (veja o seed, [#8](https://github.com/arthur-manoel/ERP-Goia/issues/8)).
+- O estoque mínimo não usa essa sessão provisória: suas telas fazem login real e chamam as rotas JSON com JWT e empresa ativa. Configure também `ACCESS_TOKEN_SECRET` no ambiente do servidor para o login; veja o [contrato da API](src/modules/estoque-minimo/README.md).
 
 ```bash
 npm install     # também gera o Prisma Client e ativa os hooks de commit
@@ -443,7 +444,7 @@ Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
-| 2026-09-22 | Codex | `feature/alerta-estoque-minimo-local` | Estoque mínimo por empresa, localização e produto; listagens e indicador reais, autorização, auditoria, migration e testes locais. |
+| 2026-09-22 | Codex | `feature/alerta-estoque-minimo-local` | Estoque mínimo por empresa, localização e produto; API JSON autenticada com JWT e empresa ativa, listagens e indicador reais, auditoria, migration e testes locais. |
 | 2026-09-18 | Everton | `feature/guia-contribuicao` | CONTRIBUTING, templates de PR e issue, CODEOWNERS; roadmap convertido em 37 issues com milestones e labels. |
 | 2026-09-18 | Everton | PR [#5](https://github.com/arthur-manoel/ERP-Goia/pull/5) | Esqueleto da aplicação (layout, menu, 26 rotas), sessão provisória, helpers e guia de arquitetura. |
 | 2026-09-18 | Everton | PR [#4](https://github.com/arthur-manoel/ERP-Goia/pull/4) | Prettier, husky, lint-staged, commitlint, EditorConfig, `.gitattributes` e CI. |
