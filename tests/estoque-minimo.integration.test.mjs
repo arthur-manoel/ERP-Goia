@@ -69,10 +69,28 @@ async function testarHttpReal({
       Authorization: `Bearer ${accessToken}`,
       "X-Empresa-Id": String(idEmpresa),
     }
+    const empresasHttp = await fetch(`${base}/api/estoque-minimo/empresas`, {
+      headers: { Authorization: headers.Authorization },
+    })
+    if (empresasHttp.status !== 200)
+      assert.fail(`Empresas HTTP: ${await empresasHttp.text()}`)
+    assert.deepEqual(
+      (await empresasHttp.json()).empresas.map((item) => item.id),
+      [idEmpresa],
+    )
     assert.equal(
       (await fetch(`${base}/api/estoque-minimo`)).status,
       401,
       "rota HTTP exige JWT",
+    )
+    assert.equal(
+      (
+        await fetch(`${base}/api/estoque-minimo`, {
+          headers: { ...headers, "X-Empresa-Id": "2147483647" },
+        })
+      ).status,
+      403,
+      "o header não concede acesso a outra empresa",
     )
     const consulta = await fetch(`${base}/api/estoque-minimo`, { headers })
     if (consulta.status !== 200)
@@ -104,7 +122,7 @@ test(
       !databaseUrl &&
       "Defina ESTOQUE_MINIMO_TEST_DATABASE_URL para um MySQL/MariaDB local isolado.",
   },
-  async () => {
+  async (t) => {
     const url = new URL(databaseUrl)
     assert.equal(url.protocol, "mysql:")
     assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
@@ -579,14 +597,16 @@ test(
         1,
         "PUT repetido não duplica mínimo local",
       )
-      if (process.argv.includes("--http")) {
-        await testarHttpReal({
-          email: admin.email,
-          password: senhaHttp,
-          idEmpresa: empresas[0],
-          idProduto: produtos[3],
-          idLocal: fabrica.id,
-        })
+      if (process.env.ESTOQUE_MINIMO_TEST_HTTP === "1") {
+        await t.test("login e API HTTP em modo de produção", () =>
+          testarHttpReal({
+            email: admin.email,
+            password: senhaHttp,
+            idEmpresa: empresas[0],
+            idProduto: produtos[3],
+            idLocal: fabrica.id,
+          }),
+        )
       }
     } finally {
       if (prisma) {

@@ -1,10 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Warehouse } from "lucide-react"
-import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
-import type { InsumosAbaixoDoMinimo as DadosEstoque } from "@/lib/dashboard/tipos"
 import { formatarQuantidade } from "@/lib/formatacao"
 import {
   IndicadorAlerta,
@@ -20,6 +17,7 @@ import {
   IndicadorMedidor,
   IndicadorSecao,
 } from "./indicador-secoes"
+import { useIndicadorEstoque } from "./provedor-indicador-estoque"
 
 const base = {
   id: "indicador-insumos",
@@ -29,33 +27,7 @@ const base = {
 }
 
 export function InsumosAbaixoDoMinimo({ className }: { className?: string }) {
-  const { estado, usuario, empresas, empresa, requisitar } = useAutenticacao()
-  const chave = empresa && usuario ? `${usuario.email}:${empresa.id}` : null
-  const [resultado, setResultado] = useState<{
-    chave: string
-    dados?: DadosEstoque
-    falha?: boolean
-  } | null>(null)
-
-  useEffect(() => {
-    if (estado !== "autenticado" || !chave) return
-    let ativo = true
-    void requisitar("/api/estoque-minimo")
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Falha ao consultar estoque.")
-        const body: { indicador: DadosEstoque } = await response.json()
-        if (ativo) setResultado({ chave, dados: body.indicador })
-      })
-      .catch(() => {
-        if (ativo) setResultado({ chave, falha: true })
-      })
-    return () => {
-      ativo = false
-    }
-  }, [estado, chave, requisitar])
-
-  const dados = resultado?.chave === chave ? resultado.dados : null
-  const falha = resultado?.chave === chave && resultado.falha === true
+  const { estado, empresas, empresa, dados, falha } = useIndicadorEstoque()
 
   if (
     estado === "carregando" ||

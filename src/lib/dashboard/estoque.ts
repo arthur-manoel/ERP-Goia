@@ -29,3 +29,18 @@ export function montarIndicadorEstoque(
     })),
   }
 }
+
+export function textoResumoEstoque(
+  dados: InsumosAbaixoDoMinimo,
+): string | null {
+  const semEstoque = dados.semEstoque ?? 0
+  const semMinimo = dados.semMinimo ?? 0
+  if (dados.total > 0) {
+    return semEstoque
+      ? `${semEstoque} ${semEstoque === 1 ? "posição sem estoque" : "posições sem estoque"}`
+      : `${dados.total} ${dados.total === 1 ? "posição crítica" : "posições críticas"}`
+  }
+  if (semMinimo > 0)
+    return `${semMinimo} ${semMinimo === 1 ? "posição sem mínimo local" : "posições sem mínimo local"}`
+  return null
+}

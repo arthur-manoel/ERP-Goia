@@ -6,7 +6,10 @@ import {
 } from "../../../src/features/estoque-minimo/regras"
 import { configurarMinimoSchema } from "../../../src/modules/estoque-minimo/estoque-minimo.schema"
 import type { PosicaoEstoque } from "../../../src/features/estoque-minimo/tipos"
-import { montarIndicadorEstoque } from "../../../src/lib/dashboard/estoque"
+import {
+  montarIndicadorEstoque,
+  textoResumoEstoque,
+} from "../../../src/lib/dashboard/estoque"
 
 const posicao = (
   idEstoque: number,
@@ -75,6 +78,15 @@ describe("alerta de estoque físico por local", () => {
       "Loja",
       "Fábrica",
     ])
+  })
+
+  it.each([
+    [{ total: 0, semEstoque: 0, semMinimo: 0 }, null],
+    [{ total: 0, semEstoque: 0, semMinimo: 2 }, "2 posições sem mínimo local"],
+    [{ total: 1, semEstoque: 0, semMinimo: 0 }, "1 posição crítica"],
+    [{ total: 3, semEstoque: 1, semMinimo: 0 }, "1 posição sem estoque"],
+  ] as const)("resume pendências do dashboard", (dados, esperado) => {
+    expect(textoResumoEstoque(dados)).toBe(esperado)
   })
 })
 

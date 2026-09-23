@@ -2,7 +2,9 @@ import type { Metadata } from "next"
 import { connection } from "next/server"
 import { Suspense } from "react"
 import { AvisoDadosMock } from "@/components/dashboard/aviso-dados-mock"
+import { AlertaEstoqueMinimo } from "@/components/dashboard/alerta-estoque-minimo"
 import { IndicadoresPrincipais } from "@/components/dashboard/indicadores-principais"
+import { ProvedorIndicadorEstoque } from "@/components/dashboard/provedor-indicador-estoque"
 import { ResumoAtencao } from "@/components/dashboard/resumo-atencao"
 import { PageHeader } from "@/components/layout/page-header"
 import { usarDadosMock } from "@/lib/dashboard/fonte"
@@ -22,11 +24,14 @@ export default async function Page() {
         titulo="Dashboard"
         descricao="Visão geral da operação da empresa."
       />
-      {usarDadosMock() && <AvisoDadosMock />}
-      <Suspense fallback={null}>
-        <ResumoAtencao mostrarSaldo={mostrarSaldo} />
-      </Suspense>
-      <IndicadoresPrincipais mostrarSaldo={mostrarSaldo} />
+      <ProvedorIndicadorEstoque>
+        {usarDadosMock() && <AvisoDadosMock />}
+        <Suspense fallback={null}>
+          <ResumoAtencao mostrarSaldo={mostrarSaldo} />
+        </Suspense>
+        <AlertaEstoqueMinimo />
+        <IndicadoresPrincipais mostrarSaldo={mostrarSaldo} />
+      </ProvedorIndicadorEstoque>
       {/* Próximas seções da Dashboard (gráficos, listas) entram aqui, como
           componentes de components/dashboard, sem mexer nos indicadores. */}
     </>
