@@ -2,12 +2,7 @@ import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { getEmpresaAtual } from "@/lib/sessao"
-
-// Ainda não há uma convenção de paginação no projeto. Vinte itens equilibram
-// leitura da grade e quantidade de consultas para esta primeira versão.
-export const ITENS_POR_PAGINA = 20
-
-export type StatusProduto = "ATIVO" | "INATIVO"
+import { ITENS_POR_PAGINA, type StatusProduto } from "./constantes"
 
 export type FiltrosProdutos = {
   busca?: string
