@@ -39,14 +39,14 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Administração | ⬜ | `empresas`, `setores`, `tipos_setor`, `permissoes_setor`, `cargos` | [#16](https://github.com/arthur-manoel/ERP-Goia/issues/16) a [#18](https://github.com/arthur-manoel/ERP-Goia/issues/18) |
 | Cadastros | ⬜ | `clientes`, `fornecedores`, `empresa_fornecedor`, `categorias`, `cores`, `tamanhos`, `tipos_produto` | [#20](https://github.com/arthur-manoel/ERP-Goia/issues/20) a [#25](https://github.com/arthur-manoel/ERP-Goia/issues/25) |
 | Produtos e ficha técnica | ⬜ | `produtos`, `produto_empresa`, `produto_variacoes`, `produto_fornecedor`, `ficha_tecnica`, `ficha_tecnica_item` | [#26](https://github.com/arthur-manoel/ERP-Goia/issues/26) a [#28](https://github.com/arthur-manoel/ERP-Goia/issues/28) |
-| Estoque | ⬜ | `locais_estoque`, `estoque`, `movimentacao_estoque`, `kardex`, `reserva_estoque` | [#29](https://github.com/arthur-manoel/ERP-Goia/issues/29) a [#32](https://github.com/arthur-manoel/ERP-Goia/issues/32) |
+| Estoque | 🟨 | `locais_estoque`, `estoque`, `estoque_minimo_local`, `movimentacao_estoque`, `kardex`, `reserva_estoque` | [#29](https://github.com/arthur-manoel/ERP-Goia/issues/29) a [#32](https://github.com/arthur-manoel/ERP-Goia/issues/32) |
 | Compras | ⬜ | `requisicao_compra`, `item_requisicao_compra`, `pedido_compra`, `item_pedido_compra`, `compras`, `compra_itens` | [#33](https://github.com/arthur-manoel/ERP-Goia/issues/33) a [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Notas fiscais de entrada | ⬜ | `nota_fiscal`, `item_nota_fiscal` | [#36](https://github.com/arthur-manoel/ERP-Goia/issues/36) |
 | Produção | ⬜ | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
 | Vendas | ⬜ | `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39) |
-| Dashboard e relatórios | ⬜ | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
+| Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
-As 48 tabelas do banco `joseev47_erp_dev` estão distribuídas acima; cada uma aparece em um único módulo.
+As 49 tabelas do schema atual estão distribuídas acima; cada uma aparece em um único módulo.
 
 ### Interface de pedidos de venda
 
@@ -58,11 +58,11 @@ As variações podem ser cadastradas nos produtos prontos do estoque (unidades o
 
 ### Interface de insumos
 
-A tela `/estoque/insumos` reúne tecidos e aviamentos com busca, filtros por tipo e situação, indicadores clicáveis de estoque e formulário de cadastro e edição. Os destaques de reposição usam o saldo atual e o estoque mínimo informados no cadastro.
+A tela `/estoque/insumos` reúne as posições físicas reais de produtos marcados para compra e não para venda, com busca e filtros por situação. A tela `/estoque` consolida insumos e produtos acabados. Ambas mostram depósito/localização, saldo físico, mínimo local, déficit e estados distintos para zerado, abaixo, exatamente no mínimo, regular e sem configuração.
 
-A tela `/estoque` consolida os saldos de insumos e produtos prontos em modo de consulta. Cadastros de tecidos e aviamentos são feitos somente em `/estoque/insumos`; alterações de saldo devem passar pelas movimentações de estoque.
+Usuários autorizados podem configurar o mínimo por empresa, localização e produto. A quantidade reservada não participa do alerta. As posições existentes herdaram o limite anterior de `produto_empresa`; novas posições sem mínimo aparecem explicitamente como não configuradas.
 
-**Status: front-end com adaptador temporário em memória.** Os cadastros não persistem após recarregar e ainda não estão conectados ao banco.
+**Status: saldos, mínimos locais e indicador do dashboard integrados ao Prisma.** Cadastro de produtos, movimentações e demais indicadores do dashboard continuam nas entregas próprias; este fluxo não usa o adaptador em memória.
 
 ---
 
@@ -73,7 +73,7 @@ O andamento de cada item fica na própria issue (responsável, discussão, PR). 
 ### Fase 0 — Infraestrutura ✅
 
 - Next.js 16 + React 19 + TypeScript + Tailwind CSS 4
-- Prisma 7 com adapter MariaDB e schema introspectado do banco (48 models, 38 enums)
+- Prisma 7 com adapter MariaDB e schema introspectado do banco (49 models, 38 enums)
 - shadcn/ui com todos os componentes do style `base-nova`
 - Git Flow com `main` e `develop`, CI no GitHub Actions, Prettier, ESLint, commitlint e hooks
 - Esqueleto da aplicação: layout, menu, uma rota por tela, tema claro/escuro
@@ -176,6 +176,7 @@ DEV_ID_EMPRESA=1
 
 - Credenciais do banco: peça ao time em mensagem privada e nunca as versione. Caracteres especiais no usuário ou na senha precisam de URL encoding (`@` vira `%40`).
 - `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` alimentam a **sessão provisória** (`src/lib/sessao.ts`) até a autenticação ([#11](https://github.com/arthur-manoel/ERP-Goia/issues/11)) existir. Use ids que existam no banco (veja o seed, [#8](https://github.com/arthur-manoel/ERP-Goia/issues/8)).
+- O estoque mínimo não usa essa sessão provisória: suas telas fazem login real e chamam as rotas JSON com JWT e empresa ativa. Configure também `ACCESS_TOKEN_SECRET` no ambiente do servidor para o login; veja o [contrato da API](src/modules/estoque-minimo/README.md).
 
 ```bash
 npm install     # também gera o Prisma Client e ativa os hooks de commit

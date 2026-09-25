@@ -4,6 +4,8 @@ Como o código do ERP Goia é organizado e quais padrões seguir. Com 8 pessoas 
 
 > O projeto usa **Next.js 16**, que tem APIs diferentes das versões antigas. Antes de usar uma API do Next, confira a documentação instalada em `node_modules/next/dist/docs/`.
 
+> **Atenção ao fluxo autenticado:** este guia também descreve telas legadas com sessão provisória e Server Actions. Os módulos de ordens de produção e estoque mínimo seguem o padrão de `Route Handlers` em `/api`, lógica em `src/modules`, `Authorization: Bearer <JWT>` e `X-Empresa-Id`. O servidor valida o vínculo e a permissão da empresa ativa; `getSessao()` e `DEV_ID_*` não podem sustentar esses fluxos em produção. Veja `src/modules/estoque-minimo/README.md` para o contrato do estoque.
+
 ## Sumário
 
 - [Visão geral](#visão-geral)
@@ -16,8 +18,8 @@ Como o código do ERP Goia é organizado e quais padrões seguir. Com 8 pessoas 
 
 ## Visão geral
 
-- **Server-first.** Páginas são Server Components e leem o banco direto via Prisma. Não existe API REST interna.
-- **Escrita via Server Actions.** Formulários chamam funções `"use server"`, que validam com **zod**, gravam com Prisma e revalidam a tela.
+- **Server-first nas telas legadas.** Algumas páginas são Server Components e leem o banco via Prisma. Os módulos autenticados de produção e estoque mínimo expõem APIs internas.
+- **Escrita via Server Actions nas telas legadas.** Nos módulos autenticados citados acima, a escrita passa por Route Handlers JSON, com validação no servidor.
 - **Client Components só quando necessário.** Use-os para interatividade (estado, eventos, hooks). Eles nunca importam Prisma.
 - **O banco é a fonte da verdade** (fluxo DB-first; veja o README). Nomes de models e campos seguem o banco: `prisma.ordem_producao`, `id_empresa`.
 
@@ -211,13 +213,12 @@ export default async function Page() {
 
 ## Regras obrigatórias
 
-1. **Multiempresa.** Toda leitura ou escrita em tabela com `id_empresa` filtra ou grava a empresa da sessão (`getEmpresaAtual()`). Nunca aceite `id_empresa` vindo do formulário. O mesmo vale para `id_usuario`: use `getSessao()`.
-   - Enquanto a autenticação ([#11](https://github.com/arthur-manoel/ERP-Goia/issues/11), [#12](https://github.com/arthur-manoel/ERP-Goia/issues/12)) não existe, `src/lib/sessao.ts` é **provisório** e lê `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` do `.env.local`. Use essas funções mesmo assim: quando o login entrar, só a implementação muda.
-2. **Permissão no servidor.** Toda Server Action verifica sessão e permissão antes de gravar (helper de [#13](https://github.com/arthur-manoel/ERP-Goia/issues/13)). Esconder um botão não protege nada.
+1. **Multiempresa.** Toda leitura ou escrita em tabela com `id_empresa` usa a empresa autorizada no servidor. Telas legadas ainda usam `getEmpresaAtual()`/`getSessao()`; esses helpers dependem de `DEV_ID_*` e não funcionam em produção. Nas APIs autenticadas, derive o usuário do JWT e valide o vínculo ativo antes de aceitar `X-Empresa-Id`. Nunca confie em `id_empresa` ou `id_usuario` enviados no corpo da requisição.
+2. **Permissão no servidor.** Toda Server Action ou Route Handler verifica autenticação e permissão antes de ler ou gravar. Esconder um botão não protege nada.
 3. **Transações.** Operações que mexem em mais de uma tabela (estoque, kardex, reservas, produção, entrada de NF) usam `prisma.$transaction`. Movimentação de estoque passa **sempre** pelo serviço único de estoque ([#30](https://github.com/arthur-manoel/ERP-Goia/issues/30)).
 4. **Numeração automática.** Números de pedido, compra, venda e OP vêm do helper de `sequencias_automaticas` ([#15](https://github.com/arthur-manoel/ERP-Goia/issues/15)), nunca de `count() + 1`.
 5. **Auditoria.** Escritas relevantes chamam o helper de auditoria ([#14](https://github.com/arthur-manoel/ERP-Goia/issues/14)).
-6. **Validação com zod** em toda Server Action, mesmo que o formulário já valide.
+6. **Validação com zod** em toda escrita no servidor, mesmo que o formulário já valide.
 7. **Prisma só no servidor.** `src/lib/prisma.ts` é `server-only`. Em Client Components, importe no máximo **tipos** (`import type`) e enums de `@/generated/prisma/enums`.
 8. **Decimal e BigInt não atravessam para Client Components.** Campos `Decimal` (valores e quantidades) e `BigInt` precisam ser convertidos antes de ir como props: formate no servidor (`formatarMoeda`) ou converta (`valor.toString()`).
 9. **Datas.** O banco guarda `Timestamp`/`DateTime`. Exiba sempre com `formatarData`/`formatarDataHora`, que usam o fuso `America/Sao_Paulo`.

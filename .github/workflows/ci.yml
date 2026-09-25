@@ -42,5 +42,8 @@ jobs:
       - name: Schema do Prisma
         run: npm run db:validate
 
+      - name: Testes unitários
+        run: npm test
+
       - name: Build
         run: npm run build
