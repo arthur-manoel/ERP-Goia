@@ -16,7 +16,10 @@ export const ordemProducaoSchema = z
     productId: z.string().min(1, "Selecione um produto pronto."),
     items: z
       .array(itemOrdemProducaoSchema)
-      .min(1, "Informe a quantidade de ao menos uma combinação de cor e tamanho.")
+      .min(
+        1,
+        "Informe a quantidade de ao menos uma combinação de cor e tamanho.",
+      )
       .max(200, "Use até 200 combinações de cor e tamanho."),
     // Data de abertura: registrada automaticamente pelo sistema.
     startDate: dataIso,

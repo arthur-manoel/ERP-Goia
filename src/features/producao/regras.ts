@@ -13,12 +13,17 @@ export function validarOrdemProducao(
   const variacoes = produto.variations ?? []
   if (variacoes.length) {
     for (const item of ordem.items)
-      if (!item.variationId || !variacoes.some((row) => row.id === item.variationId))
+      if (
+        !item.variationId ||
+        !variacoes.some((row) => row.id === item.variationId)
+      )
         throw new Error(
           "Selecione uma combinação de cor e tamanho cadastrada para este produto.",
         )
   } else if (ordem.items.some((item) => item.variationId)) {
-    throw new Error("Este produto não possui combinações de cor e tamanho cadastradas.")
+    throw new Error(
+      "Este produto não possui combinações de cor e tamanho cadastradas.",
+    )
   }
 
   if (!responsaveisDisponiveis.some((row) => row.id === ordem.responsible))

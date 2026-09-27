@@ -109,7 +109,8 @@ export function FormularioAberturaOP({
   const tamanhos = [...new Set(variacoes.map((row) => row.size))]
   const cores = [...new Set(variacoes.map((row) => row.color))]
   const quantidadeTotal = itensAtuais.reduce(
-    (total, item) => total + (Number.isFinite(item.quantity) ? item.quantity : 0),
+    (total, item) =>
+      total + (Number.isFinite(item.quantity) ? item.quantity : 0),
     0,
   )
   const indiceDaVariacao = (variationId: string) =>
@@ -119,7 +120,8 @@ export function FormularioAberturaOP({
       .filter((row) => row.color === cor)
       .reduce(
         (total, row) =>
-          total + (Number(itensAtuais[indiceDaVariacao(row.id)]?.quantity) || 0),
+          total +
+          (Number(itensAtuais[indiceDaVariacao(row.id)]?.quantity) || 0),
         0,
       )
   const totalPorTamanho = (tamanho: string) =>
@@ -127,7 +129,8 @@ export function FormularioAberturaOP({
       .filter((row) => row.size === tamanho)
       .reduce(
         (total, row) =>
-          total + (Number(itensAtuais[indiceDaVariacao(row.id)]?.quantity) || 0),
+          total +
+          (Number(itensAtuais[indiceDaVariacao(row.id)]?.quantity) || 0),
         0,
       )
 
@@ -319,10 +322,7 @@ export function FormularioAberturaOP({
                   )}
                 </section>
 
-                <section
-                  aria-labelledby="quantidades-op"
-                  className="space-y-4"
-                >
+                <section aria-labelledby="quantidades-op" className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 id="quantidades-op" className="font-semibold">
                       Quantidade por cor e tamanho
@@ -419,9 +419,7 @@ export function FormularioAberturaOP({
                             </TableRow>
                           ))}
                           <TableRow>
-                            <TableCell className="font-medium">
-                              Total
-                            </TableCell>
+                            <TableCell className="font-medium">Total</TableCell>
                             {tamanhos.map((tamanho) => (
                               <TableCell
                                 key={tamanho}
@@ -496,9 +494,9 @@ export function FormularioAberturaOP({
                           <AlertTitle>⚠ Insumo insuficiente</AlertTitle>
                           <AlertDescription>
                             {insumosInsuficientes.length} insumo(s) não têm
-                            saldo suficiente para esta produção. Você ainda
-                            pode abrir a ordem; ajuste o planejamento de
-                            compras conforme necessário.
+                            saldo suficiente para esta produção. Você ainda pode
+                            abrir a ordem; ajuste o planejamento de compras
+                            conforme necessário.
                           </AlertDescription>
                         </Alert>
                       )}
@@ -569,9 +567,9 @@ export function FormularioAberturaOP({
                     </>
                   )}
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    Verificação informativa a partir da composição cadastrada
-                    do produto. Nesta etapa não há baixa, reserva ou
-                    movimentação de estoque.
+                    Verificação informativa a partir da composição cadastrada do
+                    produto. Nesta etapa não há baixa, reserva ou movimentação
+                    de estoque.
                   </p>
                 </section>
               </div>
@@ -616,16 +614,16 @@ export function FormularioAberturaOP({
                       )}
                       {!!tamanhos.length && (
                         <div className="space-y-1">
-                          <dt className="text-muted-foreground">
-                            Por tamanho
-                          </dt>
+                          <dt className="text-muted-foreground">Por tamanho</dt>
                           {tamanhos.map((tamanho) => (
                             <dd
                               key={tamanho}
                               className="flex justify-between gap-2 tabular-nums"
                             >
                               <span>{tamanho}</span>
-                              <span>{quantidade(totalPorTamanho(tamanho))}</span>
+                              <span>
+                                {quantidade(totalPorTamanho(tamanho))}
+                              </span>
                             </dd>
                           ))}
                         </div>
