@@ -594,7 +594,9 @@ export function TelaModulo({
                           <DropdownMenuContent align="end">
                             <DropdownMenuGroup>
                               <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                              <DropdownMenuItem onClick={() => openForm(row.raw)}>
+                              <DropdownMenuItem
+                                onClick={() => openForm(row.raw)}
+                              >
                                 Editar
                               </DropdownMenuItem>
                               {collection === "transactions" &&
