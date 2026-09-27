@@ -1,7 +1,14 @@
 "use client"
 
 import { useMemo, useRef, useState } from "react"
-import { MoreHorizontal, Pencil, Plus, Search, Undo2, Workflow } from "lucide-react"
+import {
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Undo2,
+  Workflow,
+} from "lucide-react"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/layout/page-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -48,7 +55,7 @@ export function TelaFluxosProducao() {
   const novoRef = useRef<HTMLButtonElement>(null)
   const focoAnterior = useRef<HTMLElement | null>(null)
 
-  const fluxos = data?.productionFlows ?? []
+  const fluxos = useMemo(() => data?.productionFlows ?? [], [data])
   const setores = data?.sectors ?? []
 
   const filtrados = useMemo(() => {
@@ -98,11 +105,7 @@ export function TelaFluxosProducao() {
   async function alternarStatus(fluxo: FluxoProducao) {
     const novoStatus = fluxo.status === "Ativo" ? "Inativo" : "Ativo"
     try {
-      await save(
-        "productionFlows",
-        { ...fluxo, status: novoStatus },
-        fluxo.id,
-      )
+      await save("productionFlows", { ...fluxo, status: novoStatus }, fluxo.id)
       toast.success(
         novoStatus === "Ativo"
           ? "Fluxo de produção reativado."
@@ -202,7 +205,9 @@ export function TelaFluxosProducao() {
                         <MoreHorizontal />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => abrirFormulario(fluxo)}>
+                        <DropdownMenuItem
+                          onClick={() => abrirFormulario(fluxo)}
+                        >
                           <Pencil /> Editar
                         </DropdownMenuItem>
                         {fluxo.status === "Ativo" ? (

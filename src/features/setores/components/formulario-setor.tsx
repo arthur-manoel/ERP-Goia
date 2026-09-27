@@ -1,5 +1,6 @@
 "use client"
 
+import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
@@ -19,12 +20,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useErp } from "@/features/erp/components/provedor"
 import { setorSchema, type Setor } from "../schemas"
 
-type ValoresSetor = {
-  name: string
-  type: string
-  description: string
-  status: "Ativo" | "Inativo"
-}
+// O schema tem `.transform()` (ex.: tipo vazio vira "Outro"), então o valor
+// "de entrada" (o que o usuário digita) e o valor "de saída" (o que é salvo)
+// têm tipos diferentes. Os dois generics extras avisam o react-hook-form disso.
+type ValoresFormulario = z.input<typeof setorSchema>
+type ValoresSalvas = z.output<typeof setorSchema>
 
 export function FormularioSetor({
   initial,
@@ -36,7 +36,7 @@ export function FormularioSetor({
   returnFocus: () => void
 }) {
   const { save } = useErp()
-  const form = useForm<ValoresSetor>({
+  const form = useForm<ValoresFormulario, unknown, ValoresSalvas>({
     resolver: zodResolver(setorSchema),
     defaultValues: {
       name: initial?.name ?? "",
@@ -47,11 +47,11 @@ export function FormularioSetor({
   })
   const pendente = form.formState.isSubmitting
 
-  function erro(campo: keyof ValoresSetor) {
+  function erro(campo: keyof ValoresFormulario) {
     return form.formState.errors[campo]?.message
   }
 
-  async function salvar(valores: ValoresSetor) {
+  async function salvar(valores: ValoresSalvas) {
     try {
       await save("sectors", valores, initial?.id)
       toast.success(initial ? "Setor atualizado." : "Setor cadastrado.")

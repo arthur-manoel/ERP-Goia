@@ -52,7 +52,7 @@ export function TelaSetores() {
   const novoRef = useRef<HTMLButtonElement>(null)
   const focoAnterior = useRef<HTMLElement | null>(null)
 
-  const setores = data?.sectors ?? []
+  const setores = useMemo(() => data?.sectors ?? [], [data])
 
   const filtrados = useMemo(() => {
     return setores

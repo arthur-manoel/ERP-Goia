@@ -23,7 +23,8 @@ export const fluxoProducaoSchema = z.object({
     .array(etapaFluxoSchema)
     .min(1, "Adicione ao menos um setor ao fluxo.")
     .refine(
-      (steps) => new Set(steps.map((step) => step.sectorId)).size === steps.length,
+      (steps) =>
+        new Set(steps.map((step) => step.sectorId)).size === steps.length,
       "Um mesmo setor não pode aparecer duas vezes no fluxo.",
     ),
 })

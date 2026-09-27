@@ -1,13 +1,13 @@
 "use client"
 
 import { useState } from "react"
+import { z } from "zod"
 import { useFieldArray, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -24,12 +24,10 @@ import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import type { Setor } from "@/features/setores/schemas"
 import { fluxoProducaoSchema, type FluxoProducao } from "../schemas"
 
-type ValoresFluxo = {
-  name: string
-  description: string
-  status: "Ativo" | "Inativo"
-  steps: { sectorId: string }[]
-}
+// O schema tem `.transform()` na descrição, então entrada e saída têm tipos
+// levemente diferentes (ver mesmo comentário em formulario-setor.tsx).
+type ValoresFormulario = z.input<typeof fluxoProducaoSchema>
+type ValoresSalvas = z.output<typeof fluxoProducaoSchema>
 
 export function FormularioFluxo({
   initial,
@@ -45,7 +43,7 @@ export function FormularioFluxo({
 }) {
   const { save } = useErp()
   const [setorParaAdicionar, setSetorParaAdicionar] = useState("")
-  const form = useForm<ValoresFluxo>({
+  const form = useForm<ValoresFormulario, unknown, ValoresSalvas>({
     resolver: zodResolver(fluxoProducaoSchema),
     defaultValues: {
       name: initial?.name ?? "",
@@ -65,7 +63,9 @@ export function FormularioFluxo({
     setoresDisponiveis.map((setor) => [setor.id, setor]),
   )
   const opcoesDisponiveis = setoresDisponiveis
-    .filter((setor) => setor.status === "Ativo" && !idsSelecionados.has(setor.id))
+    .filter(
+      (setor) => setor.status === "Ativo" && !idsSelecionados.has(setor.id),
+    )
     .map((setor) => ({ value: setor.id, label: setor.name }))
 
   function adicionarEtapa() {
@@ -75,7 +75,7 @@ export function FormularioFluxo({
     form.clearErrors("steps")
   }
 
-  async function salvar(valores: ValoresFluxo) {
+  async function salvar(valores: ValoresSalvas) {
     try {
       await save("productionFlows", valores, initial?.id)
       toast.success(
@@ -241,7 +241,9 @@ export function FormularioFluxo({
                   <Plus /> Adicionar etapa
                 </Button>
               </div>
-              {setoresDisponiveis.every((setor) => setor.status !== "Ativo") && (
+              {setoresDisponiveis.every(
+                (setor) => setor.status !== "Ativo",
+              ) && (
                 <p className="text-xs text-muted-foreground">
                   Cadastre setores ativos em Administração → Setores antes de
                   montar um fluxo.

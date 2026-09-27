@@ -93,6 +93,8 @@ const singular: Record<Collection, string> = {
   clients: "cliente",
   orders: "pedido",
   transactions: "lançamento",
+  sectors: "Setor",
+  productionFlows: "Fluxo de produção",
 }
 export function TelaModulo({
   module,
@@ -417,6 +419,13 @@ export function TelaModulo({
         dueDate: "",
         status: "Em aberto",
         paidDate: "",
+      },
+      sectors: { name: "", type: "Outro", description: "", status: "Ativo" },
+      productionFlows: {
+        name: "",
+        description: "",
+        status: "Ativo",
+        steps: [],
       },
     }
     setForm({

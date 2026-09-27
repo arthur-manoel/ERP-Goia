@@ -19,7 +19,8 @@ export function validarCadastroSetor(
   // o setor pelo id. Por isso a checagem de uso ativo acontece aqui, no mesmo
   // caminho usado tanto para editar quanto para inativar.
   const atual = dados.sectors.find((row) => row.id === id)
-  const estaInativando = setor.status === "Inativo" && atual?.status !== "Inativo"
+  const estaInativando =
+    setor.status === "Inativo" && atual?.status !== "Inativo"
   if (estaInativando) {
     const fluxosAtivos = dados.productionFlows.filter(
       (fluxo) =>
