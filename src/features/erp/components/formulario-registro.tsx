@@ -36,6 +36,7 @@ import {
 import { SearchSelect, type Option } from "./seletor-pesquisavel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { FormularioPedido } from "@/features/pedidos/components/formulario-pedido"
+import { FormularioAberturaOP } from "@/features/producao/components/formulario-abertura-op"
 
 type FormField = {
   key: string
@@ -57,6 +58,8 @@ type RecordFormProps = {
 
 export function RecordForm(props: RecordFormProps) {
   if (props.collection === "orders") return <FormularioPedido {...props} />
+  if (props.collection === "productions")
+    return <FormularioAberturaOP {...props} />
   return <FormularioRegistro {...props} />
 }
 
@@ -92,13 +95,10 @@ function FormularioRegistro({
   const addresses = useFieldArray({ control: form.control, name: "addresses" })
   const values = useWatch({ control: form.control })
   const db = data as Data
-  const productOptions = db.materials
-    .filter((row) => row.category === "Produto pronto")
-    .map((row) => ({ value: row.id, label: row.name }))
   const componentOptions = db.materials
     .filter((row) => row.id !== initial.id)
     .map((row) => ({ value: row.id, label: row.name + " · " + row.unit }))
-  const fields: Record<Collection, FormField[]> = {
+  const fields: Partial<Record<Collection, FormField[]>> = {
     materials: [
       { key: "name", label: "Nome do material" },
       { key: "code", label: "Código" },
@@ -161,41 +161,6 @@ function FormularioRegistro({
         label: "Situação",
         options: options(["Ativo", "Inativo"]),
       },
-    ],
-    productions: [
-      { key: "code", label: "Código da ordem" },
-      { key: "productId", label: "Produto pronto", options: productOptions },
-      ...(db.materials.find((produto) => produto.id === values.productId)
-        ?.variations?.length
-        ? [
-            {
-              key: "variationId",
-              label: "Tamanho / cor",
-              optional: true,
-              options: (
-                db.materials.find((produto) => produto.id === values.productId)
-                  ?.variations ?? []
-              ).map((variacao) => ({
-                value: variacao.id,
-                label: `${variacao.size} · ${variacao.color}`,
-              })),
-            },
-          ]
-        : []),
-      { key: "quantity", label: "Quantidade de peças", type: "number" },
-      {
-        key: "status",
-        label: "Situação",
-        options: options([
-          "Planejada",
-          "Em produção",
-          "Concluída",
-          "Cancelada",
-        ]),
-      },
-      { key: "startDate", label: "Data de início", type: "date" },
-      { key: "dueDate", label: "Previsão de conclusão", type: "date" },
-      { key: "notes", label: "Observações", type: "textarea", optional: true },
     ],
     orders: [
       { key: "code", label: "Código do pedido" },
@@ -288,8 +253,6 @@ function FormularioRegistro({
                 options={field.options ?? []}
                 onValueChange={(value) => {
                   control.onChange(value)
-                  if (collection === "productions" && field.key === "productId")
-                    form.setValue("variationId", "")
                   if (
                     collection === "materials" &&
                     field.key === "category" &&
@@ -414,7 +377,7 @@ function FormularioRegistro({
           >
             {/* O grid usa breakpoints de viewport; sem contenção, os campos mantêm a altura ao inserir componentes no diálogo. */}
             <div className="grid gap-5 sm:grid-cols-2">
-              {fields[collection].map(renderField)}
+              {(fields[collection] ?? []).map(renderField)}
             </div>
             {collection === "materials" && (
               <p
@@ -687,7 +650,7 @@ function FormularioRegistro({
               </section>
             )}
             {collection === "transactions" &&
-              !fields.transactions.find((field) => field.key === "partyId")
+              !fields.transactions?.find((field) => field.key === "partyId")
                 ?.options?.length && (
                 <p className="text-sm text-muted-foreground">
                   Cadastre um{" "}

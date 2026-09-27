@@ -14,6 +14,8 @@ import { RecordForm } from "./formulario-registro"
 import type { Collection, Data } from "@/features/erp/tipos"
 import { rotuloData as dateLabel, hoje as today } from "@/features/erp/datas"
 import { totalPedido as orderTotal } from "@/features/pedidos/schemas"
+import { totalOrdemProducao } from "@/features/producao/schemas"
+import { nomeResponsavel } from "@/features/producao/responsaveis"
 import { formatarMoeda as brl } from "@/lib/formatacao"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -242,6 +244,7 @@ export function TelaModulo({
     headings = [
       "Ordem / produto",
       "Quantidade",
+      "Responsável",
       "Início",
       "Previsão",
       "Situação",
@@ -252,7 +255,7 @@ export function TelaModulo({
       .map((row) => ({
         id: row.id,
         label: row.code,
-        search: `${row.code} ${product(row.productId)} ${row.status}`,
+        search: `${row.code} ${product(row.productId)} ${nomeResponsavel(row.responsible)} ${row.status}`,
         cells: [
           <div key="name">
             <p className="font-medium">{row.code}</p>
@@ -260,7 +263,8 @@ export function TelaModulo({
               {product(row.productId)}
             </p>
           </div>,
-          `${row.quantity} peças`,
+          `${totalOrdemProducao(row)} peças`,
+          nomeResponsavel(row.responsible),
           dateLabel(row.startDate),
           dateLabel(row.dueDate),
           statusBadge(row.status),
@@ -390,9 +394,10 @@ export function TelaModulo({
       productions: {
         code: "",
         productId: "",
-        quantity: 1,
+        items: [],
         startDate: today(),
         dueDate: "",
+        responsible: "",
         status: "Planejada",
         notes: "",
       },
