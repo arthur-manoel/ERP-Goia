@@ -193,7 +193,9 @@ export function TelaVariacoes({ tipo }: { tipo: TipoVariacao }) {
   }, [configuracao.endpoint, configuracao.titulo, empresa, requisitar])
 
   useEffect(() => {
-    if (estadoAutenticacao === "autenticado" && empresa) void recarregar()
+    if (estadoAutenticacao !== "autenticado" || !empresa) return
+
+    void Promise.resolve().then(recarregar)
   }, [empresa, estadoAutenticacao, recarregar])
 
   const filtrados = useMemo(() => {
