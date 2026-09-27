@@ -440,6 +440,13 @@ Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
 
 ---
 
+## API de relatório de quantidade por estoque
+
+`GET /api/relatorios/estoque/produtos`: consulta de saldos atuais por local e produto,
+com JWT, autorização de leitura de estoque por empresa, filtros, paginação e totais
+decimais separados por unidade. Entrega somente de back-end, sem telas ou migration.
+Contrato e testes locais: [documentação da API](src/modules/relatorio-estoque/README.md).
+
 ## Histórico
 
 | Data | Autor | Referência | Descrição |
