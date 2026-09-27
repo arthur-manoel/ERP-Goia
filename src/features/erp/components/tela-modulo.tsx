@@ -7,7 +7,13 @@ import {
   EmptyDescription,
 } from "@/components/ui/empty"
 import { useRef, useState, type ReactNode } from "react"
-import { ArrowUpDown, MoreHorizontal, Plus, Search } from "lucide-react"
+import {
+  ArrowUpDown,
+  CircleCheck,
+  MoreHorizontal,
+  Plus,
+  Search,
+} from "lucide-react"
 import { toast } from "sonner"
 import { useErp } from "./provedor"
 import { RecordForm } from "./formulario-registro"
@@ -81,8 +87,8 @@ const titles = {
     "Clientes, fornecedores e encomendas da confecção.",
   ],
   financeiro: [
-    "Controle financeiro",
-    "Contas a pagar, a receber e suas liquidações.",
+    "Lançamentos financeiros",
+    "Acompanhe contas a pagar e a receber, vencimentos e liquidações.",
   ],
 }
 const singular: Record<Collection, string> = {
@@ -105,6 +111,8 @@ export function TelaModulo({
   )
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState("all")
+  const [dueFrom, setDueFrom] = useState("")
+  const [dueTo, setDueTo] = useState("")
   const [page, setPage] = useState(0)
   const [sort, setSort] = useState<boolean | null>(null)
   const [form, setForm] = useState<{
@@ -295,6 +303,11 @@ export function TelaModulo({
     filterOptions = ["Em aberto", "Vencido", "Liquidado"]
     view = data.transactions
       .filter((row) => tab === "all" || row.type === tab)
+      .filter(
+        (row) =>
+          (!dueFrom || row.dueDate >= dueFrom) &&
+          (!dueTo || row.dueDate <= dueTo),
+      )
       .map((row) => {
         const status =
           row.status === "Em aberto" && row.dueDate < today()
@@ -429,6 +442,8 @@ export function TelaModulo({
   const resetFilters = () => {
     setSearch("")
     setFilter("all")
+    setDueFrom("")
+    setDueTo("")
     setPage(0)
   }
   const table = (
@@ -460,7 +475,39 @@ export function TelaModulo({
             ...filterOptions.map((value) => ({ value, label: value })),
           ]}
         />
-        {(search || filter !== "all") && (
+        {collection === "transactions" && (
+          <div className="grid w-full grid-cols-2 gap-3 sm:w-auto">
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Vencimento de
+              <Input
+                type="date"
+                aria-label="Vencimento inicial"
+                className="mt-1 sm:w-40"
+                value={dueFrom}
+                max={dueTo || undefined}
+                onChange={(event) => {
+                  setDueFrom(event.target.value)
+                  setPage(0)
+                }}
+              />
+            </label>
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Vencimento até
+              <Input
+                type="date"
+                aria-label="Vencimento final"
+                className="mt-1 sm:w-40"
+                value={dueTo}
+                min={dueFrom || undefined}
+                onChange={(event) => {
+                  setDueTo(event.target.value)
+                  setPage(0)
+                }}
+              />
+            </label>
+          </div>
+        )}
+        {(search || filter !== "all" || dueFrom || dueTo) && (
           <Button variant="ghost" onClick={resetFilters}>
             Limpar filtros
           </Button>
@@ -517,47 +564,65 @@ export function TelaModulo({
                   ))}
                   {!somenteConsulta && (
                     <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
+                      <div className="flex items-center justify-end gap-1">
+                        {collection === "transactions" &&
+                          "status" in row.raw &&
+                          row.raw.status === "Em aberto" && (
                             <Button
-                              size="icon"
-                              variant="ghost"
-                              aria-label={`Ações de ${row.label}`}
-                            />
-                          }
-                        >
-                          <MoreHorizontal />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuGroup>
-                            <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => openForm(row.raw)}>
-                              Editar
-                            </DropdownMenuItem>
-                            {collection === "transactions" &&
-                              "status" in row.raw &&
-                              row.raw.status === "Em aberto" && (
-                                <DropdownMenuItem
-                                  onClick={() => openForm(row.raw, true)}
-                                >
-                                  Registrar liquidação
-                                </DropdownMenuItem>
-                              )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => {
-                                returnTo.current =
-                                  document.activeElement as HTMLElement
-                                setDeleting(row)
-                              }}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              aria-label={`Dar baixa em ${row.label}`}
+                              onClick={() => openForm(row.raw, true)}
                             >
-                              Excluir
-                            </DropdownMenuItem>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                              <CircleCheck />
+                              Dar baixa
+                            </Button>
+                          )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                aria-label={`Ações de ${row.label}`}
+                              />
+                            }
+                          >
+                            <MoreHorizontal />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuGroup>
+                              <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                              <DropdownMenuItem
+                                onClick={() => openForm(row.raw)}
+                              >
+                                Editar
+                              </DropdownMenuItem>
+                              {collection === "transactions" &&
+                                "status" in row.raw &&
+                                row.raw.status === "Em aberto" && (
+                                  <DropdownMenuItem
+                                    onClick={() => openForm(row.raw, true)}
+                                  >
+                                    Registrar liquidação
+                                  </DropdownMenuItem>
+                                )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={() => {
+                                  returnTo.current =
+                                    document.activeElement as HTMLElement
+                                  setDeleting(row)
+                                }}
+                              >
+                                Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </TableCell>
                   )}
                 </TableRow>
@@ -696,9 +761,7 @@ export function TelaModulo({
           title={form.title}
           onClose={() => {
             setForm(null)
-            setPage(0)
-            setSearch("")
-            setFilter("all")
+            resetFilters()
           }}
           returnFocus={() => {
             const element = returnTo.current
