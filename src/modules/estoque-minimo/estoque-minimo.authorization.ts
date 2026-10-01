@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/authorize"
 import { prisma } from "@/lib/prisma"
 import { EstoqueMinimoError } from "./estoque-minimo.error"
 
-type Acao = "ler" | "editar"
+type Acao = "ler" | "criar" | "editar"
 
 const perfis = ["ADMINISTRACAO", "PRODUCAO", "VENDAS", "FINANCEIRO"] as const
 
@@ -41,6 +41,7 @@ function permissoes(
   const permissao = vinculo.permissoes_usuario[0]
   return {
     podeLer: admin || permissao?.pode_ler === true,
+    podeCriar: admin || permissao?.pode_criar === true,
     podeEditar: admin || permissao?.pode_editar === true,
   }
 }
@@ -85,8 +86,9 @@ export async function autorizarEstoque(request: Request, acao: Acao) {
       )
     throw new EstoqueMinimoError(403, "Acesso negado à empresa.")
   }
-  const { podeLer, podeEditar } = permissoes(vinculo)
-  if (acao === "ler" ? !podeLer : !podeEditar)
+  const { podeLer, podeCriar, podeEditar } = permissoes(vinculo)
+  const permitido = { ler: podeLer, criar: podeCriar, editar: podeEditar }
+  if (!Object.hasOwn(permitido, acao) || permitido[acao] !== true)
     throw new EstoqueMinimoError(403, "Acesso negado ao estoque.")
   return { idUsuario, idEmpresa: vinculo.id_empresa, podeEditar }
 }
