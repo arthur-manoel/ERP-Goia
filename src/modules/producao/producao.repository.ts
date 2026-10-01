@@ -43,6 +43,16 @@ export async function transacao<T>(operation: (tx: Transaction) => Promise<T>) {
     })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (
+        error.code === "P2010" &&
+        ["1062", "1451", "1452", "1213", "1205"].includes(
+          String(error.meta?.code),
+        )
+      )
+        throw new ProducaoError(
+          409,
+          "Nome duplicado, vínculo existente ou conflito concorrente.",
+        )
       if (["P2034", "P2002"].includes(error.code))
         throw new ProducaoError(
           409,
@@ -171,4 +181,31 @@ export async function produtoComFicha(
       "A ficha contém componentes inativos ou não vinculados à empresa.",
     )
   return ficha
+}
+
+export function registrarInicioSetor(
+  tx: Transaction,
+  ctx: Contexto,
+  ordem: Ordem,
+  idSetor: number,
+) {
+  return tx.ordem_producao_movimentacao_setor.create({
+    data: {
+      id_ordem_producao: ordem.id,
+      id_setor_origem: ordem.id_setor,
+      id_setor_destino: idSetor,
+      id_usuario_envio: ctx.idUsuario,
+      id_usuario_recebimento: ctx.idUsuario,
+      status: "ENTREGUE",
+      data_recebimento: new Date(),
+    },
+  })
+}
+export async function confirmarQuantidades(tx: Transaction, ordem: Ordem) {
+  for (const item of ordem.ordem_producao_item) {
+    await tx.ordem_producao_item.update({
+      where: { id: item.id },
+      data: { quantidade_produzida: item.quantidade },
+    })
+  }
 }

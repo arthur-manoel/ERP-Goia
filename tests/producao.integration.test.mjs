@@ -83,6 +83,7 @@ test(
       ;({ prisma } = await import("../src/lib/prisma.ts"))
       const service =
         await import("../src/modules/producao/producao.service.ts")
+      const fluxos = await import("../src/modules/fluxos/fluxos.service.ts")
       const schemas = await import("../src/modules/producao/producao.schema.ts")
       const auth =
         await import("../src/modules/producao/producao.authorization.ts")
@@ -182,15 +183,72 @@ test(
         setores.push(setor.id)
       }
       const ctx = { idUsuario: usuario.id, idEmpresa: empresas[0] }
+      await assert.rejects(
+        service.abrirOrdem(
+          ctx,
+          schemas.abrirSchema.parse({
+            idProduto: produtos[0],
+            quantidade: "1",
+          }),
+        ),
+        (e) => e.status === 422,
+      )
+      const criado = await fluxos.salvar(ctx, "fluxo", {
+        nome: `Fluxo ${marker}`,
+        setores,
+      })
+      const fluxoId = criado.fluxo.id
+      await fluxos.associar(ctx, produtos[0], fluxoId)
+      await assert.rejects(
+        fluxos.excluir(ctx, "setor", setores[0]),
+        (e) => e.status === 409,
+      )
       const opened = await service.abrirOrdem(
         ctx,
         schemas.abrirSchema.parse({
           idProduto: produtos[0],
           quantidade: "3",
-          setores,
         }),
       )
       const id = opened.ordem.id
+      assert.deepEqual(
+        opened.etapas.map((e) => e.status),
+        setores.map(() => "PENDENTE"),
+      )
+      assert.deepEqual(
+        opened.etapas.map((e) => e.id_setor),
+        setores,
+      )
+      await fluxos.salvar(
+        ctx,
+        "fluxo",
+        { nome: `Alterado ${marker}`, setores: [...setores].reverse() },
+        fluxoId,
+      )
+      const historico = await service.consultarOrdem(ctx, id)
+      assert.deepEqual(historico.fluxoSnapshot, opened.fluxoSnapshot)
+      assert.deepEqual(historico.etapas, opened.etapas)
+      await assert.rejects(
+        fluxos.excluir(ctx, "fluxo", fluxoId),
+        (e) => e.status === 409,
+      )
+      // Falha no meio da substituição deve reverter o cabeçalho e os vínculos.
+      await assert.rejects(
+        fluxos.salvar(
+          ctx,
+          "fluxo",
+          { nome: "Não persistir", setores: [setores[0], setores[0]] },
+          fluxoId,
+        ),
+        (e) => e.status === 409,
+      )
+      const afterRollback = await fluxos.consultar(ctx, "fluxo", fluxoId)
+      assert.equal(afterRollback.fluxo.nome, `Alterado ${marker}`)
+      assert.deepEqual(
+        afterRollback.fluxo.setores.map((s) => s.id),
+        [...setores].reverse(),
+      )
+      await fluxos.salvar(ctx, "fluxo", { setores }, fluxoId)
       const consumo = (result) =>
         result.ordem.ordem_producao_item[0].ordem_producao_consumo_planejado[0].quantidade_necessaria.toString()
       assert.equal(consumo(opened), "0.375")
@@ -200,14 +258,14 @@ test(
         quantidade: "4",
       })
       assert.equal(consumo(changed), "0.5")
-      // Falha após UPDATE do cabeçalho: toda a transação deve voltar ao valor anterior.
+      // Troca de produto não pode invalidar o snapshot já criado.
       await assert.rejects(
         service.alterarOrdem(ctx, id, {
           statusEsperado: "PLANEJADA",
           idProduto: produtos[1],
           quantidade: "7",
         }),
-        (e) => e.status === 400,
+        (e) => e.status === 409,
       )
       const stored = await prisma.ordem_producao.findUniqueOrThrow({
         where: { id },
@@ -242,11 +300,7 @@ test(
       )
       const initialRace = await Promise.allSettled(
         Array.from({ length: 2 }, () =>
-          service.avancarOrdem(ctx, id, {
-            statusEsperado: "LIBERADA",
-            setorEsperado: null,
-            statusDestino: "EM_PRODUCAO",
-          }),
+          service.executarEtapa(ctx, id, opened.etapas[0].id, true),
         ),
       )
       assert.equal(
@@ -264,14 +318,10 @@ test(
         }),
         (e) => e.status === 409,
       )
-      // Duas chamadas mantêm o mesmo status: só uma pode mudar do primeiro ao segundo setor.
+      // Duas conclusões da mesma etapa: somente uma pode vencer.
       const race = await Promise.allSettled(
         Array.from({ length: 2 }, () =>
-          service.avancarOrdem(ctx, id, {
-            statusEsperado: "EM_PRODUCAO",
-            setorEsperado: setores[0],
-            statusDestino: "EM_PRODUCAO",
-          }),
+          service.executarEtapa(ctx, id, opened.etapas[0].id, false),
         ),
       )
       assert.equal(race.filter((r) => r.status === "fulfilled").length, 1)
@@ -279,17 +329,21 @@ test(
       assert.equal(
         (await prisma.ordem_producao.findUniqueOrThrow({ where: { id } }))
           .id_setor,
-        setores[1],
+        setores[0],
       )
-      await service.avancarOrdem(ctx, id, {
-        statusEsperado: "EM_PRODUCAO",
-        setorEsperado: setores[1],
-        statusDestino: "EM_PRODUCAO",
-      })
-      const closed = await service.encerrarOrdem(ctx, id, {
-        statusEsperado: "EM_PRODUCAO",
-        setorEsperado: setores[2],
-      })
+      await assert.rejects(
+        service.executarEtapa(ctx, id, opened.etapas[2].id, true),
+        (e) => e.status === 409,
+      )
+      await service.executarEtapa(ctx, id, opened.etapas[1].id, true)
+      await service.executarEtapa(ctx, id, opened.etapas[1].id, false)
+      await service.executarEtapa(ctx, id, opened.etapas[2].id, true)
+      const closed = await service.executarEtapa(
+        ctx,
+        id,
+        opened.etapas[2].id,
+        false,
+      )
       assert.equal(closed.ordem.status, "CONCLUIDA")
       assert.equal(closed.baixaEstoque, "pendente")
       assert.equal(closed.ordem.ordem_producao_movimentacao_setor.length, 3)
@@ -334,6 +388,21 @@ test(
           marker,
         })
       }
+      await fluxos.excluir(ctx, "fluxo", fluxoId)
+      assert.deepEqual(
+        (await service.consultarOrdem(ctx, id)).fluxoSnapshot,
+        opened.fluxoSnapshot,
+      )
+      await assert.rejects(
+        service.abrirOrdem(
+          ctx,
+          schemas.abrirSchema.parse({
+            idProduto: produtos[0],
+            quantidade: "1",
+          }),
+        ),
+        (e) => e.status === 422,
+      )
     } finally {
       if (prisma) {
         try {
@@ -358,6 +427,9 @@ test(
             await prisma.usuario_empresa.deleteMany({
               where: { id_empresa: { in: empresas } },
             })
+            for (const empresa of empresas) {
+              await prisma.$executeRaw`DELETE FROM fluxos_producao WHERE id_empresa = ${empresa}`
+            }
             await prisma.setores.deleteMany({
               where: { id_empresa: { in: empresas } },
             })
