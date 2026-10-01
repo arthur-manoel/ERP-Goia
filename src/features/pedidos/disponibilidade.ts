@@ -45,11 +45,19 @@ export function consultarDisponibilidade(
     .filter(
       (ordem) =>
         ordem.productId === item.productId &&
-        (ordem.variationId ?? "") === (item.variationId ?? "") &&
         ["Planejada", "Em produção"].includes(ordem.status) &&
         ordem.dueDate <= prazo,
     )
-    .reduce((total, ordem) => total + ordem.quantity, 0)
+    .reduce(
+      (total, ordem) =>
+        total +
+        ordem.items
+          .filter(
+            (linha) => (linha.variationId ?? "") === (item.variationId ?? ""),
+          )
+          .reduce((soma, linha) => soma + linha.quantity, 0),
+      0,
+    )
   const estoque = Math.max(0, saldo - comprometido)
   const producao = Math.max(0, previsto - Math.max(0, comprometido - saldo))
   const faltante = Math.max(0, item.quantity - estoque - producao)

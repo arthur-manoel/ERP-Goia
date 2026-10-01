@@ -27,6 +27,7 @@ import {
   Users,
   Wallet,
   Warehouse,
+  Workflow,
   type LucideIcon,
 } from "lucide-react"
 
@@ -108,6 +109,11 @@ export const navegacao: GrupoNavegacao[] = [
   {
     titulo: "Produção",
     itens: [
+      {
+        titulo: "Fluxos de produção",
+        href: "/producao/fluxos",
+        icone: Workflow,
+      },
       {
         titulo: "Ordens de produção",
         href: "/producao/ordens",
