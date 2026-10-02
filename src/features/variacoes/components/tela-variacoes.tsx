@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import {
-  ArrowUpDown,
   MoreHorizontal,
   Palette,
   Pencil,
@@ -11,7 +10,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/layout/page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -92,13 +91,7 @@ type RespostaPaginada = {
   totalPages: number
 }
 
-const normalizar = (valor: string) =>
-  valor
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-
-const limitePorRequisicao = 100
+const limitePorPagina = 10
 
 const configuracoes = {
   cor: {
@@ -163,56 +156,68 @@ export function TelaVariacoes({ tipo }: { tipo: TipoVariacao }) {
   const [erro, setErro] = useState("")
   const [busca, setBusca] = useState("")
   const [filtroStatus, setFiltroStatus] = useState("todos")
-  const [ordemCrescente, setOrdemCrescente] = useState(true)
   const [pagina, setPagina] = useState(0)
+  const [totalRegistros, setTotalRegistros] = useState(0)
+  const [totalPaginas, setTotalPaginas] = useState(1)
   const [formulario, setFormulario] = useState<Formulario | null>(null)
   const [erroFormulario, setErroFormulario] = useState("")
   const [salvando, setSalvando] = useState(false)
   const [excluindo, setExcluindo] = useState<Registro | null>(null)
   const [excluindoRegistro, setExcluindoRegistro] = useState(false)
+  const versaoRequisicao = useRef(0)
 
   const recarregar = useCallback(async () => {
     if (!empresa) return
+    const versaoAtual = ++versaoRequisicao.current
     setCarregando(true)
     try {
-      const carregarPagina = async (paginaAtual: number) => {
-        const parametros = new URLSearchParams({
-          id_empresa: String(empresa.id),
-          page: String(paginaAtual),
-          limit: String(limitePorRequisicao),
-        })
-        const resposta = await requisitar(
-          `${configuracao.endpoint}?${parametros.toString()}`,
-        )
-        if (!resposta.ok) throw new Error(await mensagemErro(resposta))
-        const corpo = (await resposta.json()) as { data: RespostaPaginada }
-        return corpo.data
+      const parametros = new URLSearchParams({
+        id_empresa: String(empresa.id),
+        page: String(pagina + 1),
+        limit: String(limitePorPagina),
+      })
+      const termoBusca = busca.trim()
+      if (termoBusca) parametros.set("busca", termoBusca)
+      if (filtroStatus !== "todos") {
+        parametros.set("status", filtroStatus)
       }
 
-      const primeiraPagina = await carregarPagina(1)
-      const registrosCarregados = [...primeiraPagina.rows]
+      const resposta = await requisitar(
+        `${configuracao.endpoint}?${parametros.toString()}`,
+      )
+      if (!resposta.ok) throw new Error(await mensagemErro(resposta))
+      const corpo = (await resposta.json()) as { data: RespostaPaginada }
+      if (versaoAtual !== versaoRequisicao.current) return
 
-      for (
-        let paginaAtual = 2;
-        paginaAtual <= primeiraPagina.totalPages;
-        paginaAtual += 1
-      ) {
-        const pagina = await carregarPagina(paginaAtual)
-        registrosCarregados.push(...pagina.rows)
+      const paginasDisponiveis = Math.max(1, corpo.data.totalPages)
+      setTotalRegistros(corpo.data.count)
+      setTotalPaginas(paginasDisponiveis)
+      if (corpo.data.count > 0 && pagina >= paginasDisponiveis) {
+        setPagina(paginasDisponiveis - 1)
+        return
       }
 
-      setRegistros(registrosCarregados)
+      setRegistros(corpo.data.rows)
       setErro("")
     } catch (causa) {
+      if (versaoAtual !== versaoRequisicao.current) return
       setErro(
         causa instanceof Error
           ? causa.message
           : `Não foi possível carregar ${configuracao.titulo.toLowerCase()}.`,
       )
     } finally {
-      setCarregando(false)
+      if (versaoAtual === versaoRequisicao.current) setCarregando(false)
     }
-  }, [configuracao.endpoint, configuracao.titulo, empresa, requisitar])
+  }, [
+    busca,
+    configuracao.endpoint,
+    configuracao.titulo,
+    empresa,
+    filtroStatus,
+    pagina,
+    requisitar,
+  ])
 
   useEffect(() => {
     if (estadoAutenticacao !== "autenticado" || !empresa) return
@@ -220,26 +225,6 @@ export function TelaVariacoes({ tipo }: { tipo: TipoVariacao }) {
     void Promise.resolve().then(recarregar)
   }, [empresa, estadoAutenticacao, recarregar])
 
-  const filtrados = useMemo(() => {
-    const termo = normalizar(busca)
-    return registros
-      .filter((registro) =>
-        filtroStatus === "todos" ? true : registro.status === filtroStatus,
-      )
-      .filter((registro) =>
-        normalizar(
-          `${registro.nome} ${registro.codigo_hex ?? ""} ${registro.descricao ?? ""}`,
-        ).includes(termo),
-      )
-      .sort((primeiro, segundo) => {
-        const resultado = primeiro.nome.localeCompare(segundo.nome, "pt-BR")
-        return ordemCrescente ? resultado : -resultado
-      })
-  }, [busca, filtroStatus, ordemCrescente, registros])
-
-  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / 10))
-  const paginaSegura = Math.min(pagina, totalPaginas - 1)
-  const visiveis = filtrados.slice(paginaSegura * 10, paginaSegura * 10 + 10)
   const possuiFiltros = busca || filtroStatus !== "todos"
 
   function abrirNovo() {
@@ -484,17 +469,7 @@ export function TelaVariacoes({ tipo }: { tipo: TipoVariacao }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead
-                    aria-sort={ordemCrescente ? "ascending" : "descending"}
-                  >
-                    <Button
-                      variant="ghost"
-                      className="-ml-3"
-                      onClick={() => setOrdemCrescente((valor) => !valor)}
-                    >
-                      Nome <ArrowUpDown />
-                    </Button>
-                  </TableHead>
+                  <TableHead>Nome</TableHead>
                   {tipo === "cor" ? (
                     <TableHead>Cor</TableHead>
                   ) : (
@@ -519,8 +494,8 @@ export function TelaVariacoes({ tipo }: { tipo: TipoVariacao }) {
                       Carregando registros…
                     </TableCell>
                   </TableRow>
-                ) : visiveis.length ? (
-                  visiveis.map((registro) => (
+                ) : registros.length ? (
+                  registros.map((registro) => (
                     <TableRow key={registro.id}>
                       <TableCell className="font-medium">
                         {registro.nome}
@@ -619,27 +594,27 @@ export function TelaVariacoes({ tipo }: { tipo: TipoVariacao }) {
 
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="text-sm text-muted-foreground" aria-live="polite">
-              {filtrados.length
-                ? `${paginaSegura * 10 + 1}–${Math.min(paginaSegura * 10 + 10, filtrados.length)} de ${filtrados.length} registros`
+              {totalRegistros
+                ? `${pagina * limitePorPagina + 1}–${Math.min((pagina + 1) * limitePorPagina, totalRegistros)} de ${totalRegistros} registros`
                 : "0 registros"}
             </p>
             <div className="flex items-center gap-2">
               <span className="mr-2 text-sm text-muted-foreground">
-                Página {paginaSegura + 1} de {totalPaginas}
+                Página {pagina + 1} de {totalPaginas}
               </span>
               <Button
                 variant="outline"
                 size="sm"
-                disabled={paginaSegura === 0}
-                onClick={() => setPagina(paginaSegura - 1)}
+                disabled={pagina === 0 || carregando}
+                onClick={() => setPagina((atual) => atual - 1)}
               >
                 Anterior
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                disabled={paginaSegura + 1 >= totalPaginas}
-                onClick={() => setPagina(paginaSegura + 1)}
+                disabled={pagina + 1 >= totalPaginas || carregando}
+                onClick={() => setPagina((atual) => atual + 1)}
               >
                 Próxima
               </Button>
