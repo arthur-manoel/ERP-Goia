@@ -21,12 +21,13 @@ import {
   Shapes,
   ShoppingCart,
   Tags,
-  TrendingUp,
   Truck,
+  TrendingUp,
   UserCog,
-  Users,
   Wallet,
+  Users,
   Warehouse,
+  Workflow,
   type LucideIcon,
 } from "lucide-react"
 
@@ -109,12 +110,17 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Produção",
     itens: [
       {
+        titulo: "Fluxos de produção",
+        href: "/producao/fluxos",
+        icone: Workflow,
+      },
+      {
         titulo: "Ordens de produção",
         href: "/producao/ordens",
         icone: Factory,
       },
       {
-        titulo: "Movimentação entre setores",
+        titulo: "Apontamento de produção",
         href: "/producao/movimentacoes",
         icone: Route,
       },

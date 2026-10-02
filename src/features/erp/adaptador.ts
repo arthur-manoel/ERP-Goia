@@ -17,6 +17,10 @@ import { validarPedido } from "@/features/pedidos/regras"
 import type { Pedido } from "@/features/pedidos/schemas"
 import { validarOrdemProducao } from "@/features/producao/regras"
 import type { OrdemProducao } from "@/features/producao/schemas"
+import { validarCadastroSetor } from "@/features/setores/regras"
+import type { Setor } from "@/features/setores/schemas"
+import { validarCadastroFluxo } from "@/features/fluxo-producao/regras"
+import type { FluxoProducao } from "@/features/fluxo-producao/schemas"
 import { schemasErp, type ColecaoErp, type DadosErp } from "./tipos"
 
 export function emptyData(): DadosErp {
@@ -26,6 +30,8 @@ export function emptyData(): DadosErp {
     productions: [],
     orders: [],
     transactions: [],
+    sectors: [],
+    productionFlows: [],
   }
 }
 
@@ -90,6 +96,10 @@ export function createMockApi(
         validarPedido(data, parsed as Omit<Pedido, "id">, id)
       if (collection === "transactions")
         validarLancamento(data, parsed as Omit<Lancamento, "id">, id)
+      if (collection === "sectors")
+        validarCadastroSetor(data, parsed as Omit<Setor, "id">, id)
+      if (collection === "productionFlows")
+        validarCadastroFluxo(data, parsed as Omit<FluxoProducao, "id">, id)
 
       const record = { ...parsed, id: id ?? crypto.randomUUID() }
       data = {
