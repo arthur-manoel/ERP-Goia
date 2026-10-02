@@ -86,11 +86,19 @@ type Formulario = {
   ordem: string
 }
 
+type RespostaPaginada = {
+  rows: Registro[]
+  count: number
+  totalPages: number
+}
+
 const normalizar = (valor: string) =>
   valor
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+
+const limitePorRequisicao = 100
 
 const configuracoes = {
   cor: {
@@ -167,19 +175,33 @@ export function TelaVariacoes({ tipo }: { tipo: TipoVariacao }) {
     if (!empresa) return
     setCarregando(true)
     try {
-      const parametros = new URLSearchParams({
-        id_empresa: String(empresa.id),
-        page: "1",
-        limit: "100",
-      })
-      const resposta = await requisitar(
-        `${configuracao.endpoint}?${parametros.toString()}`,
-      )
-      if (!resposta.ok) throw new Error(await mensagemErro(resposta))
-      const corpo = (await resposta.json()) as {
-        data: { rows: Registro[] }
+      const carregarPagina = async (paginaAtual: number) => {
+        const parametros = new URLSearchParams({
+          id_empresa: String(empresa.id),
+          page: String(paginaAtual),
+          limit: String(limitePorRequisicao),
+        })
+        const resposta = await requisitar(
+          `${configuracao.endpoint}?${parametros.toString()}`,
+        )
+        if (!resposta.ok) throw new Error(await mensagemErro(resposta))
+        const corpo = (await resposta.json()) as { data: RespostaPaginada }
+        return corpo.data
       }
-      setRegistros(corpo.data.rows)
+
+      const primeiraPagina = await carregarPagina(1)
+      const registrosCarregados = [...primeiraPagina.rows]
+
+      for (
+        let paginaAtual = 2;
+        paginaAtual <= primeiraPagina.totalPages;
+        paginaAtual += 1
+      ) {
+        const pagina = await carregarPagina(paginaAtual)
+        registrosCarregados.push(...pagina.rows)
+      }
+
+      setRegistros(registrosCarregados)
       setErro("")
     } catch (causa) {
       setErro(
