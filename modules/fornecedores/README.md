@@ -11,13 +11,20 @@ Usa a instância Prisma existente e o tratamento JSON compartilhado de `src/lib/
   conforme o padrão existente. Ordenação estável por razão social e ID.
   Retorna `{ success: true, data: { rows, count, page, limit, totalPages } }`.
 - GET por ID retorna o recurso ou 404.
-- PUT por ID aceita atualização parcial não vazia, sem `id` ou `data_cadastro`.
+- PUT por ID exige `id_empresa`, `razao_social` e `status`; substitui os campos editáveis e limpa opcionais omitidos com null. `id` e `data_cadastro` são rejeitados.
+- PATCH por ID aceita atualização parcial não vazia, sem `id` ou `data_cadastro`.
   Campos omitidos são preservados, incluindo status. Opcionais aceitam null.
 - DELETE por ID altera somente status para `INATIVO`, preservando vínculos e
   histórico. Retorna 200 mesmo se já estiver inativo, ou 404 se não existir.
 
 Os limites de texto seguem o schema Prisma atual. A API exige empresa na criação,
 embora o banco aceite null para registros legados. Não altera schema ou tabelas.
+
+## Autenticação e empresa
+
+Todas as operações usam o verificador JWT existente e exigem Authorization: Bearer <access_token>. O usuário, seu vínculo em usuario_empresa e a empresa devem estar ativos. O enum atual não possui FORNECEDORES: este módulo exige vínculo, sem reutilizar permissões de outros recursos.
+
+Sem token válido retorna 401; sem vínculo ativo ou com id_empresa não autorizado retorna 403. Leituras, contagem e UPDATE incluem o escopo de empresas no Prisma. IDs fora do escopo retornam 404; registros legados com empresa null ficam inacessíveis. Trocar empresa exige vínculo na origem e no destino. O filtro de empresa é opcional na listagem, mas o escopo do usuário sempre se aplica.
 
 ## CNPJ e email
 
@@ -51,6 +58,8 @@ maiúsculas.
 Erros seguem `{ success: false, error: "..." }`:
 
 - 400: detalhes Zod, `Empresa inexistente.` ou tamanho excedido.
+- 401: `Não autenticado.`
+- 403: `Sem permissão para esta empresa.` ou ausência de vínculo ativo.
 - 404: `Fornecedor não encontrado.`
 - 409: `Já existe um fornecedor com este CNPJ nesta empresa.`
 - 500: `Erro interno do servidor.`, com detalhes somente no log interno.

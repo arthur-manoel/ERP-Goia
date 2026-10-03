@@ -6,6 +6,7 @@ import { prisma } from "../../src/lib/prisma"
 import type {
   CreateFornecedorData,
   UpdateFornecedorData,
+  ReplaceFornecedorData,
   FornecedorFilters,
   Pagination,
 } from "./schema"
@@ -17,8 +18,11 @@ export async function create(data: CreateFornecedorData): Promise<Fornecedor> {
 export async function findAll(
   filters: FornecedorFilters,
   { page, limit }: Pagination,
+  companies: number[],
 ): Promise<{ rows: Fornecedor[]; count: number }> {
-  const where: Prisma.fornecedoresWhereInput = { ...filters }
+  const where: Prisma.fornecedoresWhereInput = {
+    AND: [filters, { id_empresa: { in: companies } }],
+  }
   const [rows, count] = await prisma.$transaction(
     [
       prisma.fornecedores.findMany({
@@ -33,8 +37,13 @@ export async function findAll(
   )
   return { rows, count }
 }
-export async function findById(id: number): Promise<Fornecedor | null> {
-  return prisma.fornecedores.findUnique({ where: { id } })
+export async function findById(
+  id: number,
+  companies: number[],
+): Promise<Fornecedor | null> {
+  return prisma.fornecedores.findUnique({
+    where: { id, id_empresa: { in: companies } },
+  })
 }
 export async function findByCnpj(
   id_empresa: number | null,
@@ -63,12 +72,16 @@ export async function findByCnpj(
     },
   })
 }
-export async function update(
+export async function patch(
   id: number,
   data: UpdateFornecedorData,
+  companies: number[],
 ): Promise<Fornecedor | null> {
   try {
-    return await prisma.fornecedores.update({ where: { id }, data })
+    return await prisma.fornecedores.update({
+      where: { id, id_empresa: { in: companies } },
+      data,
+    })
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -78,6 +91,17 @@ export async function update(
     throw error
   }
 }
-export async function inactivate(id: number): Promise<boolean> {
-  return (await update(id, { status: "INATIVO" })) !== null
+export async function inactivate(
+  id: number,
+  companies: number[],
+): Promise<boolean> {
+  return (await patch(id, { status: "INATIVO" }, companies)) !== null
+}
+
+export async function update(
+  id: number,
+  data: ReplaceFornecedorData,
+  companies: number[],
+): Promise<Fornecedor | null> {
+  return patch(id, data, companies)
 }
