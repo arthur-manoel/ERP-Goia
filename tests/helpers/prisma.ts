@@ -20,7 +20,6 @@ export const db = {
   setores: model(),
   produto_empresa: model(),
   auditoria: model(),
-  usuario_empresa: model(),
   $queryRaw: vi.fn(),
   fornecedores: model(),
   $transaction: vi.fn(),
