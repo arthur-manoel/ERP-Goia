@@ -25,7 +25,16 @@ export function ShellCompras({
   const cabecalho = <PageHeader titulo={titulo} descricao={descricao} />
 
   if (estado === "carregando")
-    return (<>{cabecalho}<Skeleton role="status" aria-label="Carregando" className="h-80 w-full" /></>)
+    return (
+      <>
+        {cabecalho}
+        <Skeleton
+          role="status"
+          aria-label="Carregando"
+          className="h-80 w-full"
+        />
+      </>
+    )
   if (estado === "anonimo")
     return (
       <>
@@ -33,7 +42,9 @@ export function ShellCompras({
         <Alert>
           <AlertDescription>
             Entre na sua conta para acessar as compras.{" "}
-            <Link href="/login" className="underline">Ir para o login</Link>
+            <Link href="/login" className="underline">
+              Ir para o login
+            </Link>
           </AlertDescription>
         </Alert>
       </>
@@ -42,7 +53,11 @@ export function ShellCompras({
     return (
       <>
         {cabecalho}
-        <Alert><AlertDescription>Seu usuário não tem acesso a nenhuma empresa ativa.</AlertDescription></Alert>
+        <Alert>
+          <AlertDescription>
+            Seu usuário não tem acesso a nenhuma empresa ativa.
+          </AlertDescription>
+        </Alert>
       </>
     )
   const seletor =
@@ -56,12 +71,20 @@ export function ShellCompras({
       />
     ) : null
   if (!empresa)
-    return (<>{cabecalho}<p>Selecione a empresa para continuar.</p>{seletor}</>)
+    return (
+      <>
+        {cabecalho}
+        <p>Selecione a empresa para continuar.</p>
+        {seletor}
+      </>
+    )
   return (
     <>
       {cabecalho}
       {seletor}
-      <div key={empresa.id} className="flex flex-col gap-6">{children(api)}</div>
+      <div key={empresa.id} className="flex flex-col gap-6">
+        {children(api)}
+      </div>
     </>
   )
 }

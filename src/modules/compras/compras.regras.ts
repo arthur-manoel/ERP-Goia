@@ -9,7 +9,10 @@ const MAX_DIGITOS = 15
 const formato = /^\d+(\.\d+)?$/
 
 /** Converte "12.5" ou 12.5 para o inteiro escalado (12500 com 3 casas). Retorna null se inválido. */
-export function paraEscala(valor: string | number, casas: number): bigint | null {
+export function paraEscala(
+  valor: string | number,
+  casas: number,
+): bigint | null {
   const texto = typeof valor === "number" ? String(valor) : valor.trim()
   if (!formato.test(texto)) return null // rejeita sinal, expoente, vírgula e vazio
   const [inteira, fracao = ""] = texto.split(".")
@@ -41,7 +44,9 @@ export function totalItem(quantidade: string, valorUnitario: string): string {
   return deEscala(centavos, CASAS_VALOR)
 }
 
-export function somarValores(valores: Array<string | { toString(): string }>): string {
+export function somarValores(
+  valores: Array<string | { toString(): string }>,
+): string {
   let soma = BigInt(0)
   for (const valor of valores) {
     const escala = paraEscala(valor.toString(), CASAS_VALOR)
@@ -79,20 +84,36 @@ export type StatusCompra = "RASCUNHO" | "EMITIDA" | "ENTREGUE" | "CANCELADA"
 export type StatusNota = "PENDENTE" | "RECEBIDA" | "CANCELADA"
 
 // ATENDIDA só é alcançada ao converter a solicitação em pedido (nunca por ação direta).
-export const transicoesRequisicao: Record<string, Partial<Record<StatusRequisicao, StatusRequisicao>>> = {
+export const transicoesRequisicao: Record<
+  string,
+  Partial<Record<StatusRequisicao, StatusRequisicao>>
+> = {
   enviar: { RASCUNHO: "ABERTA" },
   aprovar: { ABERTA: "APROVADA" },
-  cancelar: { RASCUNHO: "CANCELADA", ABERTA: "CANCELADA", APROVADA: "CANCELADA" },
+  cancelar: {
+    RASCUNHO: "CANCELADA",
+    ABERTA: "CANCELADA",
+    APROVADA: "CANCELADA",
+  },
 }
-export const transicoesPedido: Record<string, Partial<Record<StatusPedido, StatusPedido>>> = {
+export const transicoesPedido: Record<
+  string,
+  Partial<Record<StatusPedido, StatusPedido>>
+> = {
   emitir: { RASCUNHO: "EMITIDO" },
   cancelar: { RASCUNHO: "CANCELADO", EMITIDO: "CANCELADO" },
 }
-export const transicoesCompra: Record<string, Partial<Record<StatusCompra, StatusCompra>>> = {
+export const transicoesCompra: Record<
+  string,
+  Partial<Record<StatusCompra, StatusCompra>>
+> = {
   receber: { EMITIDA: "ENTREGUE" },
   cancelar: { RASCUNHO: "CANCELADA", EMITIDA: "CANCELADA" },
 }
-export const transicoesNota: Record<string, Partial<Record<StatusNota, StatusNota>>> = {
+export const transicoesNota: Record<
+  string,
+  Partial<Record<StatusNota, StatusNota>>
+> = {
   receber: { PENDENTE: "RECEBIDA" },
   cancelar: { PENDENTE: "CANCELADA", RECEBIDA: "CANCELADA" },
 }
@@ -112,7 +133,10 @@ export function statusPedidoAposRecebimento(
   const zero = BigInt(0)
   return itens.every(
     (item) =>
-      paraEscala(quantidadePendente(item.pedida, item.recebida), CASAS_QUANTIDADE) === zero,
+      paraEscala(
+        quantidadePendente(item.pedida, item.recebida),
+        CASAS_QUANTIDADE,
+      ) === zero,
   )
     ? "RECEBIDO"
     : "PARCIAL"

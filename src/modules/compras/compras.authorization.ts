@@ -28,7 +28,11 @@ export async function autorizar(
   area: Area,
   acao: Acao,
 ): Promise<Contexto | Response> {
-  const auth = await requireRole(request, ["ADMINISTRACAO", "PRODUCAO", "FINANCEIRO"])
+  const auth = await requireRole(request, [
+    "ADMINISTRACAO",
+    "PRODUCAO",
+    "FINANCEIRO",
+  ])
   if (auth.error) return auth.error
   const idUsuario = Number(auth.user.id)
   if (!Number.isSafeInteger(idUsuario) || idUsuario <= 0)
@@ -39,18 +43,23 @@ export async function autorizar(
   const vinculo =
     header !== null
       ? vinculos.find(
-          (item) => /^[1-9]\d*$/.test(header) && item.id_empresa === Number(header),
+          (item) =>
+            /^[1-9]\d*$/.test(header) && item.id_empresa === Number(header),
         )
       : vinculos.length === 1
         ? vinculos[0]
         : undefined
   if (!vinculo) {
     if (header === null && vinculos.length > 1)
-      throw new ComprasError(400, "Informe X-Empresa-Id para selecionar a empresa.")
+      throw new ComprasError(
+        400,
+        "Informe X-Empresa-Id para selecionar a empresa.",
+      )
     throw new ComprasError(403, "Acesso negado à empresa.")
   }
   const admin =
-    vinculo.nivel_acesso === "EMPRESA" || vinculo.usuarios.nivel_acesso === "ADMIN"
+    vinculo.nivel_acesso === "EMPRESA" ||
+    vinculo.usuarios.nivel_acesso === "ADMIN"
   const permissao = vinculo.permissoes_usuario.find(
     (item) => item.recurso === recursoDaArea[area],
   )

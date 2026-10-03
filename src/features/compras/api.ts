@@ -1,10 +1,17 @@
 "use client"
 import { useMemo } from "react"
-import { useAutenticacao, mensagemErro } from "@/features/autenticacao/provedor-autenticacao"
+import {
+  useAutenticacao,
+  mensagemErro,
+} from "@/features/autenticacao/provedor-autenticacao"
 
 export type ComprasApi = {
   get: <T>(url: string) => Promise<T>
-  enviar: <T>(url: string, metodo: "POST" | "PATCH", corpo: unknown) => Promise<T>
+  enviar: <T>(
+    url: string,
+    metodo: "POST" | "PATCH",
+    corpo: unknown,
+  ) => Promise<T>
 }
 
 /** Cliente da API de compras: injeta Bearer e X-Empresa-Id (via `requisitar`) e padroniza erros. */
@@ -32,5 +39,7 @@ export function useComprasApi(): ComprasApi {
 }
 
 export const BASE = "/api/compras"
-export const mensagem = (erro: unknown, padrao = "Não foi possível concluir a operação.") =>
-  erro instanceof Error ? erro.message : padrao
+export const mensagem = (
+  erro: unknown,
+  padrao = "Não foi possível concluir a operação.",
+) => (erro instanceof Error ? erro.message : padrao)

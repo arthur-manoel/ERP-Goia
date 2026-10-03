@@ -24,7 +24,9 @@ import {
 /** DV calculado de forma independente (pesos 2..9 da direita p/ esquerda) para montar chaves de teste. */
 function chaveComDv(base43: string) {
   const pesos = [2, 3, 4, 5, 6, 7, 8, 9]
-  const soma = [...base43].reverse().reduce((t, d, i) => t + Number(d) * pesos[i % 8], 0)
+  const soma = [...base43]
+    .reverse()
+    .reduce((t, d, i) => t + Number(d) * pesos[i % 8], 0)
   const resto = soma % 11
   return base43 + String(resto < 2 ? 0 : 11 - resto)
 }
@@ -34,7 +36,17 @@ describe("aritmética decimal exata", () => {
   it("converte e rejeita formatos inválidos", () => {
     expect(paraEscala("12.5", 3)).toBe(BigInt(12500))
     expect(paraEscala(100, 3)).toBe(BigInt(100000))
-    for (const ruim of ["-1", "1e3", "1,5", "", " ", "abc", "1.2345", "0x10", "+1"])
+    for (const ruim of [
+      "-1",
+      "1e3",
+      "1,5",
+      "",
+      " ",
+      "abc",
+      "1.2345",
+      "0x10",
+      "+1",
+    ])
       expect(paraEscala(ruim, 3)).toBeNull()
     expect(paraEscala("1234567890123", 3)).toBeNull() // estoura Decimal(15,3)
   })
@@ -58,23 +70,40 @@ describe("aritmética decimal exata", () => {
 
 describe("máquinas de estado", () => {
   it("solicitação: só segue o fluxo previsto e nunca vai a ATENDIDA por ação direta", () => {
-    expect(proximoStatus(transicoesRequisicao, "enviar", "RASCUNHO")).toBe("ABERTA")
-    expect(proximoStatus(transicoesRequisicao, "aprovar", "ABERTA")).toBe("APROVADA")
-    expect(proximoStatus(transicoesRequisicao, "aprovar", "RASCUNHO")).toBeNull()
-    expect(proximoStatus(transicoesRequisicao, "cancelar", "ATENDIDA")).toBeNull()
+    expect(proximoStatus(transicoesRequisicao, "enviar", "RASCUNHO")).toBe(
+      "ABERTA",
+    )
+    expect(proximoStatus(transicoesRequisicao, "aprovar", "ABERTA")).toBe(
+      "APROVADA",
+    )
+    expect(
+      proximoStatus(transicoesRequisicao, "aprovar", "RASCUNHO"),
+    ).toBeNull()
+    expect(
+      proximoStatus(transicoesRequisicao, "cancelar", "ATENDIDA"),
+    ).toBeNull()
     for (const acao of Object.keys(transicoesRequisicao))
-      for (const alvo of Object.values(transicoesRequisicao[acao])) expect(alvo).not.toBe("ATENDIDA")
+      for (const alvo of Object.values(transicoesRequisicao[acao]))
+        expect(alvo).not.toBe("ATENDIDA")
   })
   it("pedido e compra", () => {
-    expect(proximoStatus(transicoesPedido, "emitir", "RASCUNHO")).toBe("EMITIDO")
+    expect(proximoStatus(transicoesPedido, "emitir", "RASCUNHO")).toBe(
+      "EMITIDO",
+    )
     expect(proximoStatus(transicoesPedido, "cancelar", "RECEBIDO")).toBeNull()
-    expect(proximoStatus(transicoesCompra, "receber", "EMITIDA")).toBe("ENTREGUE")
+    expect(proximoStatus(transicoesCompra, "receber", "EMITIDA")).toBe(
+      "ENTREGUE",
+    )
     expect(proximoStatus(transicoesCompra, "receber", "ENTREGUE")).toBeNull()
     expect(proximoStatus(transicoesCompra, "cancelar", "ENTREGUE")).toBeNull()
   })
   it("pedido fica PARCIAL enquanto houver quantidade pendente", () => {
-    expect(statusPedidoAposRecebimento([{ pedida: "100.000", recebida: "60" }])).toBe("PARCIAL")
-    expect(statusPedidoAposRecebimento([{ pedida: "100.000", recebida: "100" }])).toBe("RECEBIDO")
+    expect(
+      statusPedidoAposRecebimento([{ pedida: "100.000", recebida: "60" }]),
+    ).toBe("PARCIAL")
+    expect(
+      statusPedidoAposRecebimento([{ pedida: "100.000", recebida: "100" }]),
+    ).toBe("RECEBIDO")
     expect(
       statusPedidoAposRecebimento([
         { pedida: "10.000", recebida: "10" },
@@ -88,7 +117,10 @@ describe("chave de acesso da NF-e", () => {
   it("aceita chave com DV correto e rejeita erro de digitação", () => {
     const chave = chaveComDv(BASE)
     expect(chaveAcessoValida(chave)).toBe(true)
-    const errada = chave.slice(0, 10) + (chave[10] === "9" ? "8" : String(Number(chave[10]) + 1)) + chave.slice(11)
+    const errada =
+      chave.slice(0, 10) +
+      (chave[10] === "9" ? "8" : String(Number(chave[10]) + 1)) +
+      chave.slice(11)
     expect(chaveAcessoValida(errada)).toBe(false)
   })
   it("rejeita tamanho errado, letras e repetições", () => {
@@ -101,49 +133,127 @@ describe("chave de acesso da NF-e", () => {
 describe("validação de entrada (zod)", () => {
   const item = { idProduto: 1, quantidade: "10" }
   it("solicitação: quantidade zero/negativa e lista vazia são recusadas", () => {
-    expect(criarRequisicaoSchema.safeParse({ itens: [item] }).success).toBe(true)
-    expect(criarRequisicaoSchema.safeParse({ itens: [{ ...item, quantidade: 0 }] }).success).toBe(false)
-    expect(criarRequisicaoSchema.safeParse({ itens: [{ ...item, quantidade: "-5" }] }).success).toBe(false)
-    expect(criarRequisicaoSchema.safeParse({ itens: [{ ...item, quantidade: "1.2345" }] }).success).toBe(false)
+    expect(criarRequisicaoSchema.safeParse({ itens: [item] }).success).toBe(
+      true,
+    )
+    expect(
+      criarRequisicaoSchema.safeParse({ itens: [{ ...item, quantidade: 0 }] })
+        .success,
+    ).toBe(false)
+    expect(
+      criarRequisicaoSchema.safeParse({
+        itens: [{ ...item, quantidade: "-5" }],
+      }).success,
+    ).toBe(false)
+    expect(
+      criarRequisicaoSchema.safeParse({
+        itens: [{ ...item, quantidade: "1.2345" }],
+      }).success,
+    ).toBe(false)
     expect(criarRequisicaoSchema.safeParse({ itens: [] }).success).toBe(false)
   })
   it("solicitação: item sem insumo, insumo repetido e campos estranhos são recusados", () => {
-    expect(criarRequisicaoSchema.safeParse({ itens: [{ quantidade: "1" }] }).success).toBe(false)
-    expect(criarRequisicaoSchema.safeParse({ itens: [item, item] }).success).toBe(false)
-    expect(criarRequisicaoSchema.safeParse({ itens: [item], idEmpresa: 9 }).success).toBe(false)
+    expect(
+      criarRequisicaoSchema.safeParse({ itens: [{ quantidade: "1" }] }).success,
+    ).toBe(false)
+    expect(
+      criarRequisicaoSchema.safeParse({ itens: [item, item] }).success,
+    ).toBe(false)
+    expect(
+      criarRequisicaoSchema.safeParse({ itens: [item], idEmpresa: 9 }).success,
+    ).toBe(false)
   })
   it("pedido: valor unitário não pode ser negativo e total não é aceito na entrada", () => {
-    const base = { idFornecedor: 3, itens: [{ ...item, valorUnitario: "15.00" }] }
+    const base = {
+      idFornecedor: 3,
+      itens: [{ ...item, valorUnitario: "15.00" }],
+    }
     expect(criarPedidoSchema.safeParse(base).success).toBe(true)
-    expect(criarPedidoSchema.safeParse({ ...base, itens: [{ ...item, valorUnitario: "-1" }] }).success).toBe(false)
-    expect(criarPedidoSchema.safeParse({ ...base, valorTotal: "1" }).success).toBe(false)
-    expect(criarPedidoSchema.safeParse({ ...base, itens: [{ ...base.itens[0], valorTotal: "1" }] }).success).toBe(false)
+    expect(
+      criarPedidoSchema.safeParse({
+        ...base,
+        itens: [{ ...item, valorUnitario: "-1" }],
+      }).success,
+    ).toBe(false)
+    expect(
+      criarPedidoSchema.safeParse({ ...base, valorTotal: "1" }).success,
+    ).toBe(false)
+    expect(
+      criarPedidoSchema.safeParse({
+        ...base,
+        itens: [{ ...base.itens[0], valorTotal: "1" }],
+      }).success,
+    ).toBe(false)
   })
   it("compra: de pedido herda dados; manual exige fornecedor e itens", () => {
-    expect(criarCompraSchema.safeParse({ idPedidoCompra: 1, idLocalEstoque: 2 }).success).toBe(true)
-    expect(criarCompraSchema.safeParse({ idPedidoCompra: 1, idFornecedor: 3, idLocalEstoque: 2 }).success).toBe(false)
-    expect(criarCompraSchema.safeParse({ idLocalEstoque: 2 }).success).toBe(false)
     expect(
-      criarCompraSchema.safeParse({ idFornecedor: 3, idLocalEstoque: 2, itens: [{ ...item, valorUnitario: "1" }] }).success,
+      criarCompraSchema.safeParse({ idPedidoCompra: 1, idLocalEstoque: 2 })
+        .success,
+    ).toBe(true)
+    expect(
+      criarCompraSchema.safeParse({
+        idPedidoCompra: 1,
+        idFornecedor: 3,
+        idLocalEstoque: 2,
+      }).success,
+    ).toBe(false)
+    expect(criarCompraSchema.safeParse({ idLocalEstoque: 2 }).success).toBe(
+      false,
+    )
+    expect(
+      criarCompraSchema.safeParse({
+        idFornecedor: 3,
+        idLocalEstoque: 2,
+        itens: [{ ...item, valorUnitario: "1" }],
+      }).success,
     ).toBe(true)
   })
   it("recebimento: quantidade recebida deve ser positiva", () => {
-    expect(receberCompraSchema.safeParse({ itens: [{ idProduto: 1, quantidade: "60" }] }).success).toBe(true)
-    expect(receberCompraSchema.safeParse({ itens: [{ idProduto: 1, quantidade: "0" }] }).success).toBe(false)
+    expect(
+      receberCompraSchema.safeParse({
+        itens: [{ idProduto: 1, quantidade: "60" }],
+      }).success,
+    ).toBe(true)
+    expect(
+      receberCompraSchema.safeParse({
+        itens: [{ idProduto: 1, quantidade: "0" }],
+      }).success,
+    ).toBe(false)
   })
   it("nota fiscal: normaliza e valida chave; exige número/série numéricos", () => {
     const chave = chaveComDv(BASE)
-    const nota = { numero: "12345", serie: "1", chaveAcesso: `${chave.slice(0, 4)} ${chave.slice(4)}`, idFornecedor: 1, valorTotal: "100.50" }
+    const nota = {
+      numero: "12345",
+      serie: "1",
+      chaveAcesso: `${chave.slice(0, 4)} ${chave.slice(4)}`,
+      idFornecedor: 1,
+      valorTotal: "100.50",
+    }
     const ok = criarNotaSchema.safeParse(nota)
     expect(ok.success && ok.data.chaveAcesso).toBe(chave)
-    expect(criarNotaSchema.safeParse({ ...nota, chaveAcesso: "1".repeat(44) }).success).toBe(false)
-    expect(criarNotaSchema.safeParse({ ...nota, numero: "12a" }).success).toBe(false)
-    expect(criarNotaSchema.safeParse({ ...nota, valorTotal: "-3" }).success).toBe(false)
+    expect(
+      criarNotaSchema.safeParse({ ...nota, chaveAcesso: "1".repeat(44) })
+        .success,
+    ).toBe(false)
+    expect(criarNotaSchema.safeParse({ ...nota, numero: "12a" }).success).toBe(
+      false,
+    )
+    expect(
+      criarNotaSchema.safeParse({ ...nota, valorTotal: "-3" }).success,
+    ).toBe(false)
   })
   it("filtros: período invertido e parâmetros desconhecidos são recusados", () => {
-    expect(listarPedidosSchema.safeParse({ de: "2026-02-01", ate: "2026-01-01" }).success).toBe(false)
-    expect(listarPedidosSchema.safeParse({ de: "2026-02-30" }).success).toBe(false)
+    expect(
+      listarPedidosSchema.safeParse({ de: "2026-02-01", ate: "2026-01-01" })
+        .success,
+    ).toBe(false)
+    expect(listarPedidosSchema.safeParse({ de: "2026-02-30" }).success).toBe(
+      false,
+    )
     expect(listarPedidosSchema.safeParse({ foo: "x" }).success).toBe(false)
-    expect(listarPedidosSchema.safeParse({ status: "EMITIDO", limite: "50" }).success).toBe(true)
+    expect(
+      listarPedidosSchema.safeParse({ status: "EMITIDO", limite: "50" })
+        .success,
+    ).toBe(true)
   })
 })

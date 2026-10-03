@@ -7,7 +7,10 @@ import { mensagem } from "./api"
 export function useExecutar() {
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState("")
-  async function executar<T>(fn: () => Promise<T>, sucesso?: string): Promise<T | null> {
+  async function executar<T>(
+    fn: () => Promise<T>,
+    sucesso?: string,
+  ): Promise<T | null> {
     setOcupado(true)
     setErro("")
     try {

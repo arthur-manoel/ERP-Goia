@@ -47,7 +47,8 @@ import type {
   ReceberCompraInput,
 } from "./compras.schema"
 
-const fx = (valor: { toFixed(casas: number): string }, casas: number) => valor.toFixed(casas)
+const fx = (valor: { toFixed(casas: number): string }, casas: number) =>
+  valor.toFixed(casas)
 const dinheiro = (v: { toFixed(c: number): string }) => fx(v, 2)
 const qtd = (v: { toFixed(c: number): string }) => fx(v, 3)
 const dia = (texto: string) => new Date(`${texto}T12:00:00.000Z`)
@@ -72,7 +73,9 @@ const incluirRequisicao = {
   _count: { select: { item_requisicao_compra: true } },
 } satisfies Prisma.requisicao_compraInclude
 
-function apresentarRequisicao(r: Prisma.requisicao_compraGetPayload<{ include: typeof incluirRequisicao }>) {
+function apresentarRequisicao(
+  r: Prisma.requisicao_compraGetPayload<{ include: typeof incluirRequisicao }>,
+) {
   return {
     id: r.id,
     numero: r.numero,
@@ -95,9 +98,14 @@ async function carregarRequisicao(tx: Transaction, ctx: Contexto, id: number) {
       ...incluirRequisicao,
       item_requisicao_compra: {
         orderBy: { id: "asc" },
-        include: { produtos: { select: { codigo: true, nome: true, unidade: true } } },
+        include: {
+          produtos: { select: { codigo: true, nome: true, unidade: true } },
+        },
       },
-      pedido_compra: { select: { id: true, numero: true, status: true }, orderBy: { id: "asc" } },
+      pedido_compra: {
+        select: { id: true, numero: true, status: true },
+        orderBy: { id: "asc" },
+      },
     },
   })
   if (!r) throw new ComprasError(404, "Solicitação de compra não encontrada.")
@@ -119,7 +127,10 @@ function detalheRequisicao(r: Awaited<ReturnType<typeof carregarRequisicao>>) {
   }
 }
 
-export function listarRequisicoes(ctx: Contexto, input: ListarRequisicoesInput) {
+export function listarRequisicoes(
+  ctx: Contexto,
+  input: ListarRequisicoesInput,
+) {
   return leitura(async (tx) => {
     const where: Prisma.requisicao_compraWhereInput = {
       id_empresa: ctx.idEmpresa,
@@ -167,8 +178,13 @@ async function validarRequisicao(
   input: CriarRequisicaoInput | EditarRequisicaoInput,
 ) {
   if (input.idLocalEstoque) await exigirLocal(tx, ctx, input.idLocalEstoque)
-  if (input.idSetorSolicitante) await exigirSetor(tx, ctx, input.idSetorSolicitante)
-  await exigirInsumos(tx, ctx, input.itens.map((i) => i.idProduto))
+  if (input.idSetorSolicitante)
+    await exigirSetor(tx, ctx, input.idSetorSolicitante)
+  await exigirInsumos(
+    tx,
+    ctx,
+    input.itens.map((i) => i.idProduto),
+  )
 }
 
 export function criarRequisicao(ctx: Contexto, input: CriarRequisicaoInput) {
@@ -193,18 +209,31 @@ export function criarRequisicao(ctx: Contexto, input: CriarRequisicaoInput) {
       },
     })
     const depois = await carregarRequisicao(tx, ctx, criada.id)
-    await auditar(tx, ctx, "requisicao_compra", criada.id, null, detalheRequisicao(depois))
+    await auditar(
+      tx,
+      ctx,
+      "requisicao_compra",
+      criada.id,
+      null,
+      detalheRequisicao(depois),
+    )
     return { requisicao: detalheRequisicao(depois) }
   })
 }
 
-export function editarRequisicao(ctx: Contexto, id: number, input: EditarRequisicaoInput) {
+export function editarRequisicao(
+  ctx: Contexto,
+  id: number,
+  input: EditarRequisicaoInput,
+) {
   return gravacao(ctx, async (tx) => {
     const antes = detalheRequisicao(await carregarRequisicao(tx, ctx, id))
     if (antes.status !== "RASCUNHO")
       throw conflito("Somente solicitações em rascunho podem ser editadas.")
     await validarRequisicao(tx, ctx, input)
-    await tx.item_requisicao_compra.deleteMany({ where: { id_requisicao_compra: id } })
+    await tx.item_requisicao_compra.deleteMany({
+      where: { id_requisicao_compra: id },
+    })
     await tx.item_requisicao_compra.createMany({
       data: input.itens.map((i) => ({
         id_requisicao_compra: id,
@@ -221,7 +250,8 @@ export function editarRequisicao(ctx: Contexto, id: number, input: EditarRequisi
         observacao: input.observacao || null,
       },
     })
-    if (r.count !== 1) throw conflito("A solicitação foi alterada por outra operação.")
+    if (r.count !== 1)
+      throw conflito("A solicitação foi alterada por outra operação.")
     const depois = detalheRequisicao(await carregarRequisicao(tx, ctx, id))
     await auditar(tx, ctx, "requisicao_compra", id, antes, depois)
     return { requisicao: depois }
@@ -233,13 +263,19 @@ export function acaoRequisicao(ctx: Contexto, id: number, acao: string) {
     const antes = detalheRequisicao(await carregarRequisicao(tx, ctx, id))
     const novo = proximoStatus(transicoesRequisicao, acao, antes.status)
     if (!novo) acaoInvalida(acao, antes.status)
-    if (acao === "cancelar" && antes.pedidos.some((p) => p.status !== "CANCELADO"))
-      throw conflito("Cancele os pedidos de compra desta solicitação antes de cancelá-la.")
+    if (
+      acao === "cancelar" &&
+      antes.pedidos.some((p) => p.status !== "CANCELADO")
+    )
+      throw conflito(
+        "Cancele os pedidos de compra desta solicitação antes de cancelá-la.",
+      )
     const r = await tx.requisicao_compra.updateMany({
       where: { id, id_empresa: ctx.idEmpresa, status: antes.status },
       data: { status: novo },
     })
-    if (r.count !== 1) throw conflito("A solicitação foi alterada por outra operação.")
+    if (r.count !== 1)
+      throw conflito("A solicitação foi alterada por outra operação.")
     const depois = detalheRequisicao(await carregarRequisicao(tx, ctx, id))
     await auditar(tx, ctx, "requisicao_compra", id, antes, depois)
     return { requisicao: depois }
@@ -253,7 +289,9 @@ export function acaoRequisicao(ctx: Contexto, id: number, acao: string) {
 // =====================================================================================
 
 const incluirPedido = {
-  fornecedores: { select: { id: true, razao_social: true, nome_fantasia: true } },
+  fornecedores: {
+    select: { id: true, razao_social: true, nome_fantasia: true },
+  },
   usuarios: { select: { id: true, nome: true } },
   requisicao_compra: { select: { id: true, numero: true } },
   compras: { select: { id: true, codigo: true, status: true } },
@@ -261,22 +299,32 @@ const incluirPedido = {
   _count: { select: { nota_fiscal: true } },
 } satisfies Prisma.pedido_compraInclude
 
-const nomeFornecedor = (f: { razao_social: string; nome_fantasia: string | null }) =>
-  f.nome_fantasia?.trim() || f.razao_social
+const nomeFornecedor = (f: {
+  razao_social: string
+  nome_fantasia: string | null
+}) => f.nome_fantasia?.trim() || f.razao_social
 
-function apresentarPedido(p: Prisma.pedido_compraGetPayload<{ include: typeof incluirPedido }>) {
+function apresentarPedido(
+  p: Prisma.pedido_compraGetPayload<{ include: typeof incluirPedido }>,
+) {
   return {
     id: p.id,
     numero: p.numero,
     status: p.status,
     dataPedido: p.data_pedido.toISOString(),
-    fornecedor: { id: p.fornecedores.id, nome: nomeFornecedor(p.fornecedores), razaoSocial: p.fornecedores.razao_social },
+    fornecedor: {
+      id: p.fornecedores.id,
+      nome: nomeFornecedor(p.fornecedores),
+      razaoSocial: p.fornecedores.razao_social,
+    },
     responsavel: p.usuarios,
     requisicao: p.requisicao_compra,
     compra: p.compras,
     observacao: p.observacao,
     totalItens: p.item_pedido_compra.length,
-    valorTotal: somarValores(p.item_pedido_compra.map((i) => dinheiro(i.valor_total))),
+    valorTotal: somarValores(
+      p.item_pedido_compra.map((i) => dinheiro(i.valor_total)),
+    ),
     notasFiscais: p._count.nota_fiscal,
   }
 }
@@ -288,11 +336,15 @@ async function carregarPedido(tx: Transaction, ctx: Contexto, id: number) {
       ...incluirPedido,
       item_pedido_compra: {
         orderBy: { id: "asc" },
-        include: { produtos: { select: { codigo: true, nome: true, unidade: true } } },
+        include: {
+          produtos: { select: { codigo: true, nome: true, unidade: true } },
+        },
       },
       compras: {
         select: {
-          id: true, codigo: true, status: true,
+          id: true,
+          codigo: true,
+          status: true,
           compra_itens: { select: { id_produto: true, quantidade: true } },
         },
       },
@@ -305,14 +357,21 @@ function detalhePedido(p: Awaited<ReturnType<typeof carregarPedido>>) {
   // Recebido = itens da compra ENTREGUE (1 pedido ↔ no máximo 1 compra, por uk_compra_pedido_legado).
   const entregue = p.compras?.status === "ENTREGUE"
   const recebidoPorProduto = new Map(
-    (p.compras?.compra_itens ?? []).map((i) => [i.id_produto, qtd(i.quantidade)]),
+    (p.compras?.compra_itens ?? []).map((i) => [
+      i.id_produto,
+      qtd(i.quantidade),
+    ]),
   )
   return {
     ...apresentarPedido(p),
-    compra: p.compras ? { id: p.compras.id, codigo: p.compras.codigo, status: p.compras.status } : null,
+    compra: p.compras
+      ? { id: p.compras.id, codigo: p.compras.codigo, status: p.compras.status }
+      : null,
     itens: p.item_pedido_compra.map((i) => {
       const pedida = qtd(i.quantidade)
-      const recebida = entregue ? (recebidoPorProduto.get(i.id_produto) ?? "0.000") : "0.000"
+      const recebida = entregue
+        ? (recebidoPorProduto.get(i.id_produto) ?? "0.000")
+        : "0.000"
       return {
         id: i.id,
         idProduto: i.id_produto,
@@ -339,8 +398,16 @@ export function listarPedidos(ctx: Contexto, input: ListarPedidosInput) {
       OR: input.busca
         ? [
             { numero: { contains: escaparLike(input.busca) } },
-            { fornecedores: { razao_social: { contains: escaparLike(input.busca) } } },
-            { fornecedores: { nome_fantasia: { contains: escaparLike(input.busca) } } },
+            {
+              fornecedores: {
+                razao_social: { contains: escaparLike(input.busca) },
+              },
+            },
+            {
+              fornecedores: {
+                nome_fantasia: { contains: escaparLike(input.busca) },
+              },
+            },
           ]
         : undefined,
     }
@@ -352,23 +419,39 @@ export function listarPedidos(ctx: Contexto, input: ListarPedidosInput) {
         orderBy: [{ data_pedido: "desc" }, { id: "desc" }],
         ...paginar(input.pagina, input.limite),
       }),
-      tx.pedido_compra.groupBy({ by: ["status"], where: { id_empresa: ctx.idEmpresa }, _count: { _all: true } }),
+      tx.pedido_compra.groupBy({
+        by: ["status"],
+        where: { id_empresa: ctx.idEmpresa },
+        _count: { _all: true },
+      }),
       tx.item_pedido_compra.aggregate({
         _sum: { valor_total: true },
-        where: { pedido_compra: { id_empresa: ctx.idEmpresa, status: { in: ["EMITIDO", "PARCIAL"] } } },
+        where: {
+          pedido_compra: {
+            id_empresa: ctx.idEmpresa,
+            status: { in: ["EMITIDO", "PARCIAL"] },
+          },
+        },
       }),
     ])
     return {
       pedidos: linhas.map(apresentarPedido),
       paginacao: paginacao(input.pagina, input.limite, total),
-      resumo: { porStatus: contar(porStatus), valorEmAberto: dinheiro(aberto._sum.valor_total ?? new Prisma.Decimal(0)) },
+      resumo: {
+        porStatus: contar(porStatus),
+        valorEmAberto: dinheiro(
+          aberto._sum.valor_total ?? new Prisma.Decimal(0),
+        ),
+      },
       permissoes: ctx.pode,
     }
   })
 }
 
 export function consultarPedido(ctx: Contexto, id: number) {
-  return leitura(async (tx) => ({ pedido: detalhePedido(await carregarPedido(tx, ctx, id)) }))
+  return leitura(async (tx) => ({
+    pedido: detalhePedido(await carregarPedido(tx, ctx, id)),
+  }))
 }
 
 function itensDoPedido(itens: CriarPedidoInput["itens"]) {
@@ -383,20 +466,28 @@ function itensDoPedido(itens: CriarPedidoInput["itens"]) {
 export function criarPedido(ctx: Contexto, input: CriarPedidoInput) {
   return gravacao(ctx, async (tx) => {
     await exigirFornecedor(tx, ctx, input.idFornecedor)
-    await exigirInsumos(tx, ctx, input.itens.map((i) => i.idProduto))
+    await exigirInsumos(
+      tx,
+      ctx,
+      input.itens.map((i) => i.idProduto),
+    )
     if (input.idRequisicaoCompra) {
       const req = await tx.requisicao_compra.findFirst({
         where: { id: input.idRequisicaoCompra, id_empresa: ctx.idEmpresa },
         select: { id: true, status: true },
       })
-      if (!req) throw new ComprasError(400, "Solicitação de compra não encontrada.")
+      if (!req)
+        throw new ComprasError(400, "Solicitação de compra não encontrada.")
       if (req.status !== "APROVADA")
-        throw conflito("Somente solicitações aprovadas podem ser convertidas em pedido.")
+        throw conflito(
+          "Somente solicitações aprovadas podem ser convertidas em pedido.",
+        )
       const ok = await tx.requisicao_compra.updateMany({
         where: { id: req.id, id_empresa: ctx.idEmpresa, status: "APROVADA" },
         data: { status: "ATENDIDA" },
       })
-      if (ok.count !== 1) throw conflito("A solicitação foi alterada por outra operação.")
+      if (ok.count !== 1)
+        throw conflito("A solicitação foi alterada por outra operação.")
     }
     const criado = await tx.pedido_compra.create({
       data: {
@@ -416,22 +507,37 @@ export function criarPedido(ctx: Contexto, input: CriarPedidoInput) {
   })
 }
 
-export function editarPedido(ctx: Contexto, id: number, input: EditarPedidoInput) {
+export function editarPedido(
+  ctx: Contexto,
+  id: number,
+  input: EditarPedidoInput,
+) {
   return gravacao(ctx, async (tx) => {
     const antes = detalhePedido(await carregarPedido(tx, ctx, id))
     if (antes.status !== "RASCUNHO")
       throw conflito("Somente pedidos em rascunho podem ser editados.")
     await exigirFornecedor(tx, ctx, input.idFornecedor)
-    await exigirInsumos(tx, ctx, input.itens.map((i) => i.idProduto))
+    await exigirInsumos(
+      tx,
+      ctx,
+      input.itens.map((i) => i.idProduto),
+    )
     await tx.item_pedido_compra.deleteMany({ where: { id_pedido_compra: id } })
     await tx.item_pedido_compra.createMany({
-      data: itensDoPedido(input.itens).map((i) => ({ ...i, id_pedido_compra: id })),
+      data: itensDoPedido(input.itens).map((i) => ({
+        ...i,
+        id_pedido_compra: id,
+      })),
     })
     const r = await tx.pedido_compra.updateMany({
       where: { id, id_empresa: ctx.idEmpresa, status: "RASCUNHO" },
-      data: { id_fornecedor: input.idFornecedor, observacao: input.observacao || null },
+      data: {
+        id_fornecedor: input.idFornecedor,
+        observacao: input.observacao || null,
+      },
     })
-    if (r.count !== 1) throw conflito("O pedido foi alterado por outra operação.")
+    if (r.count !== 1)
+      throw conflito("O pedido foi alterado por outra operação.")
     const depois = detalhePedido(await carregarPedido(tx, ctx, id))
     await auditar(tx, ctx, "pedido_compra", id, antes, depois)
     return { pedido: depois }
@@ -443,21 +549,36 @@ export function acaoPedido(ctx: Contexto, id: number, acao: string) {
     const antes = detalhePedido(await carregarPedido(tx, ctx, id))
     const novo = proximoStatus(transicoesPedido, acao, antes.status)
     if (!novo) acaoInvalida(acao, antes.status)
-    if (acao === "cancelar" && antes.compra && antes.compra.status !== "CANCELADA")
-      throw conflito("Cancele a compra vinculada (e suas notas) antes de cancelar o pedido.")
+    if (
+      acao === "cancelar" &&
+      antes.compra &&
+      antes.compra.status !== "CANCELADA"
+    )
+      throw conflito(
+        "Cancele a compra vinculada (e suas notas) antes de cancelar o pedido.",
+      )
     const r = await tx.pedido_compra.updateMany({
       where: { id, id_empresa: ctx.idEmpresa, status: antes.status },
       data: { status: novo },
     })
-    if (r.count !== 1) throw conflito("O pedido foi alterado por outra operação.")
+    if (r.count !== 1)
+      throw conflito("O pedido foi alterado por outra operação.")
     if (acao === "cancelar" && antes.requisicao) {
       // Reabre a solicitação para nova conversão, se nenhum outro pedido ativo a atende.
       const ativos = await tx.pedido_compra.count({
-        where: { id_requisicao_compra: antes.requisicao.id, id_empresa: ctx.idEmpresa, status: { not: "CANCELADO" } },
+        where: {
+          id_requisicao_compra: antes.requisicao.id,
+          id_empresa: ctx.idEmpresa,
+          status: { not: "CANCELADO" },
+        },
       })
       if (!ativos)
         await tx.requisicao_compra.updateMany({
-          where: { id: antes.requisicao.id, id_empresa: ctx.idEmpresa, status: "ATENDIDA" },
+          where: {
+            id: antes.requisicao.id,
+            id_empresa: ctx.idEmpresa,
+            status: "ATENDIDA",
+          },
           data: { status: "APROVADA" },
         })
     }
@@ -474,7 +595,9 @@ export function acaoPedido(ctx: Contexto, id: number, acao: string) {
 // =====================================================================================
 
 const incluirCompra = {
-  fornecedores: { select: { id: true, razao_social: true, nome_fantasia: true } },
+  fornecedores: {
+    select: { id: true, razao_social: true, nome_fantasia: true },
+  },
   usuarios: { select: { id: true, nome: true } },
   locais_estoque: { select: { id: true, nome: true } },
   pedido_compra: { select: { id: true, numero: true } },
@@ -482,7 +605,9 @@ const incluirCompra = {
   _count: { select: { nota_fiscal: true } },
 } satisfies Prisma.comprasInclude
 
-function apresentarCompra(c: Prisma.comprasGetPayload<{ include: typeof incluirCompra }>) {
+function apresentarCompra(
+  c: Prisma.comprasGetPayload<{ include: typeof incluirCompra }>,
+) {
   return {
     id: c.id,
     codigo: c.codigo,
@@ -490,13 +615,19 @@ function apresentarCompra(c: Prisma.comprasGetPayload<{ include: typeof incluirC
     origem: c.origem,
     dataEmissao: c.data_emissao.toISOString(),
     dataAtualizacao: c.data_atualizacao.toISOString(),
-    fornecedor: { id: c.fornecedores.id, nome: nomeFornecedor(c.fornecedores), razaoSocial: c.fornecedores.razao_social },
+    fornecedor: {
+      id: c.fornecedores.id,
+      nome: nomeFornecedor(c.fornecedores),
+      razaoSocial: c.fornecedores.razao_social,
+    },
     responsavel: c.usuarios,
     local: c.locais_estoque,
     pedido: c.pedido_compra,
     observacao: c.observacao,
     totalItens: c.compra_itens.length,
-    valorTotal: somarValores(c.compra_itens.map((i) => dinheiro(i.valor_total))),
+    valorTotal: somarValores(
+      c.compra_itens.map((i) => dinheiro(i.valor_total)),
+    ),
     notasFiscais: c._count.nota_fiscal,
   }
 }
@@ -508,23 +639,42 @@ async function carregarCompra(tx: Transaction, ctx: Contexto, id: number) {
       ...incluirCompra,
       compra_itens: {
         orderBy: { id: "asc" },
-        include: { produtos: { select: { codigo: true, nome: true, unidade: true } } },
+        include: {
+          produtos: { select: { codigo: true, nome: true, unidade: true } },
+        },
       },
       pedido_compra: {
-        select: { id: true, numero: true, status: true, item_pedido_compra: { select: { id_produto: true, quantidade: true } } },
+        select: {
+          id: true,
+          numero: true,
+          status: true,
+          item_pedido_compra: {
+            select: { id_produto: true, quantidade: true },
+          },
+        },
       },
-      nota_fiscal: { select: { id: true, numero: true, serie: true, status: true }, orderBy: { id: "asc" } },
+      nota_fiscal: {
+        select: { id: true, numero: true, serie: true, status: true },
+        orderBy: { id: "asc" },
+      },
     },
   })
   if (!c) throw new ComprasError(404, "Compra não encontrada.")
   return c
 }
 function detalheCompra(c: Awaited<ReturnType<typeof carregarCompra>>) {
-  const pedidas = new Map((c.pedido_compra?.item_pedido_compra ?? []).map((i) => [i.id_produto, qtd(i.quantidade)]))
+  const pedidas = new Map(
+    (c.pedido_compra?.item_pedido_compra ?? []).map((i) => [
+      i.id_produto,
+      qtd(i.quantidade),
+    ]),
+  )
   const entregue = c.status === "ENTREGUE"
   return {
     ...apresentarCompra(c),
-    pedido: c.pedido_compra ? { id: c.pedido_compra.id, numero: c.pedido_compra.numero } : null,
+    pedido: c.pedido_compra
+      ? { id: c.pedido_compra.id, numero: c.pedido_compra.numero }
+      : null,
     itens: c.compra_itens.map((i) => {
       const recebida = entregue ? qtd(i.quantidade) : "0.000"
       const pedida = pedidas.get(i.id_produto) ?? null // sem pedido, não há "quantidade pedida"
@@ -539,7 +689,8 @@ function detalheCompra(c: Awaited<ReturnType<typeof carregarCompra>>) {
         valorTotal: dinheiro(i.valor_total),
         quantidadePedida: pedida,
         quantidadeRecebida: recebida,
-        quantidadePendente: pedida === null ? null : quantidadePendente(pedida, recebida),
+        quantidadePendente:
+          pedida === null ? null : quantidadePendente(pedida, recebida),
       }
     }),
     notas: c.nota_fiscal,
@@ -557,9 +708,19 @@ export function listarCompras(ctx: Contexto, input: ListarComprasInput) {
       OR: input.busca
         ? [
             { codigo: { contains: escaparLike(input.busca) } },
-            { pedido_compra: { numero: { contains: escaparLike(input.busca) } } },
-            { fornecedores: { razao_social: { contains: escaparLike(input.busca) } } },
-            { fornecedores: { nome_fantasia: { contains: escaparLike(input.busca) } } },
+            {
+              pedido_compra: { numero: { contains: escaparLike(input.busca) } },
+            },
+            {
+              fornecedores: {
+                razao_social: { contains: escaparLike(input.busca) },
+              },
+            },
+            {
+              fornecedores: {
+                nome_fantasia: { contains: escaparLike(input.busca) },
+              },
+            },
           ]
         : undefined,
     }
@@ -571,23 +732,37 @@ export function listarCompras(ctx: Contexto, input: ListarComprasInput) {
         orderBy: [{ data_emissao: "desc" }, { id: "desc" }],
         ...paginar(input.pagina, input.limite),
       }),
-      tx.compras.groupBy({ by: ["status"], where: { id_empresa: ctx.idEmpresa }, _count: { _all: true } }),
+      tx.compras.groupBy({
+        by: ["status"],
+        where: { id_empresa: ctx.idEmpresa },
+        _count: { _all: true },
+      }),
       tx.compra_itens.aggregate({
         _sum: { valor_total: true },
-        where: { compras: { id_empresa: ctx.idEmpresa, status: { in: ["EMITIDA", "ENTREGUE"] } } },
+        where: {
+          compras: {
+            id_empresa: ctx.idEmpresa,
+            status: { in: ["EMITIDA", "ENTREGUE"] },
+          },
+        },
       }),
     ])
     return {
       compras: linhas.map(apresentarCompra),
       paginacao: paginacao(input.pagina, input.limite, total),
-      resumo: { porStatus: contar(porStatus), valorTotal: dinheiro(valor._sum.valor_total ?? new Prisma.Decimal(0)) },
+      resumo: {
+        porStatus: contar(porStatus),
+        valorTotal: dinheiro(valor._sum.valor_total ?? new Prisma.Decimal(0)),
+      },
       permissoes: ctx.pode,
     }
   })
 }
 
 export function consultarCompra(ctx: Contexto, id: number) {
-  return leitura(async (tx) => ({ compra: detalheCompra(await carregarCompra(tx, ctx, id)) }))
+  return leitura(async (tx) => ({
+    compra: detalheCompra(await carregarCompra(tx, ctx, id)),
+  }))
 }
 
 export function criarCompra(ctx: Contexto, input: CriarCompraInput) {
@@ -595,13 +770,22 @@ export function criarCompra(ctx: Contexto, input: CriarCompraInput) {
     await exigirLocal(tx, ctx, input.idLocalEstoque)
     let idFornecedor: number
     let idOrdemProducao: number | null = null
-    let itens: Array<{ id_produto: number; quantidade: string; valor_unitario: string; valor_total: string }>
+    let itens: Array<{
+      id_produto: number
+      quantidade: string
+      valor_unitario: string
+      valor_total: string
+    }>
     if (input.idPedidoCompra) {
       const pedido = await tx.pedido_compra.findFirst({
         where: { id: input.idPedidoCompra, id_empresa: ctx.idEmpresa },
-        include: { item_pedido_compra: true, compras: { select: { codigo: true } } },
+        include: {
+          item_pedido_compra: true,
+          compras: { select: { codigo: true } },
+        },
       })
-      if (!pedido) throw new ComprasError(400, "Pedido de compra não encontrado.")
+      if (!pedido)
+        throw new ComprasError(400, "Pedido de compra não encontrado.")
       if (pedido.status !== "EMITIDO")
         throw conflito("Somente pedidos emitidos podem gerar uma compra.")
       if (pedido.compras)
@@ -617,7 +801,11 @@ export function criarCompra(ctx: Contexto, input: CriarCompraInput) {
     } else {
       idFornecedor = input.idFornecedor!
       await exigirFornecedor(tx, ctx, idFornecedor)
-      await exigirInsumos(tx, ctx, input.itens!.map((i) => i.idProduto))
+      await exigirInsumos(
+        tx,
+        ctx,
+        input.itens!.map((i) => i.idProduto),
+      )
       itens = input.itens!.map((i) => ({
         id_produto: i.idProduto,
         quantidade: i.quantidade,
@@ -647,13 +835,21 @@ export function criarCompra(ctx: Contexto, input: CriarCompraInput) {
   })
 }
 
-export function receberCompra(ctx: Contexto, id: number, input: ReceberCompraInput) {
+export function receberCompra(
+  ctx: Contexto,
+  id: number,
+  input: ReceberCompraInput,
+) {
   return gravacao(ctx, async (tx) => {
     const compra = await carregarCompra(tx, ctx, id)
     const antes = detalheCompra(compra)
-    if (!proximoStatus(transicoesCompra, "receber", antes.status)) acaoInvalida("receber", antes.status)
+    if (!proximoStatus(transicoesCompra, "receber", antes.status))
+      acaoInvalida("receber", antes.status)
     const pedidasPorProduto = new Map(
-      (compra.pedido_compra?.item_pedido_compra ?? []).map((i) => [i.id_produto, qtd(i.quantidade)]),
+      (compra.pedido_compra?.item_pedido_compra ?? []).map((i) => [
+        i.id_produto,
+        qtd(i.quantidade),
+      ]),
     )
     const recebidas = new Map<number, string>(
       input.itens
@@ -662,10 +858,20 @@ export function receberCompra(ctx: Contexto, id: number, input: ReceberCompraInp
     )
     for (const [idProduto, quantidade] of recebidas) {
       const item = compra.compra_itens.find((i) => i.id_produto === idProduto)
-      if (!item) throw new ComprasError(400, "Há item de recebimento que não pertence à compra.")
+      if (!item)
+        throw new ComprasError(
+          400,
+          "Há item de recebimento que não pertence à compra.",
+        )
       const limite = pedidasPorProduto.get(idProduto) ?? qtd(item.quantidade)
-      if ((paraEscala(quantidade, 3) ?? BigInt(0)) > (paraEscala(limite, 3) ?? BigInt(0)))
-        throw new ComprasError(400, `A quantidade recebida de ${item.produtos.nome} excede o pedido (${limite}).`)
+      if (
+        (paraEscala(quantidade, 3) ?? BigInt(0)) >
+        (paraEscala(limite, 3) ?? BigInt(0))
+      )
+        throw new ComprasError(
+          400,
+          `A quantidade recebida de ${item.produtos.nome} excede o pedido (${limite}).`,
+        )
     }
     // Recebimento parcial só é seguro quando a quantidade pedida fica registrada no pedido.
     const escala = (v: string | undefined) => paraEscala(v ?? "0", 3)
@@ -673,7 +879,9 @@ export function receberCompra(ctx: Contexto, id: number, input: ReceberCompraInp
       (i) => escala(recebidas.get(i.id_produto)) !== escala(qtd(i.quantidade)),
     )
     if (parcial && !compra.pedido_compra)
-      throw conflito("Compras sem pedido só aceitam recebimento integral dos itens.")
+      throw conflito(
+        "Compras sem pedido só aceitam recebimento integral dos itens.",
+      )
 
     for (const item of compra.compra_itens) {
       const quantidade = recebidas.get(item.id_produto)
@@ -682,7 +890,10 @@ export function receberCompra(ctx: Contexto, id: number, input: ReceberCompraInp
       } else {
         await tx.compra_itens.update({
           where: { id: item.id },
-          data: { quantidade, valor_total: totalItem(quantidade, dinheiro(item.valor_unitario)) },
+          data: {
+            quantidade,
+            valor_total: totalItem(quantidade, dinheiro(item.valor_unitario)),
+          },
         })
       }
     }
@@ -691,10 +902,12 @@ export function receberCompra(ctx: Contexto, id: number, input: ReceberCompraInp
       data: {
         status: "ENTREGUE",
         data_atualizacao: new Date(),
-        observacao: input.observacao === undefined ? undefined : input.observacao || null,
+        observacao:
+          input.observacao === undefined ? undefined : input.observacao || null,
       },
     })
-    if (r.count !== 1) throw conflito("A compra foi alterada por outra operação.")
+    if (r.count !== 1)
+      throw conflito("A compra foi alterada por outra operação.")
 
     if (compra.pedido_compra) {
       const status = statusPedidoAposRecebimento(
@@ -704,7 +917,11 @@ export function receberCompra(ctx: Contexto, id: number, input: ReceberCompraInp
         })),
       )
       await tx.pedido_compra.updateMany({
-        where: { id: compra.pedido_compra.id, id_empresa: ctx.idEmpresa, status: "EMITIDO" },
+        where: {
+          id: compra.pedido_compra.id,
+          id_empresa: ctx.idEmpresa,
+          status: "EMITIDO",
+        },
         data: { status },
       })
     }
@@ -720,12 +937,15 @@ export function acaoCompra(ctx: Contexto, id: number, acao: string) {
     const novo = proximoStatus(transicoesCompra, acao, antes.status)
     if (!novo) acaoInvalida(acao, antes.status)
     if (antes.notas.some((n) => n.status !== "CANCELADA"))
-      throw conflito("Cancele as notas fiscais vinculadas antes de cancelar a compra.")
+      throw conflito(
+        "Cancele as notas fiscais vinculadas antes de cancelar a compra.",
+      )
     const r = await tx.compras.updateMany({
       where: { id, id_empresa: ctx.idEmpresa, status: antes.status },
       data: { status: novo, data_atualizacao: new Date() },
     })
-    if (r.count !== 1) throw conflito("A compra foi alterada por outra operação.")
+    if (r.count !== 1)
+      throw conflito("A compra foi alterada por outra operação.")
     const depois = detalheCompra(await carregarCompra(tx, ctx, id))
     await auditar(tx, ctx, "compras", id, antes, depois)
     return { compra: depois }
@@ -737,12 +957,16 @@ export function acaoCompra(ctx: Contexto, id: number, acao: string) {
 // =====================================================================================
 
 const incluirNota = {
-  fornecedores: { select: { id: true, razao_social: true, nome_fantasia: true } },
+  fornecedores: {
+    select: { id: true, razao_social: true, nome_fantasia: true },
+  },
   compras: { select: { id: true, codigo: true } },
   pedido_compra: { select: { id: true, numero: true } },
 } satisfies Prisma.nota_fiscalInclude
 
-function apresentarNota(n: Prisma.nota_fiscalGetPayload<{ include: typeof incluirNota }>) {
+function apresentarNota(
+  n: Prisma.nota_fiscalGetPayload<{ include: typeof incluirNota }>,
+) {
   return {
     id: n.id,
     numero: n.numero,
@@ -752,7 +976,11 @@ function apresentarNota(n: Prisma.nota_fiscalGetPayload<{ include: typeof inclui
     dataEmissao: n.data_emissao?.toISOString() ?? null,
     dataRecebimento: n.data_recebimento?.toISOString() ?? null,
     valorTotal: dinheiro(n.valor_total),
-    fornecedor: { id: n.fornecedores.id, nome: nomeFornecedor(n.fornecedores), razaoSocial: n.fornecedores.razao_social },
+    fornecedor: {
+      id: n.fornecedores.id,
+      nome: nomeFornecedor(n.fornecedores),
+      razaoSocial: n.fornecedores.razao_social,
+    },
     compra: n.compras,
     pedido: n.pedido_compra,
     entradaProcessada: n.entrada_processada,
@@ -760,7 +988,10 @@ function apresentarNota(n: Prisma.nota_fiscalGetPayload<{ include: typeof inclui
   }
 }
 async function carregarNota(tx: Transaction, ctx: Contexto, id: number) {
-  const n = await tx.nota_fiscal.findFirst({ where: { id, id_empresa: ctx.idEmpresa }, include: incluirNota })
+  const n = await tx.nota_fiscal.findFirst({
+    where: { id, id_empresa: ctx.idEmpresa },
+    include: incluirNota,
+  })
   if (!n) throw new ComprasError(404, "Nota fiscal não encontrada.")
   return apresentarNota(n)
 }
@@ -786,11 +1017,16 @@ export function listarNotas(ctx: Contexto, input: ListarNotasInput) {
     const [total, linhas, porStatus, valor] = await Promise.all([
       tx.nota_fiscal.count({ where }),
       tx.nota_fiscal.findMany({
-        where, include: incluirNota,
+        where,
+        include: incluirNota,
         orderBy: [{ data_emissao: "desc" }, { id: "desc" }],
         ...paginar(input.pagina, input.limite),
       }),
-      tx.nota_fiscal.groupBy({ by: ["status"], where: { id_empresa: ctx.idEmpresa }, _count: { _all: true } }),
+      tx.nota_fiscal.groupBy({
+        by: ["status"],
+        where: { id_empresa: ctx.idEmpresa },
+        _count: { _all: true },
+      }),
       tx.nota_fiscal.aggregate({
         _sum: { valor_total: true },
         where: { id_empresa: ctx.idEmpresa, status: { not: "CANCELADA" } },
@@ -799,7 +1035,10 @@ export function listarNotas(ctx: Contexto, input: ListarNotasInput) {
     return {
       notas: linhas.map(apresentarNota),
       paginacao: paginacao(input.pagina, input.limite, total),
-      resumo: { porStatus: contar(porStatus), valorTotal: dinheiro(valor._sum.valor_total ?? new Prisma.Decimal(0)) },
+      resumo: {
+        porStatus: contar(porStatus),
+        valorTotal: dinheiro(valor._sum.valor_total ?? new Prisma.Decimal(0)),
+      },
       permissoes: ctx.pode,
     }
   })
@@ -810,7 +1049,12 @@ export function consultarNota(ctx: Contexto, id: number) {
 }
 
 /** Valida vínculos (mesma empresa e mesmo fornecedor) e resolve o valor total. */
-async function resolverNota(tx: Transaction, ctx: Contexto, input: CriarNotaInput | EditarNotaInput, idAtual?: number) {
+async function resolverNota(
+  tx: Transaction,
+  ctx: Contexto,
+  input: CriarNotaInput | EditarNotaInput,
+  idAtual?: number,
+) {
   await exigirFornecedor(tx, ctx, input.idFornecedor)
   let idPedido = input.idPedidoCompra ?? null
   let valorCompra: string | null = null
@@ -820,13 +1064,22 @@ async function resolverNota(tx: Transaction, ctx: Contexto, input: CriarNotaInpu
       include: { compra_itens: { select: { valor_total: true } } },
     })
     if (!compra) throw new ComprasError(400, "Compra não encontrada.")
-    if (compra.status === "CANCELADA") throw conflito("Não é possível vincular nota a uma compra cancelada.")
+    if (compra.status === "CANCELADA")
+      throw conflito("Não é possível vincular nota a uma compra cancelada.")
     if (compra.id_fornecedor !== input.idFornecedor)
-      throw new ComprasError(400, "O fornecedor da nota deve ser o mesmo da compra.")
+      throw new ComprasError(
+        400,
+        "O fornecedor da nota deve ser o mesmo da compra.",
+      )
     if (idPedido && compra.id_pedido_compra_legado !== idPedido)
-      throw new ComprasError(400, "A compra informada não pertence ao pedido informado.")
+      throw new ComprasError(
+        400,
+        "A compra informada não pertence ao pedido informado.",
+      )
     idPedido = compra.id_pedido_compra_legado
-    valorCompra = somarValores(compra.compra_itens.map((i) => dinheiro(i.valor_total)))
+    valorCompra = somarValores(
+      compra.compra_itens.map((i) => dinheiro(i.valor_total)),
+    )
   }
   if (idPedido) {
     const pedido = await tx.pedido_compra.findFirst({
@@ -834,12 +1087,17 @@ async function resolverNota(tx: Transaction, ctx: Contexto, input: CriarNotaInpu
       select: { id_fornecedor: true, status: true },
     })
     if (!pedido) throw new ComprasError(400, "Pedido de compra não encontrado.")
-    if (pedido.status === "CANCELADO") throw conflito("Não é possível vincular nota a um pedido cancelado.")
+    if (pedido.status === "CANCELADO")
+      throw conflito("Não é possível vincular nota a um pedido cancelado.")
     if (pedido.id_fornecedor !== input.idFornecedor)
-      throw new ComprasError(400, "O fornecedor da nota deve ser o mesmo do pedido.")
+      throw new ComprasError(
+        400,
+        "O fornecedor da nota deve ser o mesmo do pedido.",
+      )
   }
   const valorTotal = input.valorTotal ?? valorCompra
-  if (valorTotal === null) throw new ComprasError(400, "Informe o valor total da nota.")
+  if (valorTotal === null)
+    throw new ComprasError(400, "Informe o valor total da nota.")
   const duplicada = await tx.nota_fiscal.findFirst({
     where: {
       id: idAtual ? { not: idAtual } : undefined,
@@ -886,10 +1144,17 @@ export function editarNota(ctx: Contexto, id: number, input: EditarNotaInput) {
   return gravacao(ctx, async (tx) => {
     const antes = await carregarNota(tx, ctx, id)
     if (antes.status !== "PENDENTE" || antes.entradaProcessada)
-      throw conflito("Somente notas pendentes e sem entrada processada podem ser editadas.")
+      throw conflito(
+        "Somente notas pendentes e sem entrada processada podem ser editadas.",
+      )
     const dados = await resolverNota(tx, ctx, input, id)
     const r = await tx.nota_fiscal.updateMany({
-      where: { id, id_empresa: ctx.idEmpresa, status: "PENDENTE", entrada_processada: false },
+      where: {
+        id,
+        id_empresa: ctx.idEmpresa,
+        status: "PENDENTE",
+        entrada_processada: false,
+      },
       data: dados,
     })
     if (r.count !== 1) throw conflito("A nota foi alterada por outra operação.")
@@ -899,18 +1164,30 @@ export function editarNota(ctx: Contexto, id: number, input: EditarNotaInput) {
   })
 }
 
-export function acaoNota(ctx: Contexto, id: number, acao: string, dataRecebimento?: string) {
+export function acaoNota(
+  ctx: Contexto,
+  id: number,
+  acao: string,
+  dataRecebimento?: string,
+) {
   return gravacao(ctx, async (tx) => {
     const antes = await carregarNota(tx, ctx, id)
     const novo = proximoStatus(transicoesNota, acao, antes.status)
     if (!novo) acaoInvalida(acao, antes.status)
     if (acao === "cancelar" && antes.entradaProcessada)
-      throw conflito("Nota com entrada já processada no estoque não pode ser cancelada aqui.")
+      throw conflito(
+        "Nota com entrada já processada no estoque não pode ser cancelada aqui.",
+      )
     const r = await tx.nota_fiscal.updateMany({
       where: { id, id_empresa: ctx.idEmpresa, status: antes.status },
       data: {
         status: novo,
-        data_recebimento: acao === "receber" ? (dataRecebimento ? dia(dataRecebimento) : new Date()) : undefined,
+        data_recebimento:
+          acao === "receber"
+            ? dataRecebimento
+              ? dia(dataRecebimento)
+              : new Date()
+            : undefined,
       },
     })
     if (r.count !== 1) throw conflito("A nota foi alterada por outra operação.")
@@ -932,7 +1209,9 @@ export function listarOpcoes(ctx: Contexto, input: OpcoesInput) {
       const itens = await tx.produtos.findMany({
         where: {
           ...insumoDaEmpresa(ctx.idEmpresa),
-          OR: busca ? [{ nome: { contains: busca } }, { codigo: { contains: busca } }] : undefined,
+          OR: busca
+            ? [{ nome: { contains: busca } }, { codigo: { contains: busca } }]
+            : undefined,
         },
         select: { id: true, nome: true, codigo: true, unidade: true },
         orderBy: [{ nome: "asc" }, { id: "asc" }],
@@ -946,19 +1225,41 @@ export function listarOpcoes(ctx: Contexto, input: OpcoesInput) {
           AND: [
             fornecedorDaEmpresa(ctx.idEmpresa),
             busca
-              ? { OR: [{ razao_social: { contains: busca } }, { nome_fantasia: { contains: busca } }, { cnpj: { contains: busca } }] }
+              ? {
+                  OR: [
+                    { razao_social: { contains: busca } },
+                    { nome_fantasia: { contains: busca } },
+                    { cnpj: { contains: busca } },
+                  ],
+                }
               : {},
           ],
         },
-        select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true },
+        select: {
+          id: true,
+          razao_social: true,
+          nome_fantasia: true,
+          cnpj: true,
+        },
         orderBy: [{ razao_social: "asc" }, { id: "asc" }],
         take,
       })
-      return { opcoes: itens.map((f) => ({ id: f.id, nome: nomeFornecedor(f), codigo: f.cnpj, unidade: null })) }
+      return {
+        opcoes: itens.map((f) => ({
+          id: f.id,
+          nome: nomeFornecedor(f),
+          codigo: f.cnpj,
+          unidade: null,
+        })),
+      }
     }
     const modelo = input.tipo === "locais" ? tx.locais_estoque : tx.setores
     const itens = await (modelo as typeof tx.locais_estoque).findMany({
-      where: { id_empresa: ctx.idEmpresa, status: "ATIVO", nome: busca ? { contains: busca } : undefined },
+      where: {
+        id_empresa: ctx.idEmpresa,
+        status: "ATIVO",
+        nome: busca ? { contains: busca } : undefined,
+      },
       select: { id: true, nome: true },
       orderBy: [{ nome: "asc" }, { id: "asc" }],
       take,

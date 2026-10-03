@@ -120,26 +120,37 @@ export function auditar(
 
 // ------------------------------------------------- escopo de empresa (tenant)
 
-export const fornecedorDaEmpresa = (idEmpresa: number): Prisma.fornecedoresWhereInput => ({
+export const fornecedorDaEmpresa = (
+  idEmpresa: number,
+): Prisma.fornecedoresWhereInput => ({
   status: "ATIVO",
   OR: [
     { id_empresa: idEmpresa },
-    { empresa_fornecedor: { some: { id_empresa: idEmpresa, status: "ATIVO" } } },
+    {
+      empresa_fornecedor: { some: { id_empresa: idEmpresa, status: "ATIVO" } },
+    },
   ],
 })
 
-export const insumoDaEmpresa = (idEmpresa: number): Prisma.produtosWhereInput => ({
+export const insumoDaEmpresa = (
+  idEmpresa: number,
+): Prisma.produtosWhereInput => ({
   status: "ATIVO",
   permite_compra: true,
   produto_empresa: { some: { id_empresa: idEmpresa, status: "ATIVO" } },
 })
 
-export async function exigirFornecedor(tx: Transaction, ctx: Contexto, id: number) {
+export async function exigirFornecedor(
+  tx: Transaction,
+  ctx: Contexto,
+  id: number,
+) {
   const fornecedor = await tx.fornecedores.findFirst({
     where: { id, ...fornecedorDaEmpresa(ctx.idEmpresa) },
     select: { id: true },
   })
-  if (!fornecedor) throw new ComprasError(400, "Selecione um fornecedor ativo da empresa.")
+  if (!fornecedor)
+    throw new ComprasError(400, "Selecione um fornecedor ativo da empresa.")
 }
 
 export async function exigirLocal(tx: Transaction, ctx: Contexto, id: number) {
@@ -147,7 +158,8 @@ export async function exigirLocal(tx: Transaction, ctx: Contexto, id: number) {
     where: { id, id_empresa: ctx.idEmpresa, status: "ATIVO" },
     select: { id: true },
   })
-  if (!local) throw new ComprasError(400, "Selecione um local de estoque ativo.")
+  if (!local)
+    throw new ComprasError(400, "Selecione um local de estoque ativo.")
 }
 
 export async function exigirSetor(tx: Transaction, ctx: Contexto, id: number) {
@@ -155,11 +167,16 @@ export async function exigirSetor(tx: Transaction, ctx: Contexto, id: number) {
     where: { id, id_empresa: ctx.idEmpresa, status: "ATIVO" },
     select: { id: true },
   })
-  if (!setor) throw new ComprasError(400, "Selecione um setor ativo da empresa.")
+  if (!setor)
+    throw new ComprasError(400, "Selecione um setor ativo da empresa.")
 }
 
 /** Todos os produtos devem ser insumos/materiais compráveis e ativos na empresa. */
-export async function exigirInsumos(tx: Transaction, ctx: Contexto, ids: number[]) {
+export async function exigirInsumos(
+  tx: Transaction,
+  ctx: Contexto,
+  ids: number[],
+) {
   const unicos = [...new Set(ids)]
   const encontrados = await tx.produtos.count({
     where: { id: { in: unicos }, ...insumoDaEmpresa(ctx.idEmpresa) },
@@ -188,6 +205,8 @@ export function intervaloDatas(de?: string, ate?: string) {
   if (!de && !ate) return undefined
   return {
     gte: de ? new Date(`${de}T00:00:00.000Z`) : undefined,
-    lt: ate ? new Date(new Date(`${ate}T00:00:00.000Z`).getTime() + 86_400_000) : undefined,
+    lt: ate
+      ? new Date(new Date(`${ate}T00:00:00.000Z`).getTime() + 86_400_000)
+      : undefined,
   }
 }
