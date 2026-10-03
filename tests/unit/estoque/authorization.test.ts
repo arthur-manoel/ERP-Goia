@@ -1,9 +1,11 @@
-import { beforeEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { db } from "../../helpers/prisma"
 import { autorizarEstoque } from "../../../src/modules/estoque-minimo/estoque-minimo.authorization"
 import { signAccessToken } from "../../../src/modules/auth/auth.service"
 
 vi.mock("server-only", () => ({}))
+// Esta suíte valida JWTs reais, não o token simulado do setup global.
+vi.unmock("../../../src/lib/jwt")
 const vinculo = (flags = {}, nivel = "USUARIO", global = "USUARIO") => ({
   id_empresa: 10,
   nivel_acesso: nivel,
@@ -25,7 +27,10 @@ const request = (empresa = "10") =>
     },
   })
 beforeEach(() => {
-  process.env.ACCESS_TOKEN_SECRET = "unit-test-estoque-only"
+  vi.stubEnv("ACCESS_TOKEN_SECRET", "unit-test-estoque-only")
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 it.each([
@@ -94,6 +99,32 @@ it("header não concede acesso e token ausente não consulta o banco", async () 
     new Request("http://localhost/api/estoque"),
     "criar",
   )
+  expect(result).toBeInstanceOf(Response)
+  expect((result as Response).status).toBe(401)
+  expect(db.usuario_empresa.findMany).not.toHaveBeenCalled()
+})
+
+it.each(["test-token", "token-invalido"])(
+  "token %s não autentica nem consulta o banco",
+  async (token) => {
+    const result = await autorizarEstoque(
+      new Request("http://localhost/api/estoque", {
+        headers: { Authorization: `Bearer ${token}`, "X-Empresa-Id": "10" },
+      }),
+      "criar",
+    )
+    expect(result).toBeInstanceOf(Response)
+    expect((result as Response).status).toBe(401)
+    expect(db.usuario_empresa.findMany).not.toHaveBeenCalled()
+  },
+)
+
+it("JWT assinado com outra chave não autentica nem consulta o banco", async () => {
+  vi.stubEnv("ACCESS_TOKEN_SECRET", "unit-test-outra-chave")
+  const req = request()
+  vi.stubEnv("ACCESS_TOKEN_SECRET", "unit-test-estoque-only")
+
+  const result = await autorizarEstoque(req, "criar")
   expect(result).toBeInstanceOf(Response)
   expect((result as Response).status).toBe(401)
   expect(db.usuario_empresa.findMany).not.toHaveBeenCalled()
