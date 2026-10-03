@@ -91,6 +91,7 @@ export function ProvedorAutenticacao({
 
   useEffect(() => {
     let ativo = true
+
     void renovarToken().then(
       async (accessToken) => {
         if (!ativo) return

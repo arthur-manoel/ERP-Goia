@@ -3,8 +3,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
-import { Eye, EyeOff, LockKeyhole, UserRound } from "lucide-react"
+import { Eye, EyeOff, LoaderCircle, LockKeyhole, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Field,
@@ -20,64 +19,57 @@ import {
 } from "@/components/ui/input-group"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAutenticacao } from "../provedor-autenticacao"
-
-const schema = z.object({
-  email: z.email("Informe um e-mail válido."),
-  senha: z.string().min(1, "Informe sua senha."),
-})
+import { loginSchema, type DadosLogin } from "../schemas"
 
 export function FormularioLogin() {
   const router = useRouter()
   const { entrar } = useAutenticacao()
   const [mostrarSenha, setMostrarSenha] = useState(false)
   const [erro, setErro] = useState("")
-  const [pendente, setPendente] = useState(false)
-  const form = useForm<z.infer<typeof schema>>({
-    resolver: zodResolver(schema),
-    defaultValues: { email: "", senha: "" },
+  const form = useForm<DadosLogin>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { usuario: "", senha: "" },
   })
+
   return (
     <form
       noValidate
-      onSubmit={form.handleSubmit(async ({ email, senha }) => {
+      onSubmit={form.handleSubmit(async ({ usuario, senha }) => {
         setErro("")
-        setPendente(true)
         try {
-          await entrar(email, senha)
-          router.push("/estoque")
-        } catch (error) {
-          setErro(error instanceof Error ? error.message : "Falha ao entrar.")
+          await entrar(usuario, senha)
+          router.replace("/")
+        } catch {
+          setErro("Usuário ou senha incorretos.")
           form.resetField("senha")
           setMostrarSenha(false)
-        } finally {
-          setPendente(false)
         }
       })}
       className="space-y-6"
     >
       <FieldGroup>
-        <Field data-invalid={!!form.formState.errors.email}>
-          <FieldLabel htmlFor="email">E-mail</FieldLabel>
+        <Field data-invalid={!!form.formState.errors.usuario}>
+          <FieldLabel htmlFor="usuario">Usuário</FieldLabel>
           <InputGroup className="h-11">
             <InputGroupAddon>
               <UserRound />
             </InputGroupAddon>
             <InputGroupInput
-              id="email"
-              autoComplete="email"
+              id="usuario"
+              autoComplete="username"
               autoCapitalize="none"
               spellCheck={false}
-              placeholder="Seu e-mail cadastrado"
-              {...form.register("email")}
-              aria-invalid={!!form.formState.errors.email}
+              placeholder="E-mail ou nome de usuário"
+              {...form.register("usuario")}
+              aria-invalid={!!form.formState.errors.usuario}
               aria-describedby={
-                form.formState.errors.email ? "email-erro" : undefined
+                form.formState.errors.usuario ? "usuario-erro" : undefined
               }
             />
           </InputGroup>
-          {form.formState.errors.email && (
-            <FieldError id="email-erro">
-              {form.formState.errors.email.message}
+          {form.formState.errors.usuario && (
+            <FieldError id="usuario-erro">
+              {form.formState.errors.usuario.message}
             </FieldError>
           )}
         </Field>
@@ -121,14 +113,16 @@ export function FormularioLogin() {
           <AlertDescription>{erro}</AlertDescription>
         </Alert>
       )}
-      <Button type="submit" className="h-11 w-full" disabled={pendente}>
-        {pendente ? "Entrando…" : "Entrar"}
+      <Button
+        type="submit"
+        className="h-11 w-full"
+        disabled={form.formState.isSubmitting}
+      >
+        {form.formState.isSubmitting ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : null}
+        {form.formState.isSubmitting ? "Entrando…" : "Entrar"}
       </Button>
-      <p className="text-center text-xs leading-relaxed text-muted-foreground">
-        Precisa de acesso ou esqueceu sua senha?
-        <br />
-        Procure o administrador da sua empresa.
-      </p>
     </form>
   )
 }
