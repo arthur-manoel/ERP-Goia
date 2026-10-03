@@ -11,6 +11,7 @@ function model() {
   }
 }
 export const db = {
+  usuario_empresa: model(),
   tamanhos: model(),
   cores: model(),
   produtos: model(),
@@ -21,5 +22,6 @@ export const db = {
   auditoria: model(),
   usuario_empresa: model(),
   $queryRaw: vi.fn(),
+  fornecedores: model(),
   $transaction: vi.fn(),
 }

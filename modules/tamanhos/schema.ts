@@ -37,6 +37,7 @@ export const tamanhoIdSchema = z
   .pipe(positiveId)
 export const listTamanhosSchema = z
   .object({
+    busca: z.string().trim().max(255).optional(),
     page: tamanhoIdSchema.default(1),
     limit: tamanhoIdSchema.pipe(z.number().max(100)).default(20),
     id_empresa: tamanhoIdSchema.optional(),
@@ -49,6 +50,6 @@ export type CreateTamanhoData = z.output<typeof createTamanhoSchema>
 export type UpdateTamanhoData = z.output<typeof updateTamanhoSchema>
 export type TamanhoFilters = Pick<
   z.output<typeof listTamanhosSchema>,
-  "id_empresa" | "nome" | "status"
+  "busca" | "id_empresa" | "nome" | "status"
 >
 export type Pagination = { page: number; limit: number }
