@@ -37,10 +37,15 @@ it("lista com todos os filtros e paginação, na mesma transação", async () =>
   })
   expect(db.fornecedores.findMany).toHaveBeenCalledWith({
     where: {
-      id_empresa: 10,
-      status: "ATIVO",
-      razao_social: "Empresa",
-      nome_fantasia: "Loja",
+      AND: [
+        {
+          id_empresa: 10,
+          status: "ATIVO",
+          razao_social: "Empresa",
+          nome_fantasia: "Loja",
+        },
+        { id_empresa: { in: [10] } },
+      ],
     },
     orderBy: [{ razao_social: "asc" }, { id: "asc" }],
     skip: 20,
@@ -110,23 +115,27 @@ it("preserva status omitido e permite limpar CNPJ", async () => {
     cnpj: null,
     status: "INATIVO",
   })
-  const response = await item.PUT(
-    await request("/api/fornecedores/1", "PUT", { cnpj: null }),
+  const response = await item.PATCH(
+    await request("/api/fornecedores/1", "PATCH", { cnpj: null }),
     context(),
   )
   expect(response.status).toBe(200)
   expect(db.fornecedores.update).toHaveBeenCalledWith({
-    where: { id: 1 },
+    where: { id: 1, id_empresa: { in: [10] } },
     data: { cnpj: null },
   })
   expect(db.fornecedores.findFirst).not.toHaveBeenCalled()
 })
 it.each([{ cnpj: "11.222.333/0001-81" }, { id_empresa: 20 }])(
-  "verifica unicidade da combinação resultante no PUT %j",
+  "verifica unicidade da combinação resultante no PATCH %j",
   async (data) => {
+    db.usuario_empresa.findMany.mockResolvedValue([
+      { id_empresa: 10 },
+      { id_empresa: 20 },
+    ])
     db.fornecedores.findFirst.mockResolvedValue({ ...row, id: 2 })
-    const response = await item.PUT(
-      await request("/api/fornecedores/1", "PUT", data),
+    const response = await item.PATCH(
+      await request("/api/fornecedores/1", "PATCH", data),
       context(),
     )
     expect(response.status).toBe(409)
@@ -140,20 +149,20 @@ it.each([{ cnpj: "11.222.333/0001-81" }, { id_empresa: 20 }])(
     expect(db.fornecedores.update).not.toHaveBeenCalled()
   },
 )
-it("aceita o próprio CNPJ e trata empresa nula legada", async () => {
-  db.fornecedores.findUnique.mockResolvedValue({ ...row, id_empresa: null })
+it("aceita o próprio CNPJ dentro da empresa autorizada", async () => {
+  db.fornecedores.findUnique.mockResolvedValue(row)
   db.fornecedores.update.mockResolvedValue(row)
   expect(
     (
-      await item.PUT(
-        await request("/api/fornecedores/1", "PUT", { cnpj: row.cnpj }),
+      await item.PATCH(
+        await request("/api/fornecedores/1", "PATCH", { cnpj: row.cnpj }),
         context(),
       )
     ).status,
   ).toBe(200)
   expect(db.fornecedores.findFirst).toHaveBeenCalledWith(
     expect.objectContaining({
-      where: expect.objectContaining({ id_empresa: null, id: { not: 1 } }),
+      where: expect.objectContaining({ id_empresa: 10, id: { not: 1 } }),
     }),
   )
 })
@@ -176,19 +185,21 @@ it.each([
   ).toBe(status)
   expect(
     (
-      await item.PUT(
-        await request("/api/fornecedores/1", "PUT", { razao_social: "Nova" }),
+      await item.PATCH(
+        await request("/api/fornecedores/1", "PATCH", { razao_social: "Nova" }),
         context(),
       )
     ).status,
   ).toBe(status)
 })
-it("retorna 404 no PUT inexistente e em desaparecimento concorrente", async () => {
+it("retorna 404 no PATCH inexistente e em desaparecimento concorrente", async () => {
   db.fornecedores.findUnique.mockResolvedValueOnce(null)
   expect(
     (
-      await item.PUT(
-        await request("/api/fornecedores/1", "PUT", { nome_fantasia: "Nova" }),
+      await item.PATCH(
+        await request("/api/fornecedores/1", "PATCH", {
+          nome_fantasia: "Nova",
+        }),
         context(),
       )
     ).status,
@@ -196,8 +207,10 @@ it("retorna 404 no PUT inexistente e em desaparecimento concorrente", async () =
   db.fornecedores.update.mockRejectedValue(error("P2025"))
   expect(
     (
-      await item.PUT(
-        await request("/api/fornecedores/1", "PUT", { nome_fantasia: "Nova" }),
+      await item.PATCH(
+        await request("/api/fornecedores/1", "PATCH", {
+          nome_fantasia: "Nova",
+        }),
         context(),
       )
     ).status,
@@ -225,7 +238,7 @@ it("inativa preservando o histórico e aceita repetição", async () => {
     })
   }
   expect(db.fornecedores.update).toHaveBeenCalledWith({
-    where: { id: 1 },
+    where: { id: 1, id_empresa: { in: [10] } },
     data: { status: "INATIVO" },
   })
 })
@@ -236,8 +249,8 @@ it("rejeita IDs, campos imutáveis, query repetida e JSON inválido", async () =
   ).toBe(400)
   expect(
     (
-      await item.PUT(
-        await request("/api/fornecedores/1", "PUT", { id: 2 }),
+      await item.PATCH(
+        await request("/api/fornecedores/1", "PATCH", { id: 2 }),
         context(),
       )
     ).status,
@@ -251,6 +264,7 @@ it("rejeita IDs, campos imutáveis, query repetida e JSON inválido", async () =
       await collection.POST(
         new Request(origin + "/api/fornecedores", {
           method: "POST",
+          headers: { Authorization: "Bearer test-token" },
           body: "{",
         }),
       )
@@ -270,4 +284,161 @@ it("retorna 500 genérico e registra erro inesperado", async () => {
     error: "Erro interno do servidor.",
   })
   expect(log).toHaveBeenCalled()
+})
+
+it("PUT exige todos os campos obrigatórios e limpa opcionais omitidos", async () => {
+  expect(
+    (
+      await item.PUT(
+        await request("/api/fornecedores/1", "PUT", { razao_social: "Nova" }),
+        context(),
+      )
+    ).status,
+  ).toBe(400)
+  db.fornecedores.update.mockResolvedValue(row)
+  const response = await item.PUT(
+    await request("/api/fornecedores/1", "PUT", {
+      id_empresa: 10,
+      razao_social: "Nova",
+      status: "INATIVO",
+    }),
+    context(),
+  )
+  expect(response.status).toBe(200)
+  expect(db.fornecedores.update).toHaveBeenCalledWith({
+    where: { id: 1, id_empresa: { in: [10] } },
+    data: {
+      id_empresa: 10,
+      razao_social: "Nova",
+      status: "INATIVO",
+      nome_fantasia: null,
+      cnpj: null,
+      inscricao_estadual: null,
+      endereco: null,
+      numero: null,
+      complemento: null,
+      bairro: null,
+      cidade: null,
+      estado: null,
+      cep: null,
+      telefone: null,
+      email: null,
+    },
+  })
+})
+it("PUT verifica duplicidade de CNPJ e não altera data de cadastro", async () => {
+  db.fornecedores.findFirst.mockResolvedValue(row)
+  expect(
+    (
+      await item.PUT(
+        await request("/api/fornecedores/1", "PUT", {
+          id_empresa: 10,
+          razao_social: "Nova",
+          status: "ATIVO",
+          cnpj: row.cnpj,
+        }),
+        context(),
+      )
+    ).status,
+  ).toBe(409)
+  expect(db.fornecedores.update).not.toHaveBeenCalled()
+})
+for (const [method, invoke] of [
+  ["GET", (r: Request) => collection.GET(r)],
+  ["POST", (r: Request) => collection.POST(r)],
+  ["GET", (r: Request) => item.GET(r, context())],
+  ["PUT", (r: Request) => item.PUT(r, context())],
+  ["PATCH", (r: Request) => item.PATCH(r, context())],
+  ["DELETE", (r: Request) => item.DELETE(r, context())],
+] as const) {
+  it(method + " exige token válido antes de consultar dados", async () => {
+    for (const token of [null, "Bearer invalido"]) {
+      const req = await request("/api/fornecedores", method)
+      if (token) req.headers.set("Authorization", token)
+      else req.headers.delete("Authorization")
+      const res = await invoke(req)
+      expect(res.status).toBe(401)
+      expect(await res.json()).toEqual({
+        success: false,
+        error: "Não autenticado.",
+      })
+    }
+    expect(db.usuario_empresa.findMany).not.toHaveBeenCalled()
+    expect(db.fornecedores.findUnique).not.toHaveBeenCalled()
+    expect(db.fornecedores.create).not.toHaveBeenCalled()
+    expect(db.fornecedores.update).not.toHaveBeenCalled()
+  })
+  it(method + " exige usuário, empresa e vínculo ativos", async () => {
+    db.usuario_empresa.findMany.mockResolvedValue([])
+    expect(
+      (await invoke(await request("/api/fornecedores", method))).status,
+    ).toBe(403)
+    expect(db.usuario_empresa.findMany).toHaveBeenCalledWith({
+      where: {
+        id_usuario: 1,
+        status: "ATIVO",
+        usuarios: { status: "ATIVO" },
+        empresas: { status: "ATIVA" },
+      },
+      select: { id_empresa: true },
+    })
+    expect(db.fornecedores.update).not.toHaveBeenCalled()
+  })
+}
+it("rejeita empresa não vinculada em listagem, criação, PUT e PATCH", async () => {
+  expect(
+    (await collection.GET(await request("/api/fornecedores?id_empresa=99")))
+      .status,
+  ).toBe(403)
+  expect(
+    (
+      await collection.POST(
+        await request("/api/fornecedores", "POST", {
+          id_empresa: 99,
+          razao_social: "Nova",
+        }),
+      )
+    ).status,
+  ).toBe(403)
+  expect(
+    (
+      await item.PUT(
+        await request("/api/fornecedores/1", "PUT", {
+          id_empresa: 99,
+          razao_social: "Nova",
+          status: "ATIVO",
+        }),
+        context(),
+      )
+    ).status,
+  ).toBe(403)
+  expect(
+    (
+      await item.PATCH(
+        await request("/api/fornecedores/1", "PATCH", { id_empresa: 99 }),
+        context(),
+      )
+    ).status,
+  ).toBe(403)
+  expect(db.fornecedores.create).not.toHaveBeenCalled()
+  expect(db.fornecedores.update).not.toHaveBeenCalled()
+})
+it("escopa consulta por ID, lista e contagem mesmo sem filtro de empresa", async () => {
+  db.fornecedores.findMany.mockResolvedValue([])
+  db.fornecedores.count.mockResolvedValue(0)
+  expect(
+    (await collection.GET(await request("/api/fornecedores"))).status,
+  ).toBe(200)
+  const where = { AND: [{}, { id_empresa: { in: [10] } }] }
+  expect(db.fornecedores.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({ where, take: 20, skip: 0 }),
+  )
+  expect(db.fornecedores.count).toHaveBeenCalledWith({ where })
+  db.fornecedores.findUnique.mockResolvedValue(null)
+  expect(
+    (await item.GET(await request("/api/fornecedores/1"), context())).status,
+  ).toBe(404)
+  expect(db.fornecedores.findUnique).toHaveBeenCalledWith({
+    where: { id: 1, id_empresa: { in: [10] } },
+  })
 })

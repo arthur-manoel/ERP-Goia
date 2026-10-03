@@ -61,6 +61,25 @@ export const updateFornecedorSchema = z
     (data) => Object.values(data).some((value) => value !== undefined),
     "Informe pelo menos um campo para atualizar. id e data_cadastro não podem ser alterados.",
   )
+// PUT substitui os campos editáveis: obrigatórios presentes, opcionais omitidos viram null.
+export const replaceFornecedorSchema = z
+  .object({
+    ...fields,
+    nome_fantasia: fields.nome_fantasia.default(null),
+    cnpj: fields.cnpj.default(null),
+    inscricao_estadual: fields.inscricao_estadual.default(null),
+    endereco: fields.endereco.default(null),
+    numero: fields.numero.default(null),
+    complemento: fields.complemento.default(null),
+    bairro: fields.bairro.default(null),
+    cidade: fields.cidade.default(null),
+    estado: fields.estado.default(null),
+    cep: fields.cep.default(null),
+    telefone: fields.telefone.default(null),
+    email: fields.email.default(null),
+  })
+  .strict()
+export type ReplaceFornecedorData = z.output<typeof replaceFornecedorSchema>
 export const fornecedorIdSchema = z
   .string()
   .regex(/^\d+$/, "ID deve ser um inteiro positivo.")
