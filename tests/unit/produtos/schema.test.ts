@@ -8,6 +8,7 @@ import {
 } from "../../../modules/produtos/schema"
 
 const input = {
+  id_empresa: 10,
   codigo: " P001 ",
   nome: "Produto",
   id_tipo_produto: 1,

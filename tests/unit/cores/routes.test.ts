@@ -17,7 +17,7 @@ const knownError = (code: string) =>
     code,
     clientVersion: "7.10.0",
   })
-it("lista sem autenticação com filtros, paginação e ordenação estável", async () => {
+it("lista com autenticação com filtros, paginação e ordenação estável", async () => {
   db.cores.findMany.mockResolvedValue([cor])
   db.cores.count.mockResolvedValue(21)
   const response = await collection.GET(
@@ -31,7 +31,12 @@ it("lista sem autenticação com filtros, paginação e ordenação estável", a
     data: { rows: [cor], count: 21, page: 2, limit: 20, totalPages: 2 },
   })
   expect(db.cores.findMany).toHaveBeenCalledWith({
-    where: { id_empresa: 10, nome: "Branco", status: "ATIVA" },
+    where: {
+      AND: [
+        { id_empresa: 10, nome: "Branco", status: "ATIVA" },
+        { id_empresa: { in: [10] } },
+      ],
+    },
     orderBy: [{ nome: "asc" }, { id: "asc" }],
     skip: 20,
     take: 20,
@@ -84,19 +89,23 @@ it("retorna 400 para JSON inválido", async () => {
   expect(
     (
       await collection.POST(
-        new Request(origin + "/api/cores", { method: "POST", body: "{" }),
+        new Request(origin + "/api/cores", {
+          method: "POST",
+          headers: { Authorization: "Bearer test-token" },
+          body: "{",
+        }),
       )
     ).status,
   ).toBe(400)
 })
-it("consulta registro existente inclusive com empresa legada nula", async () => {
-  db.cores.findUnique.mockResolvedValue({ ...cor, id_empresa: null })
+it("consulta registro da empresa autorizada", async () => {
+  db.cores.findFirst.mockResolvedValue(cor)
   const response = await item.GET(await request("/api/cores/1"), context())
   expect(response.status).toBe(200)
-  expect((await response.json()).data.id_empresa).toBeNull()
+  expect((await response.json()).data.id_empresa).toBe(10)
 })
 it("retorna 404 para ID inexistente e 400 para ID inválido", async () => {
-  db.cores.findUnique.mockResolvedValue(null)
+  db.cores.findFirst.mockResolvedValue(null)
   expect(
     (await item.GET(await request("/api/cores/1"), context())).status,
   ).toBe(404)
@@ -117,7 +126,7 @@ it("atualiza parcialmente, permite limpar hex e preserva status", async () => {
   expect(response.status).toBe(200)
   expect((await response.json()).data.status).toBe("INATIVA")
   expect(db.cores.update).toHaveBeenCalledWith({
-    where: { id: 1 },
+    where: { id: 1, id_empresa: { in: [10] } },
     data: { codigo_hex: null },
   })
 })
@@ -161,7 +170,7 @@ it("inativa sem excluir fisicamente", async () => {
   )
   expect(response.status).toBe(200)
   expect(db.cores.update).toHaveBeenCalledWith({
-    where: { id: 1 },
+    where: { id: 1, id_empresa: { in: [10] } },
     data: { status: "INATIVA" },
   })
   expect((await response.json()).data.message).toBe(
@@ -185,7 +194,7 @@ it("traduz desaparecimento concorrente em 404", async () => {
 })
 it("oculta falhas inesperadas", async () => {
   vi.spyOn(console, "error").mockImplementation(() => {})
-  db.cores.findUnique.mockRejectedValue(new Error("interno"))
+  db.cores.findFirst.mockRejectedValue(new Error("interno"))
   const response = await item.GET(await request("/api/cores/1"), context())
   expect(response.status).toBe(500)
   expect(await response.json()).toEqual({

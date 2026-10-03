@@ -40,6 +40,7 @@ export const corIdSchema = z
   .pipe(positiveId)
 export const listCoresSchema = z
   .object({
+    busca: z.string().trim().max(255).optional(),
     page: corIdSchema.default(1),
     limit: corIdSchema.pipe(z.number().max(100)).default(20),
     id_empresa: corIdSchema.optional(),
@@ -51,6 +52,6 @@ export type CreateCorData = z.output<typeof createCorSchema>
 export type UpdateCorData = z.output<typeof updateCorSchema>
 export type CorFilters = Pick<
   z.output<typeof listCoresSchema>,
-  "id_empresa" | "nome" | "status"
+  "busca" | "id_empresa" | "nome" | "status"
 >
 export type Pagination = { page: number; limit: number }

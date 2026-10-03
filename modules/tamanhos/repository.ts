@@ -17,9 +17,19 @@ export async function create(data: CreateTamanhoData): Promise<Tamanho> {
 export async function findAll(
   filters: TamanhoFilters,
   { page, limit }: Pagination,
+  companies: number[],
 ): Promise<{ rows: Tamanho[]; count: number }> {
+  const { busca, ...fields } = filters
   const where: Prisma.tamanhosWhereInput = {
-    ...filters,
+    AND: [fields, scope(companies)],
+    ...(busca
+      ? {
+          OR: [
+            { nome: { contains: busca } },
+            { descricao: { contains: busca } },
+          ],
+        }
+      : {}),
   }
   const [rows, count] = await prisma.$transaction(
     [
@@ -35,15 +45,22 @@ export async function findAll(
   )
   return { rows, count }
 }
-export async function findById(id: number): Promise<Tamanho | null> {
-  return prisma.tamanhos.findUnique({ where: { id } })
+export async function findById(
+  id: number,
+  companies: number[],
+): Promise<Tamanho | null> {
+  return prisma.tamanhos.findFirst({ where: { ...scope(companies), id } })
 }
 export async function update(
   id: number,
   data: UpdateTamanhoData,
+  companies: number[],
 ): Promise<Tamanho | null> {
   try {
-    return await prisma.tamanhos.update({ where: { id }, data })
+    return await prisma.tamanhos.update({
+      where: { ...scope(companies), id },
+      data,
+    })
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -53,6 +70,13 @@ export async function update(
     throw error
   }
 }
-export async function inactivate(id: number): Promise<boolean> {
-  return (await update(id, { status: "INATIVO" })) !== null
+export async function inactivate(
+  id: number,
+  companies: number[],
+): Promise<boolean> {
+  return (await update(id, { status: "INATIVO" }, companies)) !== null
+}
+
+function scope(companies: number[]): Prisma.tamanhosWhereInput {
+  return { id_empresa: { in: companies } }
 }

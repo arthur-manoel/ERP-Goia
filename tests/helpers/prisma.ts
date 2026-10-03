@@ -11,8 +11,10 @@ function model() {
   }
 }
 export const db = {
+  usuario_empresa: model(),
   tamanhos: model(),
   cores: model(),
   produtos: model(),
+  fornecedores: model(),
   $transaction: vi.fn(),
 }
