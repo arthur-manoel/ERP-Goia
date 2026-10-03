@@ -5,7 +5,8 @@ import { ComprasError, type Acao, type Contexto } from "./compras.repository"
 import * as s from "./compras.schema"
 import * as svc from "./compras.service"
 
-type RouteContext = { params: Promise<{ id: string }> }
+// Aceita rotas sem parâmetros (listas) e com [id]; o Next valida esse tipo no build.
+type RouteContext = { params: Promise<unknown> }
 const headers = { "Cache-Control": "no-store" }
 
 function validar<T>(schema: z.ZodType<T>, data: unknown): T {
@@ -34,7 +35,7 @@ async function corpo(request: Request) {
   }
 }
 async function idDaRota(context?: RouteContext) {
-  const { id } = await context!.params
+  const { id } = (await context!.params) as { id: string }
   return validar(s.idSchema, /^[1-9]\d*$/.test(id) ? Number(id) : NaN)
 }
 

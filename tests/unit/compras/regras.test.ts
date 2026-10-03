@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+﻿import { describe, expect, it } from "vitest"
 import {
   chaveAcessoValida,
   deEscala,
@@ -11,7 +11,7 @@ import {
   transicoesCompra,
   transicoesPedido,
   transicoesRequisicao,
-} from "./compras.regras"
+} from "@/modules/compras/compras.regras"
 import {
   criarCompraSchema,
   criarNotaSchema,
@@ -19,7 +19,7 @@ import {
   criarRequisicaoSchema,
   listarPedidosSchema,
   receberCompraSchema,
-} from "./compras.schema"
+} from "@/modules/compras/compras.schema"
 
 /** DV calculado de forma independente (pesos 2..9 da direita p/ esquerda) para montar chaves de teste. */
 function chaveComDv(base43: string) {
@@ -32,8 +32,8 @@ function chaveComDv(base43: string) {
 }
 const BASE = "3526091234567800019555001000000123100000456"
 
-describe("aritmética decimal exata", () => {
-  it("converte e rejeita formatos inválidos", () => {
+describe("aritmÃ©tica decimal exata", () => {
+  it("converte e rejeita formatos invÃ¡lidos", () => {
     expect(paraEscala("12.5", 3)).toBe(BigInt(12500))
     expect(paraEscala(100, 3)).toBe(BigInt(100000))
     for (const ruim of [
@@ -50,13 +50,13 @@ describe("aritmética decimal exata", () => {
       expect(paraEscala(ruim, 3)).toBeNull()
     expect(paraEscala("1234567890123", 3)).toBeNull() // estoura Decimal(15,3)
   })
-  it("calcula totais do exemplo da especificação", () => {
+  it("calcula totais do exemplo da especificaÃ§Ã£o", () => {
     expect(totalItem("100", "15.00")).toBe("1500.00")
     expect(totalItem("50", "8")).toBe("400.00")
     expect(somarValores(["1500.00", "400.00"])).toBe("1900.00")
   })
   it("arredonda meio-para-cima sem erro de float", () => {
-    expect(totalItem("0.500", "0.01")).toBe("0.01") // 0,005 → 0,01
+    expect(totalItem("0.500", "0.01")).toBe("0.01") // 0,005 â†’ 0,01
     expect(totalItem("3", "0.10")).toBe("0.30") // em float seria 0.30000000000000004
     expect(totalItem("1.333", "10.00")).toBe("13.33")
     expect(deEscala(BigInt(5), 2)).toBe("0.05")
@@ -68,8 +68,8 @@ describe("aritmética decimal exata", () => {
   })
 })
 
-describe("máquinas de estado", () => {
-  it("solicitação: só segue o fluxo previsto e nunca vai a ATENDIDA por ação direta", () => {
+describe("mÃ¡quinas de estado", () => {
+  it("solicitaÃ§Ã£o: sÃ³ segue o fluxo previsto e nunca vai a ATENDIDA por aÃ§Ã£o direta", () => {
     expect(proximoStatus(transicoesRequisicao, "enviar", "RASCUNHO")).toBe(
       "ABERTA",
     )
@@ -114,7 +114,7 @@ describe("máquinas de estado", () => {
 })
 
 describe("chave de acesso da NF-e", () => {
-  it("aceita chave com DV correto e rejeita erro de digitação", () => {
+  it("aceita chave com DV correto e rejeita erro de digitaÃ§Ã£o", () => {
     const chave = chaveComDv(BASE)
     expect(chaveAcessoValida(chave)).toBe(true)
     const errada =
@@ -123,16 +123,16 @@ describe("chave de acesso da NF-e", () => {
       chave.slice(11)
     expect(chaveAcessoValida(errada)).toBe(false)
   })
-  it("rejeita tamanho errado, letras e repetições", () => {
+  it("rejeita tamanho errado, letras e repetiÃ§Ãµes", () => {
     expect(chaveAcessoValida("123")).toBe(false)
     expect(chaveAcessoValida("A".repeat(44))).toBe(false)
     expect(chaveAcessoValida("0".repeat(44))).toBe(false)
   })
 })
 
-describe("validação de entrada (zod)", () => {
+describe("validaÃ§Ã£o de entrada (zod)", () => {
   const item = { idProduto: 1, quantidade: "10" }
-  it("solicitação: quantidade zero/negativa e lista vazia são recusadas", () => {
+  it("solicitaÃ§Ã£o: quantidade zero/negativa e lista vazia sÃ£o recusadas", () => {
     expect(criarRequisicaoSchema.safeParse({ itens: [item] }).success).toBe(
       true,
     )
@@ -152,7 +152,7 @@ describe("validação de entrada (zod)", () => {
     ).toBe(false)
     expect(criarRequisicaoSchema.safeParse({ itens: [] }).success).toBe(false)
   })
-  it("solicitação: item sem insumo, insumo repetido e campos estranhos são recusados", () => {
+  it("solicitaÃ§Ã£o: item sem insumo, insumo repetido e campos estranhos sÃ£o recusados", () => {
     expect(
       criarRequisicaoSchema.safeParse({ itens: [{ quantidade: "1" }] }).success,
     ).toBe(false)
@@ -163,7 +163,7 @@ describe("validação de entrada (zod)", () => {
       criarRequisicaoSchema.safeParse({ itens: [item], idEmpresa: 9 }).success,
     ).toBe(false)
   })
-  it("pedido: valor unitário não pode ser negativo e total não é aceito na entrada", () => {
+  it("pedido: valor unitÃ¡rio nÃ£o pode ser negativo e total nÃ£o Ã© aceito na entrada", () => {
     const base = {
       idFornecedor: 3,
       itens: [{ ...item, valorUnitario: "15.00" }],
@@ -220,7 +220,7 @@ describe("validação de entrada (zod)", () => {
       }).success,
     ).toBe(false)
   })
-  it("nota fiscal: normaliza e valida chave; exige número/série numéricos", () => {
+  it("nota fiscal: normaliza e valida chave; exige nÃºmero/sÃ©rie numÃ©ricos", () => {
     const chave = chaveComDv(BASE)
     const nota = {
       numero: "12345",
@@ -242,7 +242,7 @@ describe("validação de entrada (zod)", () => {
       criarNotaSchema.safeParse({ ...nota, valorTotal: "-3" }).success,
     ).toBe(false)
   })
-  it("filtros: período invertido e parâmetros desconhecidos são recusados", () => {
+  it("filtros: perÃ­odo invertido e parÃ¢metros desconhecidos sÃ£o recusados", () => {
     expect(
       listarPedidosSchema.safeParse({ de: "2026-02-01", ate: "2026-01-01" })
         .success,
