@@ -1,6 +1,7 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
+import { conflitoPersistencia } from "./producao.errors"
 
 export class ProducaoError extends Error {
   constructor(
@@ -42,28 +43,11 @@ export async function transacao<T>(operation: (tx: Transaction) => Promise<T>) {
       isolationLevel: "Serializable",
     })
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (
-        error.code === "P2010" &&
-        ["1062", "1451", "1452", "1213", "1205"].includes(
-          String(error.meta?.code),
-        )
+    if (conflitoPersistencia(error))
+      throw new ProducaoError(
+        409,
+        "Nome duplicado, vínculo existente ou conflito concorrente.",
       )
-        throw new ProducaoError(
-          409,
-          "Nome duplicado, vínculo existente ou conflito concorrente.",
-        )
-      if (["P2034", "P2002"].includes(error.code))
-        throw new ProducaoError(
-          409,
-          "Conflito concorrente. Atualize a ordem antes de tentar novamente.",
-        )
-      if (["P2003", "P2004", "P2025"].includes(error.code))
-        throw new ProducaoError(
-          409,
-          "Os dados relacionados foram alterados ou impedem esta operação.",
-        )
-    }
     throw error
   }
 }

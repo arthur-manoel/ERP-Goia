@@ -183,6 +183,15 @@ test(
         setores.push(setor.id)
       }
       const ctx = { idUsuario: usuario.id, idEmpresa: empresas[0] }
+      const { testarFluxos } = await import("./fluxos.integration-cases.mjs")
+      await testarFluxos(t, {
+        prisma,
+        ctx,
+        authorization,
+        setores,
+        produtos,
+        empresas,
+      })
       await assert.rejects(
         service.abrirOrdem(
           ctx,

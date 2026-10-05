@@ -15,6 +15,7 @@ type Operacao =
   | "excluir"
   | "associar"
   | "desassociar"
+  | "consultarAssociacao"
 const headers = { "Cache-Control": "no-store" }
 function validar<T>(schema: z.ZodType<T>, value: unknown) {
   const parsed = schema.safeParse(value)
@@ -25,16 +26,30 @@ function validar<T>(schema: z.ZodType<T>, value: unknown) {
     )
   return parsed.data
 }
+type OperacaoColecao = "criar" | "listar"
+export function handler(
+  tipo: Entidade,
+  operacao: OperacaoColecao,
+): (request: Request) => Promise<Response>
+export function handler(
+  tipo: Entidade,
+  operacao: Exclude<Operacao, OperacaoColecao>,
+): (request: Request, context: RouteContext) => Promise<Response>
 export function handler(tipo: Entidade, operacao: Operacao) {
   return async (request: Request, context?: RouteContext) => {
     try {
-      const associacao = operacao === "associar" || operacao === "desassociar"
+      const associacao =
+        operacao === "associar" ||
+        operacao === "desassociar" ||
+        operacao === "consultarAssociacao"
       const acao =
         operacao === "criar"
           ? "criar"
           : operacao === "excluir"
             ? "excluir"
-            : operacao === "listar" || operacao === "consultar"
+            : operacao === "listar" ||
+                operacao === "consultar" ||
+                operacao === "consultarAssociacao"
               ? "ler"
               : "editar"
       const ctx = await autorizar(
@@ -68,7 +83,9 @@ export function handler(tipo: Entidade, operacao: Operacao) {
         return new Response(null, { status: 204, headers })
       }
       let result: unknown
-      if (operacao === "associar")
+      if (operacao === "consultarAssociacao")
+        result = await service.consultarAssociacao(ctx, id)
+      else if (operacao === "associar")
         result = await service.associar(
           ctx,
           id,

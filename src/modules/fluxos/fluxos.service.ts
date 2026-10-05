@@ -69,6 +69,7 @@ export function salvar(
   return transacao(async (tx) => {
     const antes =
       id === undefined ? undefined : await repo.buscar(tx, ctx, tipo, id)
+    const antesDetalhe = antes ? await detalhe(tx, ctx, tipo, antes) : null
     if (tipo === "fluxo" && input.setores) {
       for (const setorId of [...input.setores].sort((a, b) => a - b)) {
         const setor = await repo.buscar(tx, ctx, "setor", setorId)
@@ -85,19 +86,31 @@ export function salvar(
     const salvo = await repo.gravar(tx, ctx, tipo, dados, id)
     if (tipo === "fluxo" && input.setores)
       await repo.substituirSetores(tx, salvo, input.setores)
-    return {
-      [tipo]: await detalhe(
-        tx,
-        ctx,
-        tipo,
-        await repo.buscar(tx, ctx, tipo, salvo),
-      ),
-    }
+    const depois = await detalhe(
+      tx,
+      ctx,
+      tipo,
+      await repo.buscar(tx, ctx, tipo, salvo),
+    )
+    await repo.auditarCadastro(
+      tx,
+      ctx,
+      tipo === "setor" ? "setores" : "fluxos_producao",
+      salvo,
+      antesDetalhe,
+      depois,
+    )
+    return { [tipo]: depois }
   })
 }
 export function excluir(ctx: Contexto, tipo: repo.Entidade, id: number) {
   return transacao(async (tx) => {
-    await repo.buscar(tx, ctx, tipo, id)
+    const antes = await detalhe(
+      tx,
+      ctx,
+      tipo,
+      await repo.buscar(tx, ctx, tipo, id),
+    )
     if (await repo.emUso(tx, tipo, id))
       throw new ProducaoError(
         409,
@@ -105,12 +118,38 @@ export function excluir(ctx: Contexto, tipo: repo.Entidade, id: number) {
           ? "O setor está vinculado a um fluxo. Inative-o ou remova o vínculo."
           : "O fluxo está em uso por ordens em andamento.",
       )
+    // A exclusão do fluxo remove associações por cascade; registrar cada remoção.
+    if (tipo === "fluxo") {
+      for (const produto of await repo.produtosDoFluxo(tx, ctx, id)) {
+        await repo.auditarCadastro(
+          tx,
+          ctx,
+          "produto_fluxo",
+          produto.id_produto_empresa,
+          {
+            idEmpresa: ctx.idEmpresa,
+            idProduto: produto.id_produto,
+            fluxoId: id,
+          },
+          null,
+        )
+      }
+    }
     await repo.remover(tx, ctx, tipo, id)
+    await repo.auditarCadastro(
+      tx,
+      ctx,
+      tipo === "setor" ? "setores" : "fluxos_producao",
+      id,
+      antes,
+      null,
+    )
   })
 }
 export function associar(ctx: Contexto, id: number, fluxoId: number | null) {
   return transacao(async (tx) => {
-    await repo.produto(tx, ctx, id)
+    const produto = await repo.produto(tx, ctx, id)
+    const anterior = await repo.associacao(tx, ctx, id)
     if (fluxoId !== null) {
       const fluxo = {
         ...(await repo.buscar(tx, ctx, "fluxo", fluxoId)),
@@ -118,7 +157,38 @@ export function associar(ctx: Contexto, id: number, fluxoId: number | null) {
       }
       validarFluxo(fluxo)
     }
-    await repo.associar(tx, ctx, id, fluxoId)
+    if (anterior !== fluxoId) {
+      await repo.associar(tx, ctx, id, fluxoId)
+      await repo.auditarCadastro(
+        tx,
+        ctx,
+        "produto_fluxo",
+        produto.id,
+        anterior === null
+          ? null
+          : { idEmpresa: ctx.idEmpresa, idProduto: id, fluxoId: anterior },
+        fluxoId === null
+          ? null
+          : { idEmpresa: ctx.idEmpresa, idProduto: id, fluxoId },
+      )
+    }
     return { produto: { id, fluxoId } }
+  })
+}
+
+export function consultarAssociacao(ctx: Contexto, id: number) {
+  return transacao(async (tx) => {
+    await repo.produto(tx, ctx, id)
+    const fluxoId = await repo.associacao(tx, ctx, id)
+    const fluxo =
+      fluxoId === null
+        ? null
+        : await detalhe(
+            tx,
+            ctx,
+            "fluxo",
+            await repo.buscar(tx, ctx, "fluxo", fluxoId),
+          )
+    return { produto: { id, fluxoId }, fluxo }
   })
 }

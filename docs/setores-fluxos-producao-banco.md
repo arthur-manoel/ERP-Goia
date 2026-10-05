@@ -1,6 +1,10 @@
 # Contrato de banco — setores e fluxos de produção
 
-**Para aplicação pelo responsável pelo banco. Nenhum DDL, schema Prisma, migration ou seed foi alterado ou executado nesta entrega.** O back-end depende de todas as estruturas abaixo antes de ser disponibilizado. As consultas às estruturas novas são SQL parametrizado via `Prisma.TransactionClient`; não dependem de regenerar o client nesta entrega. O responsável pode atualizar o schema e regenerar o client no seu trabalho.
+O schema Prisma e a migration `prisma/migrations/20261004000000_setores_fluxos_producao/migration.sql` incluem todas as estruturas abaixo. A migration é aditiva: não remove tabelas nem dados existentes. Foi preparada para execução após a baseline e a migration de refresh tokens.
+
+Antes de publicar a API, aplicar a migration no ambiente de destino e executar `npm run db:generate`. Em banco MySQL local administrado pelo Prisma: `npx prisma migrate deploy`. Para banco compartilhado/remoto, a proteção de `prisma.config.ts` permanece ativa: o responsável pelo banco deve aplicar o SQL pelo procedimento de implantação da equipe. Não executar a baseline sobre um banco existente que já contém as tabelas.
+
+As datas dos setores antigos são preenchidas pelo DEFAULT na aplicação da migration; não representam reconstrução de histórico. As consultas SQL parametrizadas continuam no repositório e agora possuem todas as tabelas/colunas correspondentes no schema. `@updatedAt` atende às escritas pelo Prisma; `ON UPDATE CURRENT_TIMESTAMP(3)` também cobre escritas SQL. O CHECK de ordem 1–100 está no SQL da migration, pois Prisma não o expressa no schema.
 
 Manter MySQL/InnoDB, tipos de IDs compatíveis com os `INT` existentes e a collation usada em `setores.nome`. Unicidade de nomes é por empresa, inclusive registros inativos, conforme o padrão atual. Datas retornam ISO 8601 na API. `ativo` é representado por `status = ATIVO/INATIVO`, preservando a convenção do banco.
 
@@ -11,7 +15,7 @@ Manter MySQL/InnoDB, tipos de IDs compatíveis com os `INT` existentes e a colla
 | `data_cadastro` | `DATETIME(3)` | NOT NULL, DEFAULT CURRENT_TIMESTAMP(3) |
 | `data_atualizacao` | `DATETIME(3)` | NOT NULL, DEFAULT CURRENT_TIMESTAMP(3), ON UPDATE CURRENT_TIMESTAMP(3) |
 
-Preservar id, id_empresa, nome VARCHAR(100), descricao VARCHAR(255) NULL, tipo com default `Outro`, status e todas as relações existentes. Preservar UNIQUE `(id_empresa, nome)`. A API mapeia as novas datas para `createdAt`/`updatedAt`. Para setores já existentes, definir uma data de referência na aplicação da mudança; não há informação histórica suficiente para reconstruir a criação exata.
+Preservar id, id_empresa, nome VARCHAR(100), descricao VARCHAR(255) NULL, tipo com default `Outro`, status e todas as relações existentes. Preservar UNIQUE `(id_empresa, nome)`. A API mapeia as novas datas para `createdAt`/`updatedAt`. Para setores já existentes, o DEFAULT usa a data de aplicação da mudança; não há informação histórica suficiente para reconstruir a criação exata.
 
 ## 2. Nova tabela `fluxos_producao`
 
@@ -85,12 +89,12 @@ O código só insere esse snapshot, nunca o atualiza. `id_fluxo` pode virar NULL
 
 Preservar PK `id`, campos existentes, UNIQUE `(id_ordem_producao, ordem)`, UNIQUE `(id_ordem_producao, id_setor)` e FKs existentes. Manter FK de setor restritiva para preservar as referências históricas; excluir setor ainda referenciado por OP ou outro módulo retorna 409.
 
-O DEFAULT PENDENTE é obrigatório: o Prisma atual cria as etapas com os campos existentes e o banco inicializa seu estado. Ordens antigas podem ter essas colunas preenchidas pelo default, mas não usam a nova máquina de etapas enquanto não houver snapshot.
+O DEFAULT PENDENTE existe tanto no schema quanto na migration; novas etapas são criadas nesse estado. Ordens antigas podem ter essas colunas preenchidas pelo default, mas não usam a nova máquina de etapas enquanto não houver snapshot.
 
 ## Aplicação e verificação
 
-1. O responsável deve aplicar todas as mudanças antes de publicar o back-end. Não existe fallback silencioso para tabelas/colunas ausentes.
+1. Aplicar a migration entregue antes de publicar o back-end e regenerar o Prisma Client. Não existe fallback silencioso para tabelas/colunas ausentes.
 2. Não é necessário acrescentar recursos ao enum de permissões: os cadastros usam `ORDENS_PRODUCAO`; associação usa `PRODUTOS`.
-3. Preparar um banco local descartável com o schema atual mais este contrato, sem utilizar produção para testes.
+3. Preparar um banco local descartável aplicando todas as migrations com `npx prisma migrate deploy`, sem utilizar produção para testes.
 4. Executar `PRODUCAO_TEST_DATABASE_URL='mysql://...' node tests/producao.integration.test.mjs`. Acrescentar `--http` para testar URLs no servidor Next real. O teste cria e remove somente fixtures, sem DDL.
-5. Validar unicidade, FKs e concorrência no banco real. Os testes locais com mocks não substituem essa validação.
+5. A integração cobre unicidade, FKs, concorrência, CRUD, auditoria/rollback, GET da associação e o ciclo da OP. Os testes com mocks também cobrem os formatos de erro do adapter MariaDB do Prisma 7.10.

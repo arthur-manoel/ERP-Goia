@@ -189,6 +189,7 @@ model empresa_fornecedor {
 }
 
 model empresas {
+  fluxos_producao        fluxos_producao[]
   id                     Int                      @id @default(autoincrement())
   razao_social           String                   @db.VarChar(150)
   nome_fantasia          String?                  @db.VarChar(150)
@@ -504,6 +505,7 @@ model nota_fiscal {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model ordem_producao {
+  ordem_producao_snapshot           ordem_producao_snapshot?
   id                                Int                                 @id @default(autoincrement())
   id_empresa                        Int
   id_local_estoque                  Int?
@@ -556,12 +558,15 @@ model ordem_producao_consumo_planejado {
 }
 
 model ordem_producao_fluxo_setor {
-  id                Int            @id @default(autoincrement())
+  status            ordem_producao_etapa_status @default(PENDENTE)
+  data_inicio       DateTime?                   @db.DateTime(3)
+  data_conclusao    DateTime?                   @db.DateTime(3)
+  id                Int                         @id @default(autoincrement())
   id_ordem_producao Int
   id_setor          Int
   ordem             Int
-  ordem_producao    ordem_producao @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_op_fluxo_ordem")
-  setores           setores        @relation(fields: [id_setor], references: [id], map: "fk_op_fluxo_setor")
+  ordem_producao    ordem_producao              @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_op_fluxo_ordem")
+  setores           setores                     @relation(fields: [id_setor], references: [id], map: "fk_op_fluxo_setor")
 
   @@unique([id_ordem_producao, ordem], map: "uk_op_fluxo_ordem")
   @@unique([id_ordem_producao, id_setor], map: "uk_op_fluxo_setor")
@@ -678,6 +683,7 @@ model permissoes_usuario {
 }
 
 model produto_empresa {
+  produto_fluxo          produto_fluxo?
   id                     Int                    @id @default(autoincrement())
   id_empresa             Int
   id_produto             Int
@@ -866,6 +872,9 @@ model sequencias_automaticas {
 }
 
 model setores {
+  data_cadastro                                                                                 DateTime                            @default(now()) @db.DateTime(3)
+  data_atualizacao                                                                              DateTime                            @default(now()) @updatedAt @db.DateTime(3)
+  fluxo_producao_setor                                                                          fluxo_producao_setor[]
   id                                                                                            Int                                 @id @default(autoincrement())
   id_empresa                                                                                    Int
   nome                                                                                          String                              @db.VarChar(100)
@@ -1219,4 +1228,65 @@ enum fornecedores_status {
 enum empresas_status {
   ATIVA
   INATIVA
+}
+
+model fluxos_producao {
+  id                      Int                       @id @default(autoincrement())
+  id_empresa              Int
+  nome                    String                    @db.VarChar(100)
+  descricao               String?                   @db.VarChar(255)
+  status                  fluxos_producao_status    @default(ATIVO)
+  data_cadastro           DateTime                  @default(now()) @db.DateTime(3)
+  data_atualizacao        DateTime                  @default(now()) @updatedAt @db.DateTime(3)
+  empresas                empresas                  @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_fluxo_empresa")
+  fluxo_producao_setor    fluxo_producao_setor[]
+  produto_fluxo           produto_fluxo[]
+  ordem_producao_snapshot ordem_producao_snapshot[]
+
+  @@unique([id_empresa, nome], map: "uk_fluxo_empresa_nome")
+  @@index([id_empresa, status], map: "idx_fluxo_empresa_status")
+}
+
+model fluxo_producao_setor {
+  id_fluxo        Int
+  id_setor        Int
+  ordem           Int
+  fluxos_producao fluxos_producao @relation(fields: [id_fluxo], references: [id], onDelete: Cascade, map: "fk_fluxo_setor_fluxo")
+  setores         setores         @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_fluxo_setor_setor")
+
+  @@id([id_fluxo, id_setor])
+  @@unique([id_fluxo, ordem], map: "uk_fluxo_setor_ordem")
+  @@index([id_setor], map: "idx_fluxo_setor_setor")
+}
+
+model produto_fluxo {
+  id_empresa      Int
+  id_produto      Int
+  id_fluxo        Int
+  produto_empresa produto_empresa @relation(fields: [id_empresa, id_produto], references: [id_empresa, id_produto], onDelete: Cascade, map: "fk_produto_fluxo_produto_empresa")
+  fluxos_producao fluxos_producao @relation(fields: [id_fluxo], references: [id], onDelete: Cascade, map: "fk_produto_fluxo_fluxo")
+
+  @@id([id_empresa, id_produto])
+  @@index([id_fluxo], map: "idx_produto_fluxo_fluxo")
+}
+
+model ordem_producao_snapshot {
+  id_ordem_producao Int              @id
+  id_fluxo          Int?
+  snapshot          Json
+  ordem_producao    ordem_producao   @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_snapshot_ordem")
+  fluxos_producao   fluxos_producao? @relation(fields: [id_fluxo], references: [id], onDelete: SetNull, map: "fk_snapshot_fluxo")
+
+  @@index([id_fluxo], map: "idx_snapshot_fluxo")
+}
+
+enum fluxos_producao_status {
+  ATIVO
+  INATIVO
+}
+
+enum ordem_producao_etapa_status {
+  PENDENTE
+  EM_PRODUCAO
+  CONCLUIDA
 }

@@ -93,6 +93,54 @@ export async function testarApi(
       else assert.equal(response.headers.get("cache-control"), "no-store")
       return result
     }
+    await t.test(
+      "HTTP setores e GET produto/fluxo: 201, 409, 204, sequência e Bearer",
+      async () => {
+        const api = `http://127.0.0.1:${port}/api`
+        const headers = {
+          authorization,
+          "X-Empresa-Id": String(empresas[0]),
+          "Content-Type": "application/json",
+        }
+        const body = JSON.stringify({ nome: `Setor HTTP ${marker}` })
+        const created = await fetch(`${api}/setores`, {
+          method: "POST",
+          headers,
+          body,
+        })
+        const result = await created.json()
+        assert.equal(created.status, 201, JSON.stringify(result))
+        assert.ok(result.setor.createdAt)
+        const duplicate = await fetch(`${api}/setores`, {
+          method: "POST",
+          headers,
+          body,
+        })
+        assert.equal(duplicate.status, 409, await duplicate.text())
+        const removed = await fetch(`${api}/setores/${result.setor.id}`, {
+          method: "DELETE",
+          headers,
+        })
+        assert.equal(removed.status, 204)
+        const association = await fetch(
+          `${api}/produtos/${produtos[0]}/fluxo`,
+          { headers },
+        )
+        const associated = await association.json()
+        assert.equal(association.status, 200, JSON.stringify(associated))
+        assert.deepEqual(
+          associated.fluxo.setores.map((s) => s.id),
+          setores,
+        )
+        const cookieOnly = await fetch(`${api}/produtos/${produtos[0]}/fluxo`, {
+          headers: {
+            "X-Empresa-Id": String(empresas[0]),
+            Cookie: `accessToken=${authorization.slice(7)}`,
+          },
+        })
+        assert.equal(cookieOnly.status, 401)
+      },
+    )
     // Duas composições distintas permitem comprovar recálculo por produto e quantidade.
     const material = await prisma.produtos.create({
       data: {

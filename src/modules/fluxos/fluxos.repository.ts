@@ -157,17 +157,15 @@ export async function fluxoProduto(
   ctx: Contexto,
   id: number,
 ): Promise<Fluxo> {
-  const [row] = await tx.$queryRaw<
-    Array<{ id_fluxo: number }>
-  >`SELECT id_fluxo FROM produto_fluxo WHERE id_empresa = ${ctx.idEmpresa} AND id_produto = ${id} FOR UPDATE`
-  if (!row)
+  const fluxoId = await associacao(tx, ctx, id)
+  if (fluxoId === null)
     throw new ProducaoError(
       422,
       "O produto não possui fluxo de produção associado.",
     )
   return {
-    ...(await buscar(tx, ctx, "fluxo", row.id_fluxo)),
-    setores: await setoresFluxo(tx, ctx, row.id_fluxo),
+    ...(await buscar(tx, ctx, "fluxo", fluxoId)),
+    setores: await setoresFluxo(tx, ctx, fluxoId),
   }
 }
 export async function gravarSnapshot(
@@ -213,4 +211,44 @@ export async function transicionarEtapa(
     : await tx.$executeRaw`UPDATE ordem_producao_fluxo_setor SET status = 'CONCLUIDA', data_conclusao = CURRENT_TIMESTAMP(3) WHERE id = ${etapa.id} AND id_ordem_producao = ${idOrdem} AND status = 'EM_PRODUCAO'`
   if (count !== 1)
     throw new ProducaoError(409, "A etapa foi alterada por outra operação.")
+}
+
+export async function associacao(
+  tx: Transaction,
+  ctx: Contexto,
+  idProduto: number,
+) {
+  const [row] = await tx.$queryRaw<
+    Array<{ id_fluxo: number }>
+  >`SELECT id_fluxo FROM produto_fluxo WHERE id_empresa = ${ctx.idEmpresa} AND id_produto = ${idProduto} FOR UPDATE`
+  return row?.id_fluxo ?? null
+}
+export function produtosDoFluxo(
+  tx: Transaction,
+  ctx: Contexto,
+  idFluxo: number,
+) {
+  return tx.$queryRaw<
+    Array<{ id_produto: number; id_produto_empresa: number }>
+  >`SELECT pf.id_produto, pe.id AS id_produto_empresa FROM produto_fluxo pf JOIN produto_empresa pe ON pe.id_empresa = pf.id_empresa AND pe.id_produto = pf.id_produto WHERE pf.id_empresa = ${ctx.idEmpresa} AND pf.id_fluxo = ${idFluxo} ORDER BY pf.id_produto FOR UPDATE`
+}
+export function auditarCadastro(
+  tx: Transaction,
+  ctx: Contexto,
+  tabela: "setores" | "fluxos_producao" | "produto_fluxo",
+  id: number,
+  antes: unknown,
+  depois: unknown,
+) {
+  return tx.auditoria.create({
+    data: {
+      id_empresa: ctx.idEmpresa,
+      id_usuario: ctx.idUsuario,
+      tabela,
+      id_registro: id,
+      acao: antes === null ? "INSERT" : depois === null ? "DELETE" : "UPDATE",
+      dados_anteriores: antes === null ? null : JSON.stringify(antes),
+      dados_novos: depois === null ? null : JSON.stringify(depois),
+    },
+  })
 }

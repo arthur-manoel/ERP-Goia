@@ -719,6 +719,7 @@ test("CRUD e associação validam empresa, setores ativos, vínculos e transaç�
   let uso = false
   let ativo = true
   let empresa = 10
+  let associado = null
   const writes = []
   const repo = {
     buscar: async (_tx, ctx, tipo, id) => {
@@ -744,6 +745,9 @@ test("CRUD e associação validam empresa, setores ativos, vínculos e transaç�
     },
     substituirSetores: async (_tx, id, setores) =>
       writes.push(["setores", id, setores]),
+    auditarCadastro: async () => {},
+    produtosDoFluxo: async () => [],
+    associacao: async () => associado,
     emUso: async () => uso,
     remover: async () => writes.push(["remover"]),
     produto: async (_tx, ctx) => {
@@ -752,9 +756,12 @@ test("CRUD e associação validam empresa, setores ativos, vínculos e transaç�
         e.status = 404
         throw e
       }
+      return { id: 50 }
     },
-    associar: async (_tx, ctx, id, fluxoId) =>
-      writes.push(["associar", ctx.idEmpresa, id, fluxoId]),
+    associar: async (_tx, ctx, id, fluxoId) => {
+      associado = fluxoId
+      writes.push(["associar", ctx.idEmpresa, id, fluxoId])
+    },
   }
   const { load, calls } = setup({ "./fluxos.repository": repo })
   const service = load("src/modules/fluxos/fluxos.service.ts")
@@ -945,4 +952,95 @@ test("inativar setor não impede pausar/retomar OP com snapshot", async () => {
   })
   assert.equal(ordem.status, "EM_PRODUCAO")
   await service.executarEtapa(ctx, 1, 101, false)
+})
+
+test("Prisma 7: DriverAdapterError real e encapsulado são conflitos; schema/conexão não", async () => {
+  const { DriverAdapterError } = require("@prisma/driver-adapter-utils")
+  const { load, prisma } = setup()
+  const { transacao } = load("src/modules/producao/producao.repository.ts")
+  for (const cause of [
+    {
+      kind: "UniqueConstraintViolation",
+      originalCode: "1062",
+      constraint: { index: "uk_nome" },
+    },
+    {
+      kind: "ForeignKeyConstraintViolation",
+      originalCode: "1451",
+      constraint: { fields: ["id_setor"] },
+    },
+    { kind: "TransactionWriteConflict", originalCode: "1213" },
+    {
+      kind: "mysql",
+      code: 1205,
+      originalCode: "1205",
+      message: "Lock timeout",
+      state: "HY000",
+    },
+  ]) {
+    const adapterError = new DriverAdapterError(cause)
+    for (const error of [
+      adapterError,
+      new runtime.PrismaClientKnownRequestError("raw failure", {
+        code: "P2010",
+        clientVersion: "7.10.0",
+        meta: { driverAdapterError: adapterError },
+      }),
+    ]) {
+      prisma.$transaction = async () => {
+        throw error
+      }
+      await assert.rejects(
+        transacao(async () => null),
+        conflict,
+      )
+    }
+  }
+  for (const cause of [
+    { kind: "ColumnNotFound", originalCode: "1054", column: "ausente" },
+    { kind: "TableDoesNotExist", originalCode: "1146", table: "ausente" },
+    { kind: "ConnectionClosed", originalCode: "2006" },
+  ]) {
+    const error = new DriverAdapterError(cause)
+    prisma.$transaction = async () => {
+      throw error
+    }
+    await assert.rejects(
+      transacao(async () => null),
+      (e) => e === error,
+    )
+  }
+})
+
+test("GET fluxo do produto usa pode_ler de PRODUTOS e retorna null sem associação", async () => {
+  const { load, vinculo, tx } = setup()
+  const router = load("src/modules/fluxos/router.ts")
+  const request = new Request("http://localhost/api/produtos/30/fluxo")
+  const context = { params: Promise.resolve({ id: "30" }) }
+  assert.equal(
+    (await router.handler("fluxo", "consultarAssociacao")(request, context))
+      .status,
+    403,
+  )
+  vinculo.permissoes_usuario.push({
+    recurso: "PRODUTOS",
+    pode_ler: true,
+    pode_editar: false,
+  })
+  tx.$queryRaw = async () => []
+  const response = await router.handler("fluxo", "consultarAssociacao")(
+    request,
+    context,
+  )
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), {
+    produto: { id: 30, fluxoId: null },
+    fluxo: null,
+  })
+  tx.produto_empresa.findUnique = async () => null
+  assert.equal(
+    (await router.handler("fluxo", "consultarAssociacao")(request, context))
+      .status,
+    404,
+  )
 })

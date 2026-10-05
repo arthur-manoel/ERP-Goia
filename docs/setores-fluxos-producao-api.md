@@ -20,7 +20,7 @@ Decisões:
 
 ## Autenticação e autorização
 
-Usar a autenticação já existente (Bearer ou cookie de sessão). Exemplos abaixo assumem headers:
+Estas rotas exigem `Authorization: Bearer <accessToken>`. Cookies de sessão/refresh não autenticam essas requisições. Obtenha o accessToken no login e use os headers:
 
 ```http
 Authorization: Bearer <token>
@@ -30,7 +30,7 @@ Content-Type: application/json
 
 O header seleciona um vínculo ativo; nunca concede acesso. Pode ser omitido quando existe apenas um vínculo ativo. Perfis aceitos: ADMINISTRACAO/PRODUCAO, conforme autorização de produção. Administradores também precisam de vínculo ativo.
 
-Setores e fluxos usam permissões `ORDENS_PRODUCAO`: `pode_ler`, `pode_criar`, `pode_editar`, `pode_excluir`, conforme método. Inativação também exige `pode_excluir`. Associação/desassociação requer `PRODUTOS.pode_editar`. Consulta de OP usa `ORDENS_PRODUCAO.pode_ler`; ações usam `pode_editar`.
+Setores e fluxos usam permissões `ORDENS_PRODUCAO`: `pode_ler`, `pode_criar`, `pode_editar`, `pode_excluir`, conforme método. Inativação também exige `pode_excluir`. Associação/desassociação requer `PRODUTOS.pode_editar`; GET da associação requer `PRODUTOS.pode_ler`. Consulta de OP usa `ORDENS_PRODUCAO.pode_ler`; ações usam `pode_editar`.
 
 Todas as respostas dos novos endpoints têm `Cache-Control: no-store`. GET e DELETE não recebem corpo; 204 não tem JSON. Erros usam `{"error":"mensagem"}`.
 
@@ -171,6 +171,33 @@ Sem corpo de requisição ou resposta. Se houver OP em andamento → 409:
 ```
 
 ## Associação com produto
+
+### GET `/api/produtos/30/fluxo` → 200
+
+Sem corpo. Retorna o fluxo atual do produto, com setores ordenados e datas, inclusive quando inativo. Usa a empresa selecionada e `PRODUTOS.pode_ler`. Não altera associação nem cria auditoria de escrita.
+
+Sem associação:
+
+```json
+{ "produto": { "id": 30, "fluxoId": null }, "fluxo": null }
+```
+
+Com associação (exemplo de um setor):
+
+```json
+{
+  "produto": { "id": 30, "fluxoId": 3 },
+  "fluxo": {
+    "id": 3, "nome": "Corte", "descricao": null, "ativo": true,
+    "createdAt": "2026-10-04T12:00:00.000Z", "updatedAt": "2026-10-04T12:00:00.000Z",
+    "setores": [
+      { "id": 7, "nome": "Corte", "descricao": null, "ativo": true, "createdAt": "2026-10-04T12:00:00.000Z", "updatedAt": "2026-10-04T12:00:00.000Z", "ordem": 1 }
+    ]
+  }
+}
+```
+
+Produto inexistente ou não vinculado à empresa selecionada retorna 404. Empresa sem acesso retorna 403. A ausência de fluxo retorna 200/null na consulta; apenas a tentativa de criar OP sem fluxo retorna 422.
 
 ### PUT `/api/produtos/30/fluxo` → 200
 
@@ -317,6 +344,14 @@ O endpoint continua funcionando como antes em ordens sem snapshot.
 | 422 | Produto sem fluxo; fluxo inativo/vazio ou setor inativo |
 | 500 | Falha interna, incluindo infraestrutura/banco sem as estruturas obrigatórias; detalhes só no log |
 
+## Auditoria e conflitos
+
+Criação, edição, inativação e exclusão de setores/fluxos registram `INSERT`, `UPDATE` ou `DELETE` em `auditoria`, com empresa, usuário autenticado e dados anteriores/novos. Fluxos incluem a sequência dos setores no registro. Associação, substituição e desassociação registram a tabela `produto_fluxo`; `id_registro` identifica `produto_empresa.id`, e o JSON contém `idEmpresa`, `idProduto` e `fluxoId`. Repetir uma associação idêntica ou remover uma associação já ausente não gera alteração nem nova auditoria.
+
+Excluir um fluxo também audita as associações removidas por cascade. Todas as escritas e auditorias pertencem à mesma transação: falha na auditoria desfaz a operação inteira.
+
+Conflitos reconhecem `PrismaClientKnownRequestError` e `DriverAdapterError` do adapter instalado, diretamente ou em `meta.driverAdapterError`. Unicidade, FK e disputa concorrente retornam 409. Erros de tabela/coluna ausente ou conexão permanecem falhas internas, sem serem disfarçados de conflito.
+
 ## Validação e arquivos
 
 Executar testes sem banco: `node --test tests/*.test.mjs`. Integração real fica condicionada a `PRODUCAO_TEST_DATABASE_URL`, com banco local previamente preparado conforme [contrato de banco](setores-fluxos-producao-banco.md). Acrescentar `--http` ao executar diretamente `tests/producao.integration.test.mjs` para testar o Next real. Nenhum teste aplica DDL.
@@ -349,4 +384,7 @@ Arquivos alterados:
 - `tests/producao.integration.test.mjs`
 - `tests/producao.http.mjs`
 
-Nenhum arquivo de front-end, schema, migration, seed ou client Prisma gerado é parte desta alteração.
+O front-end e os seeds permanecem inalterados. O cadastro de usuários foi removido deste trabalho. O schema e a migration de setores/fluxos fazem parte da entrega; o Prisma Client gerado continua ignorado pelo Git e deve ser regenerado na implantação.
+
+
+Correções do PR: `prisma/schema.prisma`, `prisma/migrations/20261004000000_setores_fluxos_producao/migration.sql`, `src/modules/producao/producao.errors.ts` e `tests/fluxos.integration-cases.mjs`, além dos arquivos de serviço/repositório/router e testes listados acima.
