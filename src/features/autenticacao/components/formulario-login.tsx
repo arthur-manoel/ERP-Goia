@@ -21,7 +21,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAutenticacao } from "../provedor-autenticacao"
 import { loginSchema, type DadosLogin } from "../schemas"
 
-export function FormularioLogin() {
+export function FormularioLogin({ retorno = "/" }: { retorno?: string }) {
   const router = useRouter()
   const { entrar } = useAutenticacao()
   const [mostrarSenha, setMostrarSenha] = useState(false)
@@ -38,7 +38,7 @@ export function FormularioLogin() {
         setErro("")
         try {
           await entrar(usuario, senha)
-          router.replace("/")
+          router.replace(retorno)
         } catch {
           setErro("Usuário ou senha incorretos.")
           form.resetField("senha")

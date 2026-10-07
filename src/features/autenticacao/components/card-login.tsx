@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card"
 import { FormularioLogin } from "./formulario-login"
 
-export function CardLogin() {
+export function CardLogin({ retorno }: { retorno?: string }) {
   return (
     <div className="w-full max-w-md space-y-7">
       <div
@@ -34,7 +34,7 @@ export function CardLogin() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <FormularioLogin />
+          <FormularioLogin retorno={retorno} />
         </CardContent>
       </Card>
 
