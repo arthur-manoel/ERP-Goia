@@ -447,10 +447,19 @@ com JWT, autorização de leitura de estoque por empresa, filtros, paginação e
 decimais separados por unidade. Entrega somente de back-end, sem telas ou migration.
 Contrato e testes locais: [documentação da API](src/modules/relatorio-estoque/README.md).
 
+## API de estoque e relacionamento de produtos
+
+`GET /api/estoque`, `GET /api/estoque/{id}` e `POST /api/estoque` consultam posições
+reais e vinculam produtos já habilitados a locais/setores da empresa autorizada.
+Novos vínculos começam com saldo zero, são auditados e idempotentes, preservando
+as duas unicidades do banco. Entrega de back-end, sem telas ou alteração de schema.
+Contrato e testes locais: [documentação da API](src/modules/estoque/README.md).
+
 ## Histórico
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |
 | 2026-09-18 | Everton | `feature/guia-contribuicao` | CONTRIBUTING, templates de PR e issue, CODEOWNERS; roadmap convertido em 37 issues com milestones e labels. |
 | 2026-09-18 | Everton | PR [#5](https://github.com/arthur-manoel/ERP-Goia/pull/5) | Esqueleto da aplicação (layout, menu, 26 rotas), sessão provisória, helpers e guia de arquitetura. |
 | 2026-09-18 | Everton | PR [#4](https://github.com/arthur-manoel/ERP-Goia/pull/4) | Prettier, husky, lint-staged, commitlint, EditorConfig, `.gitattributes` e CI. |

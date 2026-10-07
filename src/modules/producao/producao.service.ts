@@ -7,6 +7,8 @@ import type {
   EncerrarInput,
 } from "./producao.schema"
 import {
+  registrarInicioSetor,
+  confirmarQuantidades,
   atualizarEstado,
   auditar,
   buscarOrdem,
@@ -18,6 +20,9 @@ import {
   type Ordem,
   type Transaction,
 } from "./producao.repository"
+
+import * as fluxos from "../fluxos/fluxos.repository"
+import { validarFluxo } from "../fluxos/fluxos.service"
 
 const limite = new Prisma.Decimal("999999999999.999")
 export function calcularInsumos(
@@ -66,7 +71,13 @@ async function finalizar(
 ) {
   const depois = await buscarOrdem(tx, ctx, id)
   await auditar(tx, ctx, antes, depois)
-  return resposta(depois)
+  const snapshot = await fluxos.snapshot(tx, id)
+  return {
+    ...resposta(depois),
+    ...(snapshot
+      ? { fluxoSnapshot: snapshot, etapas: await fluxos.etapas(tx, id) }
+      : {}),
+  }
 }
 async function gravarInsumos(
   tx: Transaction,
@@ -98,19 +109,11 @@ function validarPrevisao(
 }
 export function abrirOrdem(ctx: Contexto, input: AbrirInput) {
   return transacao(async (tx) => {
+    await fluxos.produto(tx, ctx, input.idProduto)
+    const fluxo = await fluxos.fluxoProduto(tx, ctx, input.idProduto)
+    validarFluxo(fluxo)
     const ficha = await produtoComFicha(tx, ctx, input.idProduto)
     const insumos = calcularInsumos(input.quantidade, ficha.ficha_tecnica_item)
-    if (input.setores.length) {
-      const count = await tx.setores.count({
-        where: {
-          id: { in: input.setores },
-          id_empresa: ctx.idEmpresa,
-          status: "ATIVO",
-        },
-      })
-      if (count !== input.setores.length)
-        throw new ProducaoError(400, "Selecione setores ativos da empresa.")
-    }
     const ordem = await tx.ordem_producao.create({
       data: {
         id_empresa: ctx.idEmpresa,
@@ -129,14 +132,15 @@ export function abrirOrdem(ctx: Contexto, input: AbrirInput) {
           },
         },
         ordem_producao_fluxo_setor: {
-          create: input.setores.map((id_setor, index) => ({
-            id_setor,
+          create: fluxo.setores.map((setor, index) => ({
+            id_setor: setor.id,
             ordem: index + 1,
           })),
         },
       },
       include: { ordem_producao_item: true },
     })
+    await fluxos.gravarSnapshot(tx, ordem.id, fluxo)
     await gravarInsumos(tx, ordem.id, ordem.ordem_producao_item[0].id, insumos)
     return finalizar(tx, ctx, ordem.id, null)
   })
@@ -164,6 +168,17 @@ export function alterarOrdem(ctx: Contexto, id: number, input: AlterarInput) {
   return transacao(async (tx) => {
     const ordem = await buscarOrdem(tx, ctx, id)
     validarEstado(ordem, input.statusEsperado)
+    if (
+      input.idProduto !== undefined &&
+      ordem.ordem_producao_item.some(
+        (item) => item.id_produto !== input.idProduto,
+      ) &&
+      (await fluxos.snapshot(tx, id))
+    )
+      throw new ProducaoError(
+        409,
+        "O produto de uma ordem com snapshot não pode ser substituído. Crie outra ordem.",
+      )
     const alteraComposicao =
       input.idProduto !== undefined ||
       input.quantidade !== undefined ||
@@ -258,6 +273,16 @@ export function avancarOrdem(ctx: Contexto, id: number, input: AvancarInput) {
       throw new ProducaoError(409, "Transição de produção não permitida.")
     validarPlanejamento(ordem)
     validarPendencias(ordem)
+    const snapshot = await fluxos.snapshot(tx, id)
+    if (
+      input.statusDestino === "EM_PRODUCAO" &&
+      ordem.status !== "PAUSADA" &&
+      snapshot
+    )
+      throw new ProducaoError(
+        409,
+        "Use o endpoint de iniciar etapa para esta ordem.",
+      )
     let setor = ordem.id_setor
     const fluxo = ordem.ordem_producao_fluxo_setor
     if (input.statusDestino === "EM_PRODUCAO" && ordem.status !== "PAUSADA") {
@@ -273,7 +298,7 @@ export function avancarOrdem(ctx: Contexto, id: number, input: AvancarInput) {
         setor = fluxo[index + 1].id_setor
       }
     }
-    if (setor !== null) {
+    if (setor !== null && !snapshot) {
       const ativo = await tx.setores.findFirst({
         where: { id: setor, id_empresa: ctx.idEmpresa, status: "ATIVO" },
       })
@@ -321,6 +346,11 @@ export function encerrarOrdem(ctx: Contexto, id: number, input: EncerrarInput) {
       )
     validarPlanejamento(ordem)
     validarPendencias(ordem)
+    if (await fluxos.snapshot(tx, id))
+      throw new ProducaoError(
+        409,
+        "Conclua a última etapa para encerrar esta ordem.",
+      )
     const fluxo = ordem.ordem_producao_fluxo_setor
     if (fluxo.length) {
       if (ordem.id_setor !== fluxo[fluxo.length - 1].id_setor)
@@ -358,5 +388,83 @@ export function encerrarOrdem(ctx: Contexto, id: number, input: EncerrarInput) {
       })
     }
     return finalizar(tx, ctx, id, ordem)
+  })
+}
+
+// etapaId torna pedidos repetidos/concorrentes verificáveis, inclusive entre dois setores.
+export function executarEtapa(
+  ctx: Contexto,
+  id: number,
+  etapaId: number,
+  iniciar: boolean,
+) {
+  return transacao(async (tx) => {
+    const ordem = await buscarOrdem(tx, ctx, id)
+    const snapshot = await fluxos.snapshot(tx, id)
+    if (!snapshot)
+      throw new ProducaoError(
+        409,
+        "Esta ordem usa o fluxo legado de avanço e encerramento.",
+      )
+    validarPlanejamento(ordem)
+    validarPendencias(ordem)
+    const etapas = await fluxos.etapas(tx, id)
+    const atual = etapas.find((etapa) => etapa.status !== "CONCLUIDA")
+    if (!atual || atual.id !== etapaId)
+      throw new ProducaoError(
+        409,
+        "Informe a etapa atual. Não é permitido pular etapas.",
+      )
+    if (iniciar) {
+      if (
+        !["LIBERADA", "EM_PRODUCAO"].includes(ordem.status) ||
+        atual.status !== "PENDENTE"
+      )
+        throw new ProducaoError(
+          409,
+          "A ordem deve estar liberada ou em produção e a etapa pendente.",
+        )
+      validarPrevisao(ordem.data_previsao, ordem.data_inicio ?? new Date())
+      await fluxos.transicionarEtapa(tx, id, atual, true)
+      await atualizarEstado(tx, ctx, ordem, {
+        status: "EM_PRODUCAO",
+        id_setor: atual.id_setor,
+        data_inicio: ordem.data_inicio ?? new Date(),
+      })
+      await registrarInicioSetor(tx, ctx, ordem, atual.id_setor)
+    } else {
+      if (
+        ordem.status !== "EM_PRODUCAO" ||
+        atual.status !== "EM_PRODUCAO" ||
+        ordem.id_setor !== atual.id_setor
+      )
+        throw new ProducaoError(
+          409,
+          "Inicie a etapa atual antes de concluí-la e retome ordens pausadas.",
+        )
+      await fluxos.transicionarEtapa(tx, id, atual, false)
+      const ultima = atual.id === etapas[etapas.length - 1].id
+      // A etapa já tem lock e atualização condicional. Entre etapas não há
+      // mudança no cabeçalho; evite depender da contagem de UPDATE sem alteração.
+      if (ultima)
+        await atualizarEstado(tx, ctx, ordem, {
+          status: "CONCLUIDA",
+          data_conclusao: new Date(),
+        })
+      if (ultima) await confirmarQuantidades(tx, ordem)
+    }
+    return finalizar(tx, ctx, id, ordem)
+  })
+}
+export function consultarOrdem(ctx: Contexto, id: number) {
+  return transacao(async (tx) => {
+    const ordem = await buscarOrdem(tx, ctx, id)
+    const snapshot = await fluxos.snapshot(tx, id)
+    return {
+      ...resposta(ordem),
+      ...(snapshot
+        ? { fluxoSnapshot: snapshot, etapas: await fluxos.etapas(tx, id) }
+        : {}),
+    }
   })
 }

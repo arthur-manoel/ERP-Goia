@@ -10,14 +10,25 @@ import {
   idSchema,
 } from "./producao.schema"
 import {
+  executarEtapa,
+  consultarOrdem,
   abrirOrdem,
   alterarOrdem,
   avancarOrdem,
   encerrarOrdem,
 } from "./producao.service"
 
+import { etapaSchema } from "../fluxos/fluxos.schema"
+
 type RouteContext = { params: Promise<{ id: string }> }
-type Operacao = "abrir" | "alterar" | "avancar" | "encerrar"
+type Operacao =
+  | "abrir"
+  | "alterar"
+  | "avancar"
+  | "encerrar"
+  | "iniciarEtapa"
+  | "concluirEtapa"
+  | "consultar"
 async function executar(
   request: Request,
   operacao: Operacao,
@@ -26,7 +37,11 @@ async function executar(
   try {
     const ctx = await autorizar(
       request,
-      operacao === "abrir" ? "criar" : "editar",
+      operacao === "abrir"
+        ? "criar"
+        : operacao === "consultar"
+          ? "ler"
+          : "editar",
     )
     if (ctx instanceof Response) return ctx
     let id = 0
@@ -40,7 +55,7 @@ async function executar(
     }
     let body: unknown
     try {
-      body = await request.json()
+      body = operacao === "consultar" ? undefined : await request.json()
     } catch {
       throw new ProducaoError(400, "JSON inválido.")
     }
@@ -54,13 +69,22 @@ async function executar(
       return parsed.data
     }
     const result =
-      operacao === "abrir"
-        ? await abrirOrdem(ctx, validar(abrirSchema))
-        : operacao === "alterar"
-          ? await alterarOrdem(ctx, id, validar(alterarSchema))
-          : operacao === "avancar"
-            ? await avancarOrdem(ctx, id, validar(avancarSchema))
-            : await encerrarOrdem(ctx, id, validar(encerrarSchema))
+      operacao === "consultar"
+        ? await consultarOrdem(ctx, id)
+        : operacao === "iniciarEtapa" || operacao === "concluirEtapa"
+          ? await executarEtapa(
+              ctx,
+              id,
+              validar(etapaSchema).etapaId,
+              operacao === "iniciarEtapa",
+            )
+          : operacao === "abrir"
+            ? await abrirOrdem(ctx, validar(abrirSchema))
+            : operacao === "alterar"
+              ? await alterarOrdem(ctx, id, validar(alterarSchema))
+              : operacao === "avancar"
+                ? await avancarOrdem(ctx, id, validar(avancarSchema))
+                : await encerrarOrdem(ctx, id, validar(encerrarSchema))
     return Response.json(result, {
       status: operacao === "abrir" ? 201 : 200,
       headers: { "Cache-Control": "no-store" },
@@ -85,3 +109,10 @@ export const avancarHandler = (request: Request, context: RouteContext) =>
   executar(request, "avancar", context)
 export const encerrarHandler = (request: Request, context: RouteContext) =>
   executar(request, "encerrar", context)
+
+export const iniciarEtapaHandler = (request: Request, context: RouteContext) =>
+  executar(request, "iniciarEtapa", context)
+export const concluirEtapaHandler = (request: Request, context: RouteContext) =>
+  executar(request, "concluirEtapa", context)
+export const consultarHandler = (request: Request, context: RouteContext) =>
+  executar(request, "consultar", context)
