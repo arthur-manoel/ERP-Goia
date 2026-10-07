@@ -622,6 +622,7 @@ model locais_estoque {
   status               locais_estoque_status  @default(ATIVO)
   compras              compras[]
   estoque              estoque[]
+  estoque_minimo_local estoque_minimo_local[]
   kardex               kardex[]
   empresas             empresas               @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_locais_estoque_empresa")
   movimentacao_estoque movimentacao_estoque[]
@@ -631,6 +632,7 @@ model locais_estoque {
   reserva_estoque      reserva_estoque[]
 
   @@unique([id_empresa, nome], map: "uk_local_estoque_empresa_nome")
+  @@unique([id_empresa, id], map: "idx_local_estoque_empresa_id")
 }
 
 model movimentacao_estoque {
@@ -738,6 +740,7 @@ model nota_fiscal {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model ordem_producao {
+  ordem_producao_snapshot           ordem_producao_snapshot?
   id                                Int                                 @id @default(autoincrement())
   id_pedido_cliente                 Int?
   id_empresa                        Int
@@ -794,12 +797,15 @@ model ordem_producao_consumo_planejado {
 }
 
 model ordem_producao_fluxo_setor {
-  id                Int            @id @default(autoincrement())
+  status            ordem_producao_etapa_status @default(PENDENTE)
+  data_inicio       DateTime?                   @db.DateTime(3)
+  data_conclusao    DateTime?                   @db.DateTime(3)
+  id                Int                         @id @default(autoincrement())
   id_ordem_producao Int
   id_setor          Int
   ordem             Int
-  ordem_producao    ordem_producao @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_op_fluxo_ordem")
-  setores           setores        @relation(fields: [id_setor], references: [id], map: "fk_op_fluxo_setor")
+  ordem_producao    ordem_producao              @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_op_fluxo_ordem")
+  setores           setores                     @relation(fields: [id_setor], references: [id], map: "fk_op_fluxo_setor")
 
   @@unique([id_ordem_producao, ordem], map: "uk_op_fluxo_ordem")
   @@unique([id_ordem_producao, id_setor], map: "uk_op_fluxo_setor")
@@ -1107,6 +1113,7 @@ model permissoes_usuario {
 }
 
 model produto_empresa {
+  produto_fluxo          produto_fluxo?
   id                     Int                    @id @default(autoincrement())
   id_empresa             Int
   id_produto             Int
@@ -1120,6 +1127,7 @@ model produto_empresa {
   unidade_estoque_minimo String                 @default("UNIDADE") @db.VarChar(20)
   estoque_maximo         Decimal?               @db.Decimal(15, 3)
   status                 produto_empresa_status @default(ATIVO)
+  estoque_minimo_local   estoque_minimo_local[]
   cores                  cores?                 @relation(fields: [id_cor], references: [id], map: "fk_produto_empresa_cor")
   empresas               empresas               @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_produto_empresa_empresa")
   produtos               produtos               @relation(fields: [id_produto], references: [id], map: "fk_produto_empresa_produto")
@@ -1220,6 +1228,7 @@ model refresh_tokens {
   data_expiracao DateTime  @db.DateTime(0)
   revogado       Boolean   @default(false)
   data_revogacao DateTime? @db.DateTime(0)
+  replaced_by    Int?
   ip             String?   @db.VarChar(45)
   user_agent     String?   @db.VarChar(255)
   usuarios       usuarios  @relation(fields: [id_usuario], references: [id], onDelete: Cascade, map: "fk_refresh_token_usuario")
@@ -1296,6 +1305,9 @@ model sequencias_automaticas {
 }
 
 model setores {
+  data_cadastro                                                                                 DateTime                            @default(now()) @db.DateTime(3)
+  data_atualizacao                                                                              DateTime                            @default(now()) @updatedAt @db.DateTime(3)
+  fluxo_producao_setor                                                                          fluxo_producao_setor[]
   id                                                                                            Int                                 @id @default(autoincrement())
   id_empresa                                                                                    Int
   nome                                                                                          String                              @db.VarChar(100)
@@ -1442,6 +1454,23 @@ model venda {
   @@index([id_endereco_entrega])
   @@index([status_financeiro])
   @@index([id_pedido_cliente], map: "fk_venda_pedido_cliente")
+}
+
+model estoque_minimo_local {
+  id                Int             @id @default(autoincrement())
+  id_empresa        Int
+  id_local_estoque  Int
+  id_produto        Int
+  quantidade_minima Decimal         @db.Decimal(15, 3)
+  data_cadastro     DateTime        @default(now()) @db.Timestamp(0)
+  data_atualizacao  DateTime        @default(now()) @db.Timestamp(0)
+  empresas          empresas        @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_estoque_minimo_empresa")
+  locais_estoque    locais_estoque  @relation(fields: [id_empresa, id_local_estoque], references: [id_empresa, id], onDelete: Cascade, map: "fk_estoque_minimo_local_empresa")
+  produto_empresa   produto_empresa @relation(fields: [id_empresa, id_produto], references: [id_empresa, id_produto], onDelete: Cascade, map: "fk_estoque_minimo_produto_empresa")
+
+  @@unique([id_empresa, id_local_estoque, id_produto], map: "uk_estoque_minimo_empresa_local_produto")
+  @@index([id_empresa, id_produto], map: "fk_estoque_minimo_produto_empresa")
+  @@index([id_empresa, quantidade_minima], map: "idx_estoque_minimo_empresa_quantidade")
 }
 
 enum permissoes_usuario_recurso {

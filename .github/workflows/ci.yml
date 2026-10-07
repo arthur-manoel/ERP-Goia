@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Lint, formatação, tipos e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # O CI não acessa o banco. A URL só precisa ser válida para o prisma generate
+      # e apontar para o nome aceito em prisma.config.ts.
+      DATABASE_URL: mysql://ci:ci@localhost:3306/joseev47_erp_dev
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Formatação
+        run: npm run format:check
+
+      - name: Tipos
+        run: npm run typecheck
+
+      - name: Schema do Prisma
+        run: npm run db:validate
+
+      - name: Testes unitários
+        run: npm test
+
+      - name: Build
+        run: npm run build

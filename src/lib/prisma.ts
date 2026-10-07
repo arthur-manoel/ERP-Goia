@@ -1,22 +1,18 @@
-import "server-only";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
-import { PrismaClient } from "../generated/prisma/client";
+import "server-only"
+import { databaseProvider } from "./database-config"
+import { PrismaMariaDb } from "@prisma/adapter-mariadb"
+import { PrismaClient } from "../generated/prisma/client"
 
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+  prisma: PrismaClient | undefined
+}
 
 function createPrismaClient() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error("Defina DATABASE_URL no .env.local.");
+  const databaseUrl = process.env.DATABASE_URL
+  if (!databaseUrl) throw new Error("Defina DATABASE_URL no .env.local.")
 
-  const url = new URL(databaseUrl);
-  if (url.protocol !== "mysql:") {
-    throw new Error("DATABASE_URL deve usar o protocolo mysql://.");
-  }
-  if (decodeURIComponent(url.pathname.slice(1)) !== "joseev47_erp_dev") {
-    throw new Error("DATABASE_URL deve apontar somente para joseev47_erp_dev.");
-  }
+  databaseProvider(databaseUrl)
+  const url = new URL(databaseUrl)
   const adapter = new PrismaMariaDb({
     host: url.hostname,
     port: Number(url.port || 3306),
@@ -26,10 +22,10 @@ function createPrismaClient() {
     connectionLimit: 5,
     connectTimeout: 5000,
     acquireTimeout: 10000,
-  });
-  return new PrismaClient({ adapter });
+  })
+  return new PrismaClient({ adapter })
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+export const prisma = globalForPrisma.prisma ?? createPrismaClient()
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma

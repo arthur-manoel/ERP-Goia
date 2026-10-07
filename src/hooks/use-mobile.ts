@@ -13,6 +13,6 @@ export function useIsMobile() {
   return React.useSyncExternalStore(
     subscribe,
     () => window.matchMedia(MOBILE_QUERY).matches,
-    () => false
+    () => false,
   )
 }
