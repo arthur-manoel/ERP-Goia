@@ -75,8 +75,9 @@ model clientes {
   status            clientes_status @default(ATIVO)
   data_cadastro     DateTime        @default(now()) @db.Timestamp(0)
   empresas          empresas        @relation(fields: [id_empresa], references: [id], map: "fk_clientes_empresa")
-  venda             venda[]
+  venda             venda[]         @relation("venda_cliente_empresa")
 
+  @@unique([id_empresa, id], map: "uk_cliente_empresa_id")
   @@index([id_empresa], map: "idx_cliente_empresa")
 }
 
@@ -166,11 +167,13 @@ model cores {
   compra_itens        compra_itens[]
   empresas            empresas?             @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_cores_empresa")
   item_nota_fiscal    item_nota_fiscal[]
+  item_venda          item_venda[]          @relation("item_venda_cor_empresa")
   ordem_producao_item ordem_producao_item[]
   produto_empresa     produto_empresa[]
   produto_variacoes   produto_variacoes[]
 
   @@unique([id_empresa, nome], map: "uk_cor_empresa_nome")
+  @@unique([id_empresa, id], map: "uk_cor_empresa_id")
 }
 
 model empresa_fornecedor {
@@ -235,6 +238,8 @@ model empresas {
   tipos_setor            tipos_setor[]
   usuario_empresa        usuario_empresa[]
   venda                  venda[]
+  venda_parcelas         venda_parcelas[]
+  venda_status_historico venda_status_historico[]
 }
 
 model estoque {
@@ -368,17 +373,25 @@ model item_requisicao_compra {
 }
 
 model item_venda {
-  id             Int      @id @default(autoincrement())
+  id             Int       @id @default(autoincrement())
   id_venda       Int
+  id_empresa     Int
   id_produto     Int
-  quantidade     Decimal  @db.Decimal(15, 3)
-  valor_unitario Decimal  @db.Decimal(15, 2)
-  valor_total    Decimal  @db.Decimal(15, 2)
-  produtos       produtos @relation(fields: [id_produto], references: [id], map: "fk_item_venda_produto")
-  venda          venda    @relation(fields: [id_venda], references: [id], onDelete: Cascade, map: "fk_item_venda_venda")
+  id_cor         Int?
+  id_tamanho     Int?
+  descricao      String?   @db.VarChar(255)
+  quantidade     Decimal   @db.Decimal(15, 3)
+  valor_unitario Decimal   @db.Decimal(15, 2)
+  valor_total    Decimal   @db.Decimal(15, 2)
+  cores          cores?    @relation("item_venda_cor_empresa", fields: [id_empresa, id_cor], references: [id_empresa, id], onDelete: Restrict, map: "fk_item_venda_cor")
+  produtos       produtos  @relation(fields: [id_produto], references: [id], map: "fk_item_venda_produto")
+  tamanhos       tamanhos? @relation("item_venda_tamanho_empresa", fields: [id_empresa, id_tamanho], references: [id_empresa, id], onDelete: Restrict, map: "fk_item_venda_tamanho")
+  venda          venda     @relation(fields: [id_empresa, id_venda], references: [id_empresa, id], onDelete: Cascade, map: "fk_item_venda_venda")
 
-  @@unique([id_venda, id_produto], map: "uk_item_venda_produto")
+  @@unique([id_empresa, id_venda, id_produto, id_cor, id_tamanho], map: "uk_item_venda_produto_variacao")
+  @@index([id_empresa, id_cor], map: "fk_item_venda_cor")
   @@index([id_produto], map: "fk_item_venda_produto")
+  @@index([id_empresa, id_tamanho], map: "fk_item_venda_tamanho")
 }
 
 model kardex {
@@ -903,12 +916,14 @@ model tamanhos {
   status              tamanhos_status       @default(ATIVO)
   compra_itens        compra_itens[]
   item_nota_fiscal    item_nota_fiscal[]
+  item_venda          item_venda[]          @relation("item_venda_tamanho_empresa")
   ordem_producao_item ordem_producao_item[]
   produto_empresa     produto_empresa[]
   produto_variacoes   produto_variacoes[]
   empresas            empresas              @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_tamanhos_empresa")
 
   @@unique([id_empresa, nome], map: "uk_tamanho_empresa_nome")
+  @@unique([id_empresa, id], map: "uk_tamanho_empresa_id")
 }
 
 model tipos_produto {
@@ -929,21 +944,24 @@ model tipos_setor {
 }
 
 model usuario_empresa {
-  id                 Int                          @id @default(autoincrement())
-  id_usuario         Int
-  id_empresa         Int
-  id_cargo           Int
-  id_setor           Int?
-  nivel_acesso       usuario_empresa_nivel_acesso @default(USUARIO)
-  status             usuario_empresa_status       @default(ATIVO)
-  data_vinculo       DateTime                     @default(now()) @db.Timestamp(0)
-  permissoes_usuario permissoes_usuario[]
-  cargos             cargos                       @relation(fields: [id_cargo], references: [id], map: "fk_usuario_empresa_cargo")
-  empresas           empresas                     @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_empresa")
-  setores            setores?                     @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_usuario_empresa_setor")
-  usuarios           usuarios                     @relation(fields: [id_usuario], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_usuario")
+  id                     Int                          @id @default(autoincrement())
+  id_usuario             Int
+  id_empresa             Int
+  id_cargo               Int
+  id_setor               Int?
+  nivel_acesso           usuario_empresa_nivel_acesso @default(USUARIO)
+  status                 usuario_empresa_status       @default(ATIVO)
+  data_vinculo           DateTime                     @default(now()) @db.Timestamp(0)
+  permissoes_usuario     permissoes_usuario[]
+  cargos                 cargos                       @relation(fields: [id_cargo], references: [id], map: "fk_usuario_empresa_cargo")
+  empresas               empresas                     @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_empresa")
+  setores                setores?                     @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_usuario_empresa_setor")
+  usuarios               usuarios                     @relation(fields: [id_usuario], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_usuario")
+  vendas                 venda[]                      @relation("venda_usuario_empresa")
+  venda_status_historico venda_status_historico[]
 
   @@unique([id_usuario, id_empresa], map: "uk_usuario_empresa")
+  @@unique([id_usuario, id_empresa], map: "uk_usuario_empresa_usuario_empresa")
   @@index([id_cargo], map: "fk_usuario_empresa_cargo")
   @@index([id_empresa], map: "fk_usuario_empresa_empresa")
   @@index([id_setor], map: "fk_usuario_empresa_setor")
@@ -969,28 +987,80 @@ model usuarios {
   requisicao_compra                                                                                    requisicao_compra[]
   reserva_estoque                                                                                      reserva_estoque[]
   usuario_empresa                                                                                      usuario_empresa[]
-  venda                                                                                                venda[]
 }
 
 model venda {
-  id              Int               @id @default(autoincrement())
-  id_empresa      Int
-  id_cliente      Int
-  id_usuario      Int
-  numero          String            @db.VarChar(50)
-  status          venda_status      @default(RASCUNHO)
-  data_venda      DateTime          @default(now()) @db.Timestamp(0)
-  data_entrega    DateTime?         @db.DateTime(0)
-  valor_total     Decimal           @default(0.00) @db.Decimal(15, 2)
-  item_venda      item_venda[]
-  reserva_estoque reserva_estoque[]
-  clientes        clientes          @relation(fields: [id_cliente], references: [id], map: "fk_venda_cliente")
-  empresas        empresas          @relation(fields: [id_empresa], references: [id], map: "fk_venda_empresa")
-  usuarios        usuarios          @relation(fields: [id_usuario], references: [id], map: "fk_venda_usuario")
+  id                        Int                      @id @default(autoincrement())
+  id_empresa                Int
+  id_cliente                Int
+  id_usuario                Int
+  numero                    String                   @db.VarChar(50)
+  status                    venda_status             @default(RASCUNHO)
+  data_venda                DateTime                 @default(now()) @db.Timestamp(0)
+  data_entrega              DateTime?                @db.DateTime(0)
+  valor_total               Decimal                  @default(0.00) @db.Decimal(15, 2)
+  entrega_nome_destinatario String?                  @db.VarChar(150)
+  entrega_telefone          String?                  @db.VarChar(30)
+  entrega_endereco          String?                  @db.VarChar(255)
+  entrega_numero            String?                  @db.VarChar(20)
+  entrega_complemento       String?                  @db.VarChar(100)
+  entrega_bairro            String?                  @db.VarChar(100)
+  entrega_cidade            String?                  @db.VarChar(100)
+  entrega_estado            String?                  @db.Char(2)
+  entrega_cep               String?                  @db.VarChar(10)
+  observacao_interna        String?                  @db.Text
+  item_venda                item_venda[]
+  parcelas                  venda_parcelas[]
+  historico_status          venda_status_historico[]
+  reserva_estoque           reserva_estoque[]
+  clientes                  clientes                 @relation("venda_cliente_empresa", fields: [id_empresa, id_cliente], references: [id_empresa, id], map: "fk_venda_cliente_empresa")
+  empresas                  empresas                 @relation(fields: [id_empresa], references: [id], map: "fk_venda_empresa")
+  usuario_empresa           usuario_empresa          @relation("venda_usuario_empresa", fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], map: "fk_venda_usuario_empresa")
 
+  @@unique([id_empresa, id], map: "uk_venda_empresa_id")
   @@unique([id_empresa, numero], map: "uk_venda_empresa_numero")
+  @@index([id_empresa, id_cliente], map: "idx_venda_empresa_cliente")
+  @@index([id_empresa, id_usuario], map: "idx_venda_empresa_usuario")
   @@index([id_cliente], map: "fk_venda_cliente")
   @@index([id_usuario], map: "fk_venda_usuario")
+}
+
+model venda_parcelas {
+  id                   Int                    @id @default(autoincrement())
+  id_empresa           Int
+  id_venda             Int
+  numero_parcela       Int
+  valor                Decimal                @db.Decimal(15, 2)
+  data_vencimento      DateTime               @db.Date
+  valor_pago           Decimal                @default(0.00) @db.Decimal(15, 2)
+  data_pagamento       DateTime?              @db.DateTime(0)
+  forma_pagamento      venda_forma_pagamento?
+  referencia_pagamento String?                @db.VarChar(100)
+  observacao           String?                @db.VarChar(255)
+  status               venda_parcela_status   @default(ABERTA)
+  data_cadastro        DateTime               @default(now()) @db.Timestamp(0)
+  empresas             empresas               @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_venda_parcela_empresa")
+  venda                venda                  @relation(fields: [id_empresa, id_venda], references: [id_empresa, id], onDelete: Cascade, map: "fk_venda_parcela_venda")
+
+  @@unique([id_empresa, id_venda, numero_parcela], map: "uk_venda_parcela_numero")
+  @@index([id_empresa, status, data_vencimento], map: "idx_venda_parcela_vencimento")
+}
+
+model venda_status_historico {
+  id                 Int              @id @default(autoincrement())
+  id_empresa         Int
+  id_venda           Int
+  id_usuario_empresa Int?
+  status_anterior    venda_status?
+  status_novo        venda_status
+  observacao         String?          @db.VarChar(255)
+  data_evento        DateTime         @default(now()) @db.Timestamp(0)
+  empresas           empresas         @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_venda_historico_empresa")
+  venda              venda            @relation(fields: [id_empresa, id_venda], references: [id_empresa, id], onDelete: Cascade, map: "fk_venda_historico_venda")
+  usuario_empresa    usuario_empresa? @relation(fields: [id_usuario_empresa], references: [id], onDelete: SetNull, map: "fk_venda_historico_usuario")
+
+  @@index([id_empresa, id_venda, data_evento], map: "idx_venda_historico_data")
+  @@index([id_usuario_empresa], map: "fk_venda_historico_usuario")
 }
 
 model estoque_minimo_local {
@@ -1118,6 +1188,23 @@ enum venda_status {
   FATURADA
   ENVIADA
   ENTREGUE
+  CANCELADA
+}
+
+enum venda_forma_pagamento {
+  DINHEIRO
+  PIX
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+  BOLETO
+  TRANSFERENCIA
+  OUTRO
+}
+
+enum venda_parcela_status {
+  ABERTA
+  PAGA
+  PARCIAL
   CANCELADA
 }
 
