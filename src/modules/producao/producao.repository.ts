@@ -1,6 +1,7 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
+import { conflitoPersistencia } from "./producao.errors"
 
 export class ProducaoError extends Error {
   constructor(
@@ -42,18 +43,11 @@ export async function transacao<T>(operation: (tx: Transaction) => Promise<T>) {
       isolationLevel: "Serializable",
     })
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (["P2034", "P2002"].includes(error.code))
-        throw new ProducaoError(
-          409,
-          "Conflito concorrente. Atualize a ordem antes de tentar novamente.",
-        )
-      if (["P2003", "P2004", "P2025"].includes(error.code))
-        throw new ProducaoError(
-          409,
-          "Os dados relacionados foram alterados ou impedem esta operação.",
-        )
-    }
+    if (conflitoPersistencia(error))
+      throw new ProducaoError(
+        409,
+        "Nome duplicado, vínculo existente ou conflito concorrente.",
+      )
     throw error
   }
 }
@@ -171,4 +165,31 @@ export async function produtoComFicha(
       "A ficha contém componentes inativos ou não vinculados à empresa.",
     )
   return ficha
+}
+
+export function registrarInicioSetor(
+  tx: Transaction,
+  ctx: Contexto,
+  ordem: Ordem,
+  idSetor: number,
+) {
+  return tx.ordem_producao_movimentacao_setor.create({
+    data: {
+      id_ordem_producao: ordem.id,
+      id_setor_origem: ordem.id_setor,
+      id_setor_destino: idSetor,
+      id_usuario_envio: ctx.idUsuario,
+      id_usuario_recebimento: ctx.idUsuario,
+      status: "ENTREGUE",
+      data_recebimento: new Date(),
+    },
+  })
+}
+export async function confirmarQuantidades(tx: Transaction, ordem: Ordem) {
+  for (const item of ordem.ordem_producao_item) {
+    await tx.ordem_producao_item.update({
+      where: { id: item.id },
+      data: { quantidade_produzida: item.quantidade },
+    })
+  }
 }

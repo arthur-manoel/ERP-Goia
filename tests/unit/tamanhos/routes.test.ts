@@ -33,7 +33,12 @@ describe("/api/tamanhos", () => {
       data: { rows: [tamanho], count: 21, page: 2, limit: 20, totalPages: 2 },
     })
     expect(db.tamanhos.findMany).toHaveBeenCalledWith({
-      where: { id_empresa: 10, status: "ATIVO", nome: "M" },
+      where: {
+        AND: [
+          { id_empresa: 10, status: "ATIVO", nome: "M" },
+          { id_empresa: { in: [10] } },
+        ],
+      },
       orderBy: [{ ordem: "asc" }, { nome: "asc" }, { id: "asc" }],
       skip: 20,
       take: 20,
@@ -109,13 +114,13 @@ describe("/api/tamanhos", () => {
 })
 describe("/api/tamanhos/:id", () => {
   it("busca por ID", async () => {
-    db.tamanhos.findUnique.mockResolvedValue(tamanho)
+    db.tamanhos.findFirst.mockResolvedValue(tamanho)
     const response = await item.GET(await request("/api/tamanhos/1"), context())
     expect(response.status).toBe(200)
     expect((await response.json()).data).toEqual(tamanho)
   })
   it("retorna 404 quando não existe", async () => {
-    db.tamanhos.findUnique.mockResolvedValue(null)
+    db.tamanhos.findFirst.mockResolvedValue(null)
     expect(
       (await item.GET(await request("/api/tamanhos/1"), context())).status,
     ).toBe(404)
@@ -138,7 +143,7 @@ describe("/api/tamanhos/:id", () => {
     )
     expect(response.status).toBe(200)
     expect(db.tamanhos.update).toHaveBeenCalledWith({
-      where: { id: 1 },
+      where: { id: 1, id_empresa: { in: [10] } },
       data: { descricao: null },
     })
     expect((await response.json()).data.status).toBe("INATIVO")
@@ -190,7 +195,7 @@ describe("/api/tamanhos/:id", () => {
     )
     expect(response.status).toBe(200)
     expect(db.tamanhos.update).toHaveBeenCalledWith({
-      where: { id: 1 },
+      where: { id: 1, id_empresa: { in: [10] } },
       data: { status: "INATIVO" },
     })
     expect(await response.json()).toEqual({

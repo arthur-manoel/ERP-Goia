@@ -93,6 +93,54 @@ export async function testarApi(
       else assert.equal(response.headers.get("cache-control"), "no-store")
       return result
     }
+    await t.test(
+      "HTTP setores e GET produto/fluxo: 201, 409, 204, sequência e Bearer",
+      async () => {
+        const api = `http://127.0.0.1:${port}/api`
+        const headers = {
+          authorization,
+          "X-Empresa-Id": String(empresas[0]),
+          "Content-Type": "application/json",
+        }
+        const body = JSON.stringify({ nome: `Setor HTTP ${marker}` })
+        const created = await fetch(`${api}/setores`, {
+          method: "POST",
+          headers,
+          body,
+        })
+        const result = await created.json()
+        assert.equal(created.status, 201, JSON.stringify(result))
+        assert.ok(result.setor.createdAt)
+        const duplicate = await fetch(`${api}/setores`, {
+          method: "POST",
+          headers,
+          body,
+        })
+        assert.equal(duplicate.status, 409, await duplicate.text())
+        const removed = await fetch(`${api}/setores/${result.setor.id}`, {
+          method: "DELETE",
+          headers,
+        })
+        assert.equal(removed.status, 204)
+        const association = await fetch(
+          `${api}/produtos/${produtos[0]}/fluxo`,
+          { headers },
+        )
+        const associated = await association.json()
+        assert.equal(association.status, 200, JSON.stringify(associated))
+        assert.deepEqual(
+          associated.fluxo.setores.map((s) => s.id),
+          setores,
+        )
+        const cookieOnly = await fetch(`${api}/produtos/${produtos[0]}/fluxo`, {
+          headers: {
+            "X-Empresa-Id": String(empresas[0]),
+            Cookie: `accessToken=${authorization.slice(7)}`,
+          },
+        })
+        assert.equal(cookieOnly.status, 401)
+      },
+    )
     // Duas composições distintas permitem comprovar recálculo por produto e quantidade.
     const material = await prisma.produtos.create({
       data: {
@@ -139,16 +187,22 @@ export async function testarApi(
         ),
       )
     let id
+    let etapas
     await t.test(
       "HTTP abertura: 201, produto vinculado e dois insumos previstos sem perdas",
       async () => {
         const result = await call(
           "POST",
           "",
-          { idProduto: produtos[0], quantidade: "3", setores },
+          { idProduto: produtos[0], quantidade: "3" },
           201,
         )
         id = result.ordem.id
+        etapas = result.etapas
+        assert.deepEqual(
+          etapas.map((e) => e.id_setor),
+          setores,
+        )
         assert.equal(result.ordem.status, "PLANEJADA")
         assert.equal(
           result.ordem.ordem_producao_item[0].id_produto,
@@ -179,7 +233,7 @@ export async function testarApi(
       "A abertura precisa funcionar para testar o restante do ciclo",
     )
     await t.test(
-      "HTTP alteração: 200, recálculo por quantidade e por troca de produto",
+      "HTTP alteração: recálculo por quantidade e bloqueio de troca de produto",
       async () => {
         const quantity = await call(
           "PATCH",
@@ -191,7 +245,7 @@ export async function testarApi(
           [produtos[2]]: "0.5",
           [material.id]: "8",
         })
-        const product = await call(
+        await call(
           "PATCH",
           `/${id}`,
           {
@@ -199,17 +253,8 @@ export async function testarApi(
             idProduto: produtos[1],
             observacao: "Troca de produto",
           },
-          200,
+          409,
         )
-        assert.equal(
-          product.ordem.ordem_producao_item[0].id_produto,
-          produtos[1],
-        )
-        assert.equal(product.ordem.observacao, "Troca de produto")
-        assert.deepEqual(totals(product), {
-          [produtos[2]]: "2",
-          [material.id]: "4",
-        })
       },
     )
     await t.test(
@@ -271,12 +316,8 @@ export async function testarApi(
         )
         const started = await call(
           "POST",
-          `/${id}/avancar`,
-          {
-            statusEsperado: "LIBERADA",
-            setorEsperado: null,
-            statusDestino: "EM_PRODUCAO",
-          },
+          `/${id}/etapas/iniciar`,
+          { etapaId: etapas[0].id },
           200,
         )
         assert.equal(started.ordem.id_setor, setores[0])
@@ -294,7 +335,7 @@ export async function testarApi(
           409,
         )
         await prisma.ficha_tecnica_item.updateMany({
-          where: { id_ficha_tecnica: fichas[1].id },
+          where: { id_ficha_tecnica: fichas[0].id },
           data: { quantidade: "99" },
         })
         const note = await call(
@@ -304,8 +345,8 @@ export async function testarApi(
           200,
         )
         assert.deepEqual(totals(note), {
-          [produtos[2]]: "2",
-          [material.id]: "4",
+          [produtos[2]]: "0.5",
+          [material.id]: "8",
         })
         await call(
           "POST",
@@ -320,7 +361,7 @@ export async function testarApi(
       async () => {
         const responses = await Promise.all(
           Array.from({ length: 2 }, () =>
-            fetch(`${base}/${id}/avancar`, {
+            fetch(`${base}/${id}/etapas/concluir`, {
               method: "POST",
               headers: {
                 authorization,
@@ -328,9 +369,7 @@ export async function testarApi(
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                statusEsperado: "EM_PRODUCAO",
-                setorEsperado: setores[0],
-                statusDestino: "EM_PRODUCAO",
+                etapaId: etapas[0].id,
               }),
               signal: AbortSignal.timeout(60000),
             }),
@@ -344,12 +383,12 @@ export async function testarApi(
         const stored = await prisma.ordem_producao.findUniqueOrThrow({
           where: { id },
         })
-        assert.equal(stored.id_setor, setores[1])
+        assert.equal(stored.id_setor, setores[0])
         assert.equal(
           await prisma.ordem_producao_movimentacao_setor.count({
             where: { id_ordem_producao: id },
           }),
-          2,
+          1,
         )
       },
     )
@@ -358,12 +397,20 @@ export async function testarApi(
       async () => {
         await call(
           "POST",
-          `/${id}/avancar`,
-          {
-            statusEsperado: "EM_PRODUCAO",
-            setorEsperado: setores[1],
-            statusDestino: "EM_PRODUCAO",
-          },
+          `/${id}/etapas/iniciar`,
+          { etapaId: etapas[1].id },
+          200,
+        )
+        await call(
+          "POST",
+          `/${id}/etapas/concluir`,
+          { etapaId: etapas[1].id },
+          200,
+        )
+        await call(
+          "POST",
+          `/${id}/etapas/iniciar`,
+          { etapaId: etapas[2].id },
           200,
         )
         const movement =
@@ -376,8 +423,8 @@ export async function testarApi(
         })
         await call(
           "POST",
-          `/${id}/encerrar`,
-          { statusEsperado: "EM_PRODUCAO", setorEsperado: setores[2] },
+          `/${id}/etapas/concluir`,
+          { etapaId: etapas[2].id },
           409,
         )
         await prisma.ordem_producao_movimentacao_setor.update({
@@ -386,8 +433,8 @@ export async function testarApi(
         })
         const closed = await call(
           "POST",
-          `/${id}/encerrar`,
-          { statusEsperado: "EM_PRODUCAO", setorEsperado: setores[2] },
+          `/${id}/etapas/concluir`,
+          { etapaId: etapas[2].id },
           200,
         )
         assert.equal(closed.ordem.status, "CONCLUIDA")
@@ -399,8 +446,8 @@ export async function testarApi(
         assert.equal(closed.baixaEstoque, "pendente")
         assert.equal(closed.perdaAplicada, false)
         assert.deepEqual(totals(closed), {
-          [produtos[2]]: "2",
-          [material.id]: "4",
+          [produtos[2]]: "0.5",
+          [material.id]: "8",
         })
         assert.equal(
           (await prisma.ordem_producao.findUniqueOrThrow({ where: { id } }))
@@ -421,8 +468,8 @@ export async function testarApi(
         )
         await call(
           "POST",
-          `/${id}/encerrar`,
-          { statusEsperado: "EM_PRODUCAO", setorEsperado: setores[2] },
+          `/${id}/etapas/concluir`,
+          { etapaId: etapas[2].id },
           409,
         )
         await call(

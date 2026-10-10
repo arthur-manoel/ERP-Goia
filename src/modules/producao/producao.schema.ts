@@ -36,11 +36,6 @@ const campos = {
 }
 export const abrirSchema = z.strictObject({
   ...campos,
-  setores: z
-    .array(idSchema)
-    .max(100)
-    .default([])
-    .refine((ids) => new Set(ids).size === ids.length, "Não repita setores."),
 })
 export const alterarSchema = z
   .strictObject({

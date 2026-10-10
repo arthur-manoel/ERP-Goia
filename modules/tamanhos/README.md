@@ -10,12 +10,14 @@ existente de `src/lib/prisma.ts`. Não altera o schema ou a configuração do ba
   `status` e `nome`. O nome usa igualdade conforme a collation MySQL. Os filtros
   são combinados e a ordenação é `ordem`, `nome`, `id`, crescente.
 - `GET /api/tamanhos/:id`: retorna o recurso ou 404.
-- `PUT /api/tamanhos/:id`: atualização parcial, sem alterar `id`; um objeto vazio
+- `PUT` ou `PATCH /api/tamanhos/:id`: atualização parcial, sem alterar `id`; um objeto vazio
   é inválido. Omitir `status` ou `ordem` preserva os valores existentes.
 - `DELETE /api/tamanhos/:id`: altera status para `INATIVO`, com resposta 200.
   Repetir a operação é permitido.
 
-O filtro de empresa é opcional na listagem. As rotas não exigem autenticação.
+Todas as rotas exigem `Authorization: Bearer <access_token>`, usuário, empresa e vínculo ativos, além da permissão da operação em `permissoes_usuario`. Sem token válido: 401; sem vínculo/permissão: 403. IDs fora do escopo retornam 404. O filtro `id_empresa` é opcional, mas somente empresas autorizadas entram na consulta. Veja [autorização dos catálogos](../catalogos/README.md).
+
+Tamanhos usa a permissão `PRODUTOS`. `busca` pesquisa parcialmente em `nome` OU `descricao`, combinado aos demais filtros. Exemplo: `GET /api/tamanhos?page=2&limit=10&busca=medio&status=ATIVO`. O banco entrega somente a página atual e conta todos os resultados filtrados autorizados.
 
 O schema real define `nome` com 50 caracteres, `descricao` com 255 e nullable,
 `ordem` Int NOT NULL com default 0 e `status` com default `ATIVO`.

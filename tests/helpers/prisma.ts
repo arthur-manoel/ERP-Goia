@@ -11,8 +11,16 @@ function model() {
   }
 }
 export const db = {
+  usuario_empresa: model(),
   tamanhos: model(),
   cores: model(),
   produtos: model(),
+  estoque: model(),
+  locais_estoque: model(),
+  setores: model(),
+  produto_empresa: model(),
+  auditoria: model(),
+  $queryRaw: vi.fn(),
+  fornecedores: model(),
   $transaction: vi.fn(),
 }

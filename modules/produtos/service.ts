@@ -1,5 +1,5 @@
+import { assertCompany } from "../catalogos/access"
 import { Prisma } from "../../src/generated/prisma/client"
-import { z } from "zod"
 import * as repository from "./repository"
 import {
   createProdutoSchema,
@@ -8,37 +8,22 @@ import {
   produtoIdSchema,
 } from "./schema"
 
-export class NotFoundError extends Error {
+import { HttpError } from "../../src/lib/api/errors"
+import { validate } from "../../src/lib/api/http"
+export class NotFoundError extends HttpError {
   constructor(message = "Produto não encontrado.") {
-    super(message)
-    this.name = "NotFoundError"
+    super(404, message)
   }
 }
-export class ConflictError extends Error {
+export class ConflictError extends HttpError {
   constructor(message = "Já existe um produto com este código.") {
-    super(message)
-    this.name = "ConflictError"
+    super(409, message)
   }
 }
-export class ValidationError extends Error {
+export class ValidationError extends HttpError {
   constructor(message: string) {
-    super(message)
-    this.name = "ValidationError"
+    super(400, message)
   }
-}
-
-function validate<T>(schema: z.ZodType<T>, input: unknown): T {
-  const result = schema.safeParse(input)
-  if (!result.success) {
-    throw new ValidationError(
-      result.error.issues
-        .map(
-          (issue) => `${issue.path.join(".") || "entrada"}: ${issue.message}`,
-        )
-        .join("; "),
-    )
-  }
-  return result.data
 }
 
 // Mantém o tratamento de constraints; codigo não é UNIQUE no schema atual.
@@ -61,35 +46,46 @@ async function write<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-export async function createProduto(input: unknown) {
+export async function createProduto(input: unknown, companies: number[]) {
   const data = validate(createProdutoSchema, input)
+  assertCompany(data.id_empresa, companies)
   if (await repository.findByCodigo(data.codigo)) throw new ConflictError()
   return write(() => repository.create(data))
 }
 
-export async function listProdutos(input: unknown) {
+export async function listProdutos(input: unknown, companies: number[]) {
   const { page, limit, ...filters } = validate(listProdutosSchema, input)
-  const { rows, count } = await repository.findAll(filters, { page, limit })
+  assertCompany(filters.id_empresa, companies)
+  const { rows, count } = await repository.findAll(
+    filters,
+    { page, limit },
+    companies,
+  )
   return { rows, count, page, limit, totalPages: Math.ceil(count / limit) }
 }
 
-export async function getProduto(idInput: unknown) {
+export async function getProduto(idInput: unknown, companies: number[]) {
   const id = validate(produtoIdSchema, idInput)
-  const produto = await repository.findById(id)
+  const produto = await repository.findById(id, companies)
   if (!produto) throw new NotFoundError()
   return produto
 }
 
-export async function updateProduto(idInput: unknown, input: unknown) {
+export async function updateProduto(
+  idInput: unknown,
+  input: unknown,
+  companies: number[],
+) {
   const id = validate(produtoIdSchema, idInput)
   const data = validate(updateProdutoSchema, input)
-  const produto = await write(() => repository.update(id, data))
+  const produto = await write(() => repository.update(id, data, companies))
   if (!produto) throw new NotFoundError()
   return produto
 }
 
-export async function deleteProduto(idInput: unknown) {
+export async function deleteProduto(idInput: unknown, companies: number[]) {
   const id = validate(produtoIdSchema, idInput)
-  if (!(await write(() => repository.inactivate(id)))) throw new NotFoundError()
+  if (!(await write(() => repository.inactivate(id, companies))))
+    throw new NotFoundError()
   return { message: "Produto inativado com sucesso." }
 }

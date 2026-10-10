@@ -26,7 +26,7 @@ ou alteração de banco foi executada.
   do banco. Sem status, inclui ativos e inativos. O limite máximo é 100.
 - `POST /api/produtos` retorna 201 com o produto criado.
 - `GET /api/produtos/1` retorna 200 com o produto ou 404.
-- `PUT /api/produtos/1` aceita um objeto parcial não vazio. `id`, `codigo` e
+- `PUT` ou `PATCH /api/produtos/1` aceita um objeto parcial não vazio. `id`, `codigo` e
   `data_cadastro` são rejeitados, mesmo se o valor for igual ao atual. A proibição
   explícita de alterar código prevalece sobre a instrução conflitante de validar
   sua alteração. Omitir status preserva seu valor; `INATIVO` e `ATIVO` são aceitos.
@@ -35,13 +35,20 @@ ou alteração de banco foi executada.
   Repetir a exclusão de um produto inativo também retorna 200.
 
 O App Router exige `[id]/route.ts` para URLs com ID: GET/POST ficam na coleção;
-GET/PUT/DELETE ficam na rota dinâmica. Os handlers aguardam `context.params`.
-`http.ts` centraliza o try/catch e as respostas via `NextResponse.json()`.
+GET/PUT/PATCH/DELETE ficam na rota dinâmica. Os handlers aguardam `context.params`.
+`src/lib/api/http.ts` centraliza o try/catch e as respostas via `NextResponse.json()`.
+
+Todas as rotas exigem `Authorization: Bearer <access_token>`, usuário, empresa e vínculo ativos, além da permissão da operação em `permissoes_usuario`. Sem token válido: 401; sem vínculo/permissão: 403. IDs fora do escopo retornam 404. O filtro `id_empresa` é opcional, mas somente empresas autorizadas entram na consulta. Veja [autorização dos catálogos](../catalogos/README.md).
+
+Produtos usa a permissão `PRODUTOS`. Como o cadastro é global, o escopo usa `produto_empresa`: leituras exigem vínculo com alguma empresa autorizada; alterações e inativação exigem permissão em todas as empresas vinculadas ao produto. Produtos sem vínculo ficam inacessíveis. A criação agora exige `id_empresa` e cria o vínculo atomicamente, com `codigo_interno` igual a `codigo`.
+
+A listagem também aceita `id_empresa` e `busca` (nome OU código), executados no banco.
 
 Exemplo de criação:
 
 ```json
 {
+  "id_empresa": 10,
   "codigo": "P001",
   "nome": "Produto exemplo",
   "id_tipo_produto": 1,

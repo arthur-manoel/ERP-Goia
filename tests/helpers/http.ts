@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 
 export const origin = "http://localhost:3000"
 export async function request(path: string, method = "GET", body?: unknown) {
-  const headers = new Headers()
+  const headers = new Headers({ Authorization: "Bearer test-token" })
   if (body !== undefined) headers.set("content-type", "application/json")
   return new NextRequest(origin + path, {
     method,

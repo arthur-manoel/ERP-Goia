@@ -4,12 +4,12 @@ import * as item from "../../../src/app/api/produtos/[id]/route"
 import { db } from "../../helpers/prisma"
 import { request, context } from "../../helpers/http"
 
-it("permite as cinco operações sem cookies ou credenciais", async () => {
+it("permite as cinco operações com token e permissão", async () => {
   const produto = { id: 1, codigo: "P1", nome: "Produto", status: "ATIVO" }
   db.produtos.findMany.mockResolvedValue([produto])
   db.produtos.count.mockResolvedValue(1)
-  db.produtos.findUnique.mockResolvedValue(produto)
-  db.produtos.findFirst.mockResolvedValue(null)
+  db.produtos.findFirst.mockResolvedValue(produto)
+  db.produtos.findFirst.mockResolvedValueOnce(null)
   db.produtos.create.mockResolvedValue(produto)
   db.produtos.update.mockResolvedValue(produto)
   expect((await collection.GET(await request("/api/produtos"))).status).toBe(
@@ -19,6 +19,7 @@ it("permite as cinco operações sem cookies ou credenciais", async () => {
     (
       await collection.POST(
         await request("/api/produtos", "POST", {
+          id_empresa: 10,
           codigo: "P1",
           nome: "Produto",
           id_tipo_produto: 1,

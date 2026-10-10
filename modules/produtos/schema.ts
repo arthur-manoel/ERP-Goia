@@ -29,6 +29,7 @@ const editableFields = {
 
 export const createProdutoSchema = z
   .object({
+    id_empresa: intId,
     codigo: text.max(100, "Código deve ter no máximo 100 caracteres."),
     ...editableFields,
     status: statusSchema.default("ATIVO"),
@@ -53,10 +54,12 @@ export const produtoIdSchema = z
 
 export const listProdutosSchema = z
   .object({
+    busca: z.string().trim().max(255).optional(),
     page: produtoIdSchema.default(1),
     limit: produtoIdSchema
       .pipe(z.number().max(100, "O limite máximo é 100."))
       .default(20),
+    id_empresa: produtoIdSchema.optional(),
     id_categoria: produtoIdSchema.optional(),
     id_tipo_produto: produtoIdSchema.optional(),
     status: statusSchema.optional(),
@@ -70,6 +73,11 @@ export type CreateProdutoData = z.output<typeof createProdutoSchema>
 export type UpdateProdutoData = z.output<typeof updateProdutoSchema>
 export type ProdutoFilters = Pick<
   z.output<typeof listProdutosSchema>,
-  "id_categoria" | "id_tipo_produto" | "status" | "codigo"
+  | "busca"
+  | "id_empresa"
+  | "id_categoria"
+  | "id_tipo_produto"
+  | "status"
+  | "codigo"
 >
 export type Pagination = { page: number; limit: number }

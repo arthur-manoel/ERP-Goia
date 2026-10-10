@@ -39,6 +39,28 @@ function setup(overrides = {}) {
     ],
   }
   const tx = {
+    async $queryRaw(query) {
+      const sql = (query.strings ?? query).join("?")
+      if (sql.includes("FROM produto_fluxo")) return [{ id_fluxo: 3 }]
+      if (sql.includes("FROM fluxo_producao_setor"))
+        return [
+          { id: 7, nome: "Corte", descricao: null, status: "ATIVO", ordem: 1 },
+          {
+            id: 8,
+            nome: "Costura",
+            descricao: null,
+            status: "ATIVO",
+            ordem: 2,
+          },
+        ]
+      if (sql.includes("FROM fluxos_producao"))
+        return [{ id: 3, nome: "Padrão", descricao: null, status: "ATIVO" }]
+      return []
+    },
+    async $executeRaw(query, ...values) {
+      calls.push(["sql", query.strings ? query : { strings: query, values }])
+      return 1
+    },
     ordem_producao: {
       async findFirst({ where }) {
         return where.id_empresa === 10 && where.id === 1 ? ordem : null
@@ -62,6 +84,9 @@ function setup(overrides = {}) {
       },
     },
     produto_empresa: {
+      async findUnique() {
+        return { id: 1 }
+      },
       async findFirst() {
         return {}
       },
@@ -126,7 +151,8 @@ function setup(overrides = {}) {
     function localRequire(id) {
       if (Object.hasOwn(overrides, id)) return overrides[id]
       if (id === "server-only") return {}
-      if (id === "@/generated/prisma/client") return { Prisma: runtime }
+      if (id === "@/generated/prisma/client")
+        return { Prisma: { ...runtime, sql: runtime.sqltag } }
       if (id === "@/lib/prisma") return { prisma }
       if (id === "@/lib/authorize")
         return {
@@ -420,7 +446,7 @@ test("abertura persiste ficha, sequência e auditoria na transação; HTTP 201",
   const response = await load("src/modules/producao/router.ts").abrirHandler(
     new Request("http://localhost", {
       method: "POST",
-      body: JSON.stringify({ idProduto: 30, quantidade: "2", setores: [7, 8] }),
+      body: JSON.stringify({ idProduto: 30, quantidade: "2" }),
     }),
   )
   assert.equal(response.status, 201)
@@ -483,4 +509,538 @@ test("conflito de serialização do banco retorna 409 sem repetição automátic
     conflict,
   )
   assert.equal(attempts, 1)
+})
+
+test("abertura exige fluxo (422) e rejeita setores enviados manualmente", async () => {
+  const { service, tx, load } = setup()
+  tx.$queryRaw = async () => []
+  await assert.rejects(
+    service.abrirOrdem(ctx, {
+      idProduto: 30,
+      quantidade: "2",
+      tamanho: "UNICO",
+    }),
+    (e) => e.status === 422 && /fluxo/.test(e.message),
+  )
+  const schema = load("src/modules/producao/producao.schema.ts").abrirSchema
+  assert.equal(
+    schema.safeParse({ idProduto: 30, quantidade: "2", setores: [7] }).success,
+    false,
+  )
+})
+
+test("snapshot copia nomes e sequência e é gravado na transação de abertura", async () => {
+  const { service, tx, calls, ordem } = setup()
+  tx.sequencias_automaticas = { upsert: async () => ({ ultimo_numero: 1n }) }
+  tx.ordem_producao.create = async () => ordem
+  await service.abrirOrdem(ctx, {
+    idProduto: 30,
+    quantidade: "2",
+    tamanho: "UNICO",
+  })
+  const query = calls.find(
+    ([kind, value]) =>
+      kind === "sql" &&
+      value.strings.join("").includes("INSERT INTO ordem_producao_snapshot"),
+  )[1]
+  assert.deepEqual(JSON.parse(query.values[2]), {
+    fluxoId: 3,
+    nome: "Padrão",
+    descricao: null,
+    setores: [
+      { id: 7, nome: "Corte", descricao: null, ordem: 1 },
+      { id: 8, nome: "Costura", descricao: null, ordem: 2 },
+    ],
+  })
+  assert.equal(calls[0][1].isolationLevel, "Serializable")
+})
+
+function setupEtapas() {
+  const state = setup()
+  const etapas = [
+    {
+      id: 101,
+      id_setor: 7,
+      ordem: 1,
+      status: "PENDENTE",
+      data_inicio: null,
+      data_conclusao: null,
+    },
+    {
+      id: 102,
+      id_setor: 8,
+      ordem: 2,
+      status: "PENDENTE",
+      data_inicio: null,
+      data_conclusao: null,
+    },
+  ]
+  const snapshot = {
+    fluxoId: 3,
+    nome: "Original",
+    descricao: null,
+    setores: [
+      { id: 7, nome: "Corte", ordem: 1 },
+      { id: 8, nome: "Costura", ordem: 2 },
+    ],
+  }
+  state.tx.$queryRaw = async (query) =>
+    (query.strings ?? query).join("").includes("ordem_producao_snapshot")
+      ? [{ snapshot }]
+      : etapas.map((e) => ({ ...e }))
+  state.tx.$executeRaw = async (query, ...values) => {
+    const etapa = etapas.find(
+      (e) => e.id === (query.strings ? query.values : values)[0],
+    )
+    const iniciar = (query.strings ?? query)
+      .join("")
+      .includes("SET status = 'EM_PRODUCAO'")
+    if (!etapa || etapa.status !== (iniciar ? "PENDENTE" : "EM_PRODUCAO"))
+      return 0
+    etapa.status = iniciar ? "EM_PRODUCAO" : "CONCLUIDA"
+    return 1
+  }
+  state.tx.ordem_producao.updateMany = async ({ data }) => {
+    Object.assign(state.ordem, data)
+    return { count: 1 }
+  }
+  state.ordem.status = "LIBERADA"
+  return { ...state, etapas, snapshot }
+}
+
+test("etapas respeitam sequência, início obrigatório, pausa e término automático", async () => {
+  const { service, ordem, etapas } = setupEtapas()
+  await assert.rejects(service.executarEtapa(ctx, 1, 102, true), conflict)
+  await assert.rejects(service.executarEtapa(ctx, 1, 101, false), conflict)
+  await service.executarEtapa(ctx, 1, 101, true)
+  assert.equal(ordem.status, "EM_PRODUCAO")
+  await assert.rejects(service.executarEtapa(ctx, 1, 101, true), conflict)
+  await assert.rejects(service.executarEtapa(ctx, 1, 102, false), conflict)
+  ordem.status = "PAUSADA"
+  await assert.rejects(service.executarEtapa(ctx, 1, 101, false), conflict)
+  ordem.status = "EM_PRODUCAO"
+  await service.executarEtapa(ctx, 1, 101, false)
+  assert.equal(ordem.status, "EM_PRODUCAO")
+  await assert.rejects(service.executarEtapa(ctx, 1, 101, false), conflict)
+  await service.executarEtapa(ctx, 1, 102, true)
+  await service.executarEtapa(ctx, 1, 102, false)
+  assert.equal(ordem.status, "CONCLUIDA")
+  assert.ok(etapas.every((e) => e.status === "CONCLUIDA"))
+  await assert.rejects(service.executarEtapa(ctx, 1, 102, false), conflict)
+})
+
+test("rotas legadas e troca de produto não contornam snapshot; GET preserva histórico", async () => {
+  const { service, ordem, snapshot } = setupEtapas()
+  await assert.rejects(
+    service.avancarOrdem(ctx, 1, {
+      statusEsperado: "LIBERADA",
+      setorEsperado: null,
+      statusDestino: "EM_PRODUCAO",
+    }),
+    conflict,
+  )
+  ordem.status = "PLANEJADA"
+  await assert.rejects(
+    service.alterarOrdem(ctx, 1, {
+      statusEsperado: "PLANEJADA",
+      idProduto: 99,
+    }),
+    conflict,
+  )
+  ordem.status = "EM_PRODUCAO"
+  ordem.data_inicio = new Date()
+  await assert.rejects(
+    service.encerrarOrdem(ctx, 1, {
+      statusEsperado: "EM_PRODUCAO",
+      setorEsperado: null,
+    }),
+    conflict,
+  )
+  const result = await service.consultarOrdem(ctx, 1)
+  assert.deepEqual(result.fluxoSnapshot, snapshot)
+  await assert.rejects(
+    service.consultarOrdem({ ...ctx, idEmpresa: 11 }, 1),
+    (e) => e.status === 404,
+  )
+})
+
+test("conflito na gravação da etapa impede atualizar a ordem e auditar", async () => {
+  const { service, tx, calls } = setupEtapas()
+  tx.$executeRaw = async () => 0
+  await assert.rejects(service.executarEtapa(ctx, 1, 101, true), conflict)
+  assert.equal(
+    calls.some(([kind]) => ["update", "auditoria", "movimento"].includes(kind)),
+    false,
+  )
+})
+
+test("schemas de cadastro validam ordem, duplicação, paginação e booleanos", () => {
+  const { load } = setup()
+  const { fluxoSchema, setorSchema, listarSchema, editarFluxoSchema } = load(
+    "src/modules/fluxos/fluxos.schema.ts",
+  )
+  for (const setores of [
+    [],
+    [1, 1],
+    [0],
+    Array.from({ length: 101 }, (_, i) => i + 1),
+  ])
+    assert.equal(
+      fluxoSchema.safeParse({ nome: "Fluxo", setores }).success,
+      false,
+    )
+  assert.deepEqual(
+    fluxoSchema.parse({ nome: " Fluxo ", setores: [8, 7] }).setores,
+    [8, 7],
+  )
+  assert.equal(
+    setorSchema.safeParse({ nome: "Corte", ativo: "false" }).success,
+    false,
+  )
+  assert.equal(editarFluxoSchema.safeParse({}).success, false)
+  for (const query of [
+    { pagina: "0" },
+    { limite: "101" },
+    { status: "qualquer" },
+    { desconhecido: "x" },
+  ])
+    assert.equal(listarSchema.safeParse(query).success, false)
+})
+
+test("CRUD e associação validam empresa, setores ativos, vínculos e transações", async () => {
+  const data = {
+    id: 3,
+    nome: "Padrão",
+    descricao: null,
+    status: "ATIVO",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }
+  let uso = false
+  let ativo = true
+  let empresa = 10
+  let associado = null
+  const writes = []
+  const repo = {
+    buscar: async (_tx, ctx, tipo, id) => {
+      if (ctx.idEmpresa !== empresa) {
+        const e = new Error("Não encontrado")
+        e.status = 404
+        throw e
+      }
+      return {
+        ...data,
+        id,
+        status: tipo === "setor" && !ativo ? "INATIVO" : "ATIVO",
+      }
+    },
+    listar: async () => ({ rows: [data], total: 1 }),
+    setoresFluxo: async () => [
+      { ...data, id: 8, ordem: 1 },
+      { ...data, id: 7, ordem: 2 },
+    ],
+    gravar: async (...args) => {
+      writes.push(["gravar", ...args])
+      return 3
+    },
+    substituirSetores: async (_tx, id, setores) =>
+      writes.push(["setores", id, setores]),
+    auditarCadastro: async () => {},
+    produtosDoFluxo: async () => [],
+    associacao: async () => associado,
+    emUso: async () => uso,
+    remover: async () => writes.push(["remover"]),
+    produto: async (_tx, ctx) => {
+      if (ctx.idEmpresa !== empresa) {
+        const e = new Error("Não encontrado")
+        e.status = 404
+        throw e
+      }
+      return { id: 50 }
+    },
+    associar: async (_tx, ctx, id, fluxoId) => {
+      associado = fluxoId
+      writes.push(["associar", ctx.idEmpresa, id, fluxoId])
+    },
+  }
+  const { load, calls } = setup({ "./fluxos.repository": repo })
+  const service = load("src/modules/fluxos/fluxos.service.ts")
+  const saved = await service.salvar(ctx, "fluxo", {
+    nome: "Novo",
+    setores: [8, 7],
+  })
+  assert.deepEqual(
+    saved.fluxo.setores.map((s) => s.id),
+    [8, 7],
+  )
+  assert.deepEqual(
+    writes.find(([kind]) => kind === "setores"),
+    ["setores", 3, [8, 7]],
+  )
+  assert.ok(
+    calls.every(
+      ([kind, value]) =>
+        kind !== "transaction" || value.isolationLevel === "Serializable",
+    ),
+  )
+  const list = await service.listar(ctx, "fluxo", { pagina: 1, limite: 20 })
+  assert.equal(list.paginacao.total, 1)
+  ativo = false
+  await assert.rejects(
+    service.salvar(ctx, "fluxo", { nome: "Inválido", setores: [7] }),
+    (e) => e.status === 422,
+  )
+  uso = true
+  for (const tipo of ["setor", "fluxo"])
+    await assert.rejects(service.excluir(ctx, tipo, 3), conflict)
+  uso = false
+  await service.excluir(ctx, "fluxo", 3)
+  await service.associar(ctx, 30, 3)
+  await service.associar(ctx, 30, null)
+  assert.deepEqual(writes.at(-1), ["associar", 10, 30, null])
+  empresa = 11
+  await assert.rejects(service.associar(ctx, 30, 3), (e) => e.status === 404)
+})
+
+test("CRUD HTTP usa permissões de ler/excluir e produto usa recurso PRODUTOS", async () => {
+  const { load, vinculo } = setup()
+  const { handler } = load("src/modules/fluxos/router.ts")
+  const req = new Request("http://localhost/api/setores")
+  assert.equal((await handler("setor", "listar")(req)).status, 403)
+  assert.equal(
+    (
+      await handler("setor", "excluir")(req, {
+        params: Promise.resolve({ id: "3" }),
+      })
+    ).status,
+    403,
+  )
+  vinculo.permissoes_usuario[0].pode_editar = true
+  assert.equal(
+    (
+      await handler("fluxo", "associar")(
+        new Request("http://localhost", {
+          method: "PUT",
+          body: '{"fluxoId":3}',
+        }),
+        { params: Promise.resolve({ id: "30" }) },
+      )
+    ).status,
+    403,
+  )
+})
+
+test("SQL de listagem parametriza filtros, empresa e paginação", async () => {
+  const { load, tx } = setup()
+  const queries = []
+  tx.$queryRaw = async (query) => {
+    queries.push(query)
+    return query.strings.join("").includes("COUNT(*)") ? [{ total: 0n }] : []
+  }
+  const repo = load("src/modules/fluxos/fluxos.repository.ts")
+  const nome = "' OR 1=1 --"
+  await repo.listar(tx, ctx, "setor", {
+    nome,
+    status: "INATIVO",
+    pagina: 2,
+    limite: 10,
+  })
+  assert.equal(queries[0].sql.includes(nome), false)
+  assert.deepEqual(queries[0].values, [10, nome, "INATIVO", 10, 10])
+  assert.match(queries[0].sql, /ORDER BY nome, id/)
+})
+
+test("erros SQL de unicidade, FK e concorrência retornam 409", async () => {
+  const { load, prisma } = setup()
+  const { transacao } = load("src/modules/producao/producao.repository.ts")
+  for (const code of ["1062", "1451", "1452", "1213", "1205"]) {
+    prisma.$transaction = async () => {
+      throw new runtime.PrismaClientKnownRequestError("SQL failure", {
+        code: "P2010",
+        clientVersion: "test",
+        meta: { code },
+      })
+    }
+    await assert.rejects(
+      transacao(async () => null),
+      conflict,
+    )
+  }
+})
+
+test("CRUD HTTP: respostas 201/200/204 e rejeição de JSON/query inválidos", async () => {
+  const overrides = {}
+  const { load, vinculo } = setup(overrides)
+  const { ProducaoError } = load("src/modules/producao/producao.repository.ts")
+  vinculo.usuarios.nivel_acesso = "ADMIN"
+  let failure = false
+  overrides["./fluxos.service"] = {
+    salvar: async (_ctx, tipo, input) => ({ [tipo]: { id: 7, ...input } }),
+    consultar: async () => ({ setor: { id: 7, nome: "Corte" } }),
+    listar: async () => ({
+      setores: [],
+      paginacao: { pagina: 1, limite: 20, total: 0, totalPaginas: 0 },
+    }),
+    excluir: async () => {
+      if (failure) throw new ProducaoError(409, "Vinculado")
+    },
+    associar: async (_ctx, id, fluxoId) => ({ produto: { id, fluxoId } }),
+  }
+  const { handler } = load("src/modules/fluxos/router.ts")
+  const context = { params: Promise.resolve({ id: "7" }) }
+  const req = (body, query = "") =>
+    new Request(`http://localhost/api/setores${query}`, {
+      method: "POST",
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    })
+  const created = await handler("setor", "criar")(req({ nome: "Corte" }))
+  assert.equal(created.status, 201)
+  assert.deepEqual(await created.json(), { setor: { id: 7, nome: "Corte" } })
+  assert.equal(created.headers.get("cache-control"), "no-store")
+  for (const operation of ["consultar", "listar"])
+    assert.equal(
+      (await handler("setor", operation)(req(), context)).status,
+      200,
+    )
+  assert.equal(
+    (await handler("setor", "editar")(req({ ativo: false }), context)).status,
+    200,
+  )
+  const deleted = await handler("setor", "excluir")(req(), context)
+  assert.equal(deleted.status, 204)
+  assert.equal(await deleted.text(), "")
+  assert.equal(
+    (await handler("fluxo", "associar")(req({ fluxoId: 3 }), context)).status,
+    200,
+  )
+  assert.equal(
+    (await handler("fluxo", "desassociar")(req(), context)).status,
+    204,
+  )
+  failure = true
+  assert.equal((await handler("setor", "excluir")(req(), context)).status, 409)
+  assert.equal((await handler("setor", "criar")(req("{"))).status, 400)
+  assert.equal(
+    (await handler("setor", "listar")(req(undefined, "?pagina=1&pagina=2")))
+      .status,
+    400,
+  )
+  assert.equal(
+    (
+      await handler("setor", "consultar")(req(), {
+        params: Promise.resolve({ id: "1e1" }),
+      })
+    ).status,
+    400,
+  )
+})
+
+test("inativar setor não impede pausar/retomar OP com snapshot", async () => {
+  const { service, tx, ordem } = setupEtapas()
+  await service.executarEtapa(ctx, 1, 101, true)
+  tx.setores.findFirst = async () => null
+  await service.avancarOrdem(ctx, 1, {
+    statusEsperado: "EM_PRODUCAO",
+    setorEsperado: 7,
+    statusDestino: "PAUSADA",
+  })
+  assert.equal(ordem.status, "PAUSADA")
+  await service.avancarOrdem(ctx, 1, {
+    statusEsperado: "PAUSADA",
+    setorEsperado: 7,
+    statusDestino: "EM_PRODUCAO",
+  })
+  assert.equal(ordem.status, "EM_PRODUCAO")
+  await service.executarEtapa(ctx, 1, 101, false)
+})
+
+test("Prisma 7: DriverAdapterError real e encapsulado são conflitos; schema/conexão não", async () => {
+  const { DriverAdapterError } = require("@prisma/driver-adapter-utils")
+  const { load, prisma } = setup()
+  const { transacao } = load("src/modules/producao/producao.repository.ts")
+  for (const cause of [
+    {
+      kind: "UniqueConstraintViolation",
+      originalCode: "1062",
+      constraint: { index: "uk_nome" },
+    },
+    {
+      kind: "ForeignKeyConstraintViolation",
+      originalCode: "1451",
+      constraint: { fields: ["id_setor"] },
+    },
+    { kind: "TransactionWriteConflict", originalCode: "1213" },
+    {
+      kind: "mysql",
+      code: 1205,
+      originalCode: "1205",
+      message: "Lock timeout",
+      state: "HY000",
+    },
+  ]) {
+    const adapterError = new DriverAdapterError(cause)
+    for (const error of [
+      adapterError,
+      new runtime.PrismaClientKnownRequestError("raw failure", {
+        code: "P2010",
+        clientVersion: "7.10.0",
+        meta: { driverAdapterError: adapterError },
+      }),
+    ]) {
+      prisma.$transaction = async () => {
+        throw error
+      }
+      await assert.rejects(
+        transacao(async () => null),
+        conflict,
+      )
+    }
+  }
+  for (const cause of [
+    { kind: "ColumnNotFound", originalCode: "1054", column: "ausente" },
+    { kind: "TableDoesNotExist", originalCode: "1146", table: "ausente" },
+    { kind: "ConnectionClosed", originalCode: "2006" },
+  ]) {
+    const error = new DriverAdapterError(cause)
+    prisma.$transaction = async () => {
+      throw error
+    }
+    await assert.rejects(
+      transacao(async () => null),
+      (e) => e === error,
+    )
+  }
+})
+
+test("GET fluxo do produto usa pode_ler de PRODUTOS e retorna null sem associação", async () => {
+  const { load, vinculo, tx } = setup()
+  const router = load("src/modules/fluxos/router.ts")
+  const request = new Request("http://localhost/api/produtos/30/fluxo")
+  const context = { params: Promise.resolve({ id: "30" }) }
+  assert.equal(
+    (await router.handler("fluxo", "consultarAssociacao")(request, context))
+      .status,
+    403,
+  )
+  vinculo.permissoes_usuario.push({
+    recurso: "PRODUTOS",
+    pode_ler: true,
+    pode_editar: false,
+  })
+  tx.$queryRaw = async () => []
+  const response = await router.handler("fluxo", "consultarAssociacao")(
+    request,
+    context,
+  )
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), {
+    produto: { id: 30, fluxoId: null },
+    fluxo: null,
+  })
+  tx.produto_empresa.findUnique = async () => null
+  assert.equal(
+    (await router.handler("fluxo", "consultarAssociacao")(request, context))
+      .status,
+    404,
+  )
 })

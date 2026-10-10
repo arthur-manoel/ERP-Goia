@@ -8,7 +8,8 @@ import {
 
 export async function autorizar(
   request: Request,
-  acao: "criar" | "editar",
+  acao: "ler" | "criar" | "editar" | "excluir",
+  recurso: "ORDENS_PRODUCAO" | "PRODUTOS" = "ORDENS_PRODUCAO",
 ): Promise<Contexto | Response> {
   const auth = await requireRole(request, ["ADMINISTRACAO", "PRODUCAO"])
   if (auth.error) return auth.error
@@ -39,12 +40,9 @@ export async function autorizar(
     vinculo.nivel_acesso === "EMPRESA" ||
     vinculo.usuarios.nivel_acesso === "ADMIN"
   const permissao = vinculo.permissoes_usuario.find(
-    (item) => item.recurso === "ORDENS_PRODUCAO",
+    (item) => item.recurso === recurso,
   )
-  if (
-    !admin &&
-    !(acao === "criar" ? permissao?.pode_criar : permissao?.pode_editar)
-  )
+  if (!admin && !permissao?.[`pode_${acao}`])
     throw new ProducaoError(403, "Acesso negado.")
   return { idUsuario, idEmpresa: vinculo.id_empresa }
 }
