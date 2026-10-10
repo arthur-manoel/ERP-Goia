@@ -13,6 +13,7 @@ import {
   MapPin,
   Network,
   Package,
+  PackageSearch,
   Palette,
   Receipt,
   Route,
@@ -130,6 +131,11 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Vendas",
     itens: [
       { titulo: "Pedidos de venda", href: "/vendas/pedidos", icone: FileText },
+      {
+        titulo: "Situação dos pedidos",
+        href: "/vendas/pedidos/situacao",
+        icone: PackageSearch,
+      },
       { titulo: "Vendas", href: "/vendas", icone: BadgeDollarSign },
     ],
   },
