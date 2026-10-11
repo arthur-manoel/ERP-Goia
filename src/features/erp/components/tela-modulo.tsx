@@ -1,6 +1,4 @@
 "use client"
-import { erroIntervalo } from "@/lib/validacao/datas"
-import { LIMITES } from "@/lib/validacao/texto"
 import { PageHeader } from "@/components/layout/page-header"
 import {
   Empty,
@@ -119,7 +117,6 @@ export function TelaModulo({
   const [filter, setFilter] = useState("all")
   const [dueFrom, setDueFrom] = useState("")
   const [dueTo, setDueTo] = useState("")
-  const erroVencimento = erroIntervalo(dueFrom, dueTo)
   const [page, setPage] = useState(0)
   const [sort, setSort] = useState<boolean | null>(null)
   const [form, setForm] = useState<{
@@ -472,7 +469,6 @@ export function TelaModulo({
             aria-label="Buscar registros"
             className="pl-9"
             placeholder="Buscar por nome ou código..."
-            maxLength={LIMITES.busca}
             value={search}
             onChange={(event) => {
               setSearch(event.target.value)
@@ -494,44 +490,35 @@ export function TelaModulo({
           ]}
         />
         {collection === "transactions" && (
-          <div className="flex w-full flex-col gap-1 sm:w-auto">
-            <div className="grid w-full grid-cols-2 gap-3 sm:w-auto">
-              <label className="space-y-1 text-xs text-muted-foreground">
-                Vencimento de
-                <Input
-                  type="date"
-                  aria-label="Vencimento inicial"
-                  className="mt-1 sm:w-40"
-                  value={dueFrom}
-                  max={dueTo || undefined}
-                  aria-invalid={!!erroVencimento}
-                  onChange={(event) => {
-                    setDueFrom(event.target.value)
-                    setPage(0)
-                  }}
-                />
-              </label>
-              <label className="space-y-1 text-xs text-muted-foreground">
-                Vencimento até
-                <Input
-                  type="date"
-                  aria-label="Vencimento final"
-                  className="mt-1 sm:w-40"
-                  value={dueTo}
-                  min={dueFrom || undefined}
-                  aria-invalid={!!erroVencimento}
-                  onChange={(event) => {
-                    setDueTo(event.target.value)
-                    setPage(0)
-                  }}
-                />
-              </label>
-            </div>
-            {erroVencimento && (
-              <p role="alert" className="text-sm text-destructive">
-                {erroVencimento}
-              </p>
-            )}
+          <div className="grid w-full grid-cols-2 gap-3 sm:w-auto">
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Vencimento de
+              <Input
+                type="date"
+                aria-label="Vencimento inicial"
+                className="mt-1 sm:w-40"
+                value={dueFrom}
+                max={dueTo || undefined}
+                onChange={(event) => {
+                  setDueFrom(event.target.value)
+                  setPage(0)
+                }}
+              />
+            </label>
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Vencimento até
+              <Input
+                type="date"
+                aria-label="Vencimento final"
+                className="mt-1 sm:w-40"
+                value={dueTo}
+                min={dueFrom || undefined}
+                onChange={(event) => {
+                  setDueTo(event.target.value)
+                  setPage(0)
+                }}
+              />
+            </label>
           </div>
         )}
         {(search || filter !== "all" || dueFrom || dueTo) && (

@@ -19,9 +19,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
-import { IntervaloDatas } from "@/components/ui/intervalo-datas"
-import { erroIntervalo } from "@/lib/validacao/datas"
-import { LIMITES } from "@/lib/validacao/texto"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -88,16 +85,13 @@ export function TelaMovimentacoes() {
     label: row.name,
   }))
 
-  const periodoInvalido = erroIntervalo(de, ate) !== null
-
   const movimentacoesFiltradas = MOVIMENTACOES.filter((mov) => {
     const combinaBusca = produto(mov.produtoId)
       .toLowerCase()
       .includes(busca.toLowerCase())
     const combinaProduto = !produtoId || mov.produtoId === produtoId
     const combinaTipo = !tipo || mov.tipo === tipo
-    const combinaPeriodo =
-      !periodoInvalido && (!de || mov.data >= de) && (!ate || mov.data <= ate)
+    const combinaPeriodo = (!de || mov.data >= de) && (!ate || mov.data <= ate)
     return combinaBusca && combinaProduto && combinaTipo && combinaPeriodo
   })
 
@@ -140,7 +134,6 @@ export function TelaMovimentacoes() {
             aria-label="Buscar por produto"
             className="pl-9"
             placeholder="Buscar por produto..."
-            maxLength={LIMITES.busca}
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
           />
@@ -164,12 +157,23 @@ export function TelaMovimentacoes() {
             { value: "Saída", label: "Saída" },
           ]}
         />
-        <IntervaloDatas
-          de={de}
-          ate={ate}
-          onChangeDe={setDe}
-          onChangeAte={setAte}
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            aria-label="De"
+            value={de}
+            onChange={(event) => setDe(event.target.value)}
+            className="w-[160px]"
+          />
+          <span className="text-sm text-muted-foreground">até</span>
+          <Input
+            type="date"
+            aria-label="Até"
+            value={ate}
+            onChange={(event) => setAte(event.target.value)}
+            className="w-[160px]"
+          />
+        </div>
         {filtrosAtivos && (
           <Button variant="ghost" onClick={limparFiltros}>
             Limpar filtros
@@ -206,9 +210,7 @@ export function TelaMovimentacoes() {
                   <TableCell className="text-right tabular-nums">
                     {formatarQuantidade(mov.quantidade)}
                   </TableCell>
-                  <TableCell className="max-w-xs truncate" title={mov.origem}>
-                    {mov.origem}
-                  </TableCell>
+                  <TableCell>{mov.origem}</TableCell>
                 </TableRow>
               ))
             ) : (

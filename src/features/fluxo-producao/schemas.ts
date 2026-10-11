@@ -1,6 +1,5 @@
 import { z } from "zod"
-import { texto, textoOpcional } from "@/features/erp/validacao"
-import { LIMITES } from "@/lib/validacao/texto"
+import { texto } from "@/features/erp/validacao"
 
 /**
  * Fluxo de Produção = sequência de setores existentes pela qual uma peça
@@ -13,7 +12,12 @@ export const etapaFluxoSchema = z.object({
 
 export const fluxoProducaoSchema = z.object({
   name: texto("Nome", 2),
-  description: textoOpcional(LIMITES.descricaoCurta),
+  description: z
+    .string()
+    .trim()
+    .max(255, "Use até 255 caracteres.")
+    .optional()
+    .transform((value) => value ?? ""),
   status: z.enum(["Ativo", "Inativo"]),
   steps: z
     .array(etapaFluxoSchema)
@@ -25,6 +29,4 @@ export const fluxoProducaoSchema = z.object({
     ),
 })
 
-export type FluxoProducao = z.infer<typeof fluxoProducaoSchema> & {
-  id: string
-}
+export type FluxoProducao = z.infer<typeof fluxoProducaoSchema> & { id: string }

@@ -15,13 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import {
-  RodapeLimite,
-  idRodapeLimite,
-} from "@/components/ui/contador-caracteres"
-import { LIMITES, tetoDigitacao } from "@/lib/validacao/texto"
 import { useErp } from "@/features/erp/components/provedor"
 import { setorSchema, type Setor } from "../schemas"
 
@@ -51,9 +46,6 @@ export function FormularioSetor({
     },
   })
   const pendente = form.formState.isSubmitting
-  const nome = form.watch("name") ?? ""
-  const tipo = form.watch("type") ?? ""
-  const descricao = form.watch("description") ?? ""
 
   function erro(campo: keyof ValoresFormulario) {
     return form.formState.errors[campo]?.message
@@ -99,23 +91,19 @@ export function FormularioSetor({
           onSubmit={form.handleSubmit(salvar)}
           className="space-y-5"
         >
-          <fieldset disabled={pendente} className="min-w-0 space-y-5">
+          <fieldset disabled={pendente} className="space-y-5">
             <Field data-invalid={!!erro("name")}>
               <FieldLabel htmlFor="setor-nome">Nome *</FieldLabel>
               <Input
                 id="setor-nome"
                 placeholder="Ex.: Corte"
-                maxLength={tetoDigitacao(LIMITES.nomeSetor)}
                 aria-invalid={!!erro("name")}
-                aria-describedby={idRodapeLimite("setor-nome")}
+                aria-describedby={erro("name") ? "setor-nome-erro" : undefined}
                 {...form.register("name")}
               />
-              <RodapeLimite
-                id="setor-nome"
-                valor={nome}
-                limite={LIMITES.nomeSetor}
-                erro={erro("name")}
-              />
+              {erro("name") && (
+                <FieldError id="setor-nome-erro">{erro("name")}</FieldError>
+              )}
             </Field>
 
             <Field data-invalid={!!erro("type")}>
@@ -123,17 +111,10 @@ export function FormularioSetor({
               <Input
                 id="setor-tipo"
                 placeholder='Ex.: Produção, Apoio — em branco usa "Outro"'
-                maxLength={tetoDigitacao(LIMITES.tipoSetor)}
                 aria-invalid={!!erro("type")}
-                aria-describedby={idRodapeLimite("setor-tipo")}
                 {...form.register("type")}
               />
-              <RodapeLimite
-                id="setor-tipo"
-                valor={tipo}
-                limite={LIMITES.tipoSetor}
-                erro={erro("type")}
-              />
+              {erro("type") && <FieldError>{erro("type")}</FieldError>}
             </Field>
 
             <Field data-invalid={!!erro("description")}>
@@ -143,22 +124,17 @@ export function FormularioSetor({
               <Textarea
                 id="setor-descricao"
                 placeholder="Detalhes da atividade realizada neste setor."
-                maxLength={tetoDigitacao(LIMITES.descricaoCurta)}
                 aria-invalid={!!erro("description")}
-                aria-describedby={idRodapeLimite("setor-descricao")}
                 {...form.register("description")}
               />
-              <RodapeLimite
-                id="setor-descricao"
-                valor={descricao}
-                limite={LIMITES.descricaoCurta}
-                erro={erro("description")}
-              />
+              {erro("description") && (
+                <FieldError>{erro("description")}</FieldError>
+              )}
             </Field>
 
             {form.formState.errors.root?.server && (
               <Alert variant="destructive">
-                <AlertDescription className="[overflow-wrap:anywhere]">
+                <AlertDescription>
                   {form.formState.errors.root.server.message}
                 </AlertDescription>
               </Alert>

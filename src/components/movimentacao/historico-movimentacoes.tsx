@@ -19,9 +19,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
-import { IntervaloDatas } from "@/components/ui/intervalo-datas"
-import { erroIntervalo } from "@/lib/validacao/datas"
-import { LIMITES } from "@/lib/validacao/texto"
 import {
   Select,
   SelectContent,
@@ -82,19 +79,14 @@ export function HistoricoMovimentacoes({
   const nomeItem = (id: number) =>
     itens.find((item) => item.id === id)?.nome ?? "Item não encontrado"
 
-  const periodoInvalido = erroIntervalo(de, ate) !== null
-
   const historicoFiltrado = HISTORICO.filter((registro) => {
     const combinaBusca = nomeItem(registro.idItem)
       .toLowerCase()
       .includes(busca.toLowerCase())
     const combinaItem = idItem === "todos" || registro.idItem === Number(idItem)
     const combinaTipo = tipo === "todos" || registro.tipo === tipo
-    // Período invertido não filtra com datas erradas: a tela avisa e não lista nada.
     const combinaPeriodo =
-      !periodoInvalido &&
-      (!de || registro.data >= de) &&
-      (!ate || registro.data <= ate)
+      (!de || registro.data >= de) && (!ate || registro.data <= ate)
     return combinaBusca && combinaItem && combinaTipo && combinaPeriodo
   })
 
@@ -126,7 +118,6 @@ export function HistoricoMovimentacoes({
         <div className="flex flex-wrap items-center gap-3">
           <Input
             placeholder="Buscar por item..."
-            maxLength={LIMITES.busca}
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             className="max-w-xs"
@@ -163,12 +154,23 @@ export function HistoricoMovimentacoes({
               ))}
             </SelectContent>
           </Select>
-          <IntervaloDatas
-            de={de}
-            ate={ate}
-            onChangeDe={setDe}
-            onChangeAte={setAte}
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              aria-label="De"
+              value={de}
+              onChange={(e) => setDe(e.target.value)}
+              className="w-[160px]"
+            />
+            <span className="text-sm text-muted-foreground">até</span>
+            <Input
+              type="date"
+              aria-label="Até"
+              value={ate}
+              onChange={(e) => setAte(e.target.value)}
+              className="w-[160px]"
+            />
+          </div>
         </div>
 
         <div className="overflow-hidden rounded-md border">
@@ -198,12 +200,7 @@ export function HistoricoMovimentacoes({
                     <TableCell className="text-right tabular-nums">
                       {registro.quantidade}
                     </TableCell>
-                    <TableCell
-                      className="max-w-xs truncate"
-                      title={registro.observacao ?? undefined}
-                    >
-                      {registro.observacao ?? "—"}
-                    </TableCell>
+                    <TableCell>{registro.observacao ?? "—"}</TableCell>
                   </TableRow>
                 ))
               ) : (

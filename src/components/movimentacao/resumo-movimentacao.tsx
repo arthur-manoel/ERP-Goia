@@ -14,9 +14,7 @@ function Linha({
   return (
     <>
       <dt className="text-muted-foreground">{rotulo}</dt>
-      <dd className="min-w-0 font-medium [overflow-wrap:anywhere]">
-        {children}
-      </dd>
+      <dd className="font-medium break-words">{children}</dd>
     </>
   )
 }
@@ -31,7 +29,7 @@ export function ResumoMovimentacao({
   const casas = quantidade.split(".")[1]?.length ?? 0
 
   return (
-    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-lg border bg-muted/50 p-3 text-sm">
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg border bg-muted/50 p-3 text-sm">
       <Linha rotulo="Operação">{rotuloTipo[tipo]}</Linha>
       <Linha rotulo="Item">
         {item.nome}{" "}

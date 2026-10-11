@@ -21,8 +21,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { IntervaloDatas } from "@/components/ui/intervalo-datas"
-import { erroIntervalo } from "@/lib/validacao/datas"
+import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -88,12 +87,8 @@ export function RelatorioResultado() {
   const client = (id: string) =>
     data.clients.find((row) => row.id === id)?.name ?? "Cadastro não encontrado"
 
-  // Data em branco continua valendo como período aberto; só o período invertido
-  // (final antes da inicial) é bloqueado: a tela avisa e zera os totais.
-  const periodoValido = erroIntervalo(de, ate) === null
-
   const noPeriodo = data.transactions.filter(
-    (row) => periodoValido && row.dueDate >= de && row.dueDate <= ate,
+    (row) => row.dueDate >= de && row.dueDate <= ate,
   )
 
   const receita = noPeriodo
@@ -110,12 +105,23 @@ export function RelatorioResultado() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <IntervaloDatas
-          de={de}
-          ate={ate}
-          onChangeDe={setDe}
-          onChangeAte={setAte}
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            aria-label="De"
+            value={de}
+            onChange={(e) => setDe(e.target.value)}
+            className="w-[160px]"
+          />
+          <span className="text-sm text-muted-foreground">até</span>
+          <Input
+            type="date"
+            aria-label="Até"
+            value={ate}
+            onChange={(e) => setAte(e.target.value)}
+            className="w-[160px]"
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">

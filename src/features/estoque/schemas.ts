@@ -1,12 +1,5 @@
 import { z } from "zod"
-import {
-  dinheiro,
-  numeroNaoNegativo,
-  texto,
-  textoLivre,
-} from "@/features/erp/validacao"
-import { unidadeExigeInteiro } from "@/lib/unidades"
-import { LIMITES } from "@/lib/validacao/texto"
+import { dinheiro, numeroNaoNegativo, texto } from "@/features/erp/validacao"
 
 export const unidades = [
   { value: "un.", label: "Unidade (un.)" },
@@ -26,8 +19,8 @@ export const unidades = [
   { value: "mL", label: "Mililitro (mL)" },
 ] as const
 
-// Regra única em "@/lib/unidades" (também usada na Movimentação de estoque).
-export const unidadeInteira = (unidade: string) => unidadeExigeInteiro(unidade)
+export const unidadeInteira = (unidade: string) =>
+  ["un.", "pc", "par", "dz", "cx", "pct", "rolo"].includes(unidade)
 
 const quantidadeInsumo = numeroNaoNegativo.refine(
   (value) => Math.abs(value * 1000 - Math.round(value * 1000)) < 0.000001,
@@ -43,7 +36,7 @@ export const insumoSchema = z
     cost: dinheiro,
     quantity: quantidadeInsumo,
     minimum: quantidadeInsumo,
-    description: textoLivre(LIMITES.descricaoLonga),
+    description: z.string().trim().max(500, "Use até 500 caracteres."),
   })
   .superRefine((data, ctx) => {
     if (!unidadeInteira(data.unit)) return
@@ -74,7 +67,7 @@ export const materialSchema = z
   .object({
     code: texto("Código"),
     name: texto("Nome", 3),
-    description: textoLivre(LIMITES.descricaoLonga),
+    description: z.string().trim().max(500, "Use até 500 caracteres."),
     category: z.enum(["Tecido", "Aviamento", "Produto pronto"]),
     unit: z.enum(unidades.map((item) => item.value)),
     quantity: numeroNaoNegativo,

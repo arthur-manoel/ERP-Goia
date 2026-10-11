@@ -35,11 +35,6 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import {
-  RodapeLimite,
-  idRodapeLimite,
-} from "@/components/ui/contador-caracteres"
-import { LIMITES, tetoDigitacao } from "@/lib/validacao/texto"
-import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -157,8 +152,6 @@ export function FormularioPedido({
   ) {
     const erro = form.getFieldState(nome, form.formState).error
     const id = `pedido-${nome.replaceAll(".", "-")}`
-    const limite =
-      nome === "code" && !configuracao.opcoes ? LIMITES.nome : undefined
     return (
       <Field data-invalid={!!erro}>
         <FieldLabel htmlFor={id}>{rotulo} *</FieldLabel>
@@ -189,26 +182,14 @@ export function FormularioPedido({
             type={configuracao.tipo ?? "text"}
             min={configuracao.min}
             step={configuracao.step}
-            maxLength={limite ? tetoDigitacao(limite) : undefined}
             aria-invalid={!!erro}
-            aria-describedby={
-              limite ? idRodapeLimite(id) : erro ? `${id}-erro` : undefined
-            }
+            aria-describedby={erro ? `${id}-erro` : undefined}
             {...form.register(nome, {
               valueAsNumber: configuracao.tipo === "number",
             })}
           />
         )}
-        {limite ? (
-          <RodapeLimite
-            id={id}
-            valor={String(form.watch(nome) ?? "")}
-            limite={limite}
-            erro={erro?.message}
-          />
-        ) : (
-          erro && <FieldError id={`${id}-erro`}>{erro.message}</FieldError>
-        )}
+        {erro && <FieldError id={`${id}-erro`}>{erro.message}</FieldError>}
       </Field>
     )
   }

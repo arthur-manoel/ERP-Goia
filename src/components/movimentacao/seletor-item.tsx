@@ -19,7 +19,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item"
 import { formatarQuantidade } from "@/lib/formatacao"
-import { LIMITES } from "@/lib/validacao/texto"
 import type { ItemMovimentavel } from "@/lib/movimentacao/tipos"
 
 /** Saldo do item no estoque escolhido. Ainda não existe: virá da API. */
@@ -76,7 +75,6 @@ export function SeletorItem({
           id={id}
           placeholder="Buscar por nome, código ou identificador"
           autoComplete="off"
-          maxLength={LIMITES.busca}
           aria-invalid={invalido}
           showClear
         />
@@ -105,10 +103,8 @@ export function SeletorItem({
             <Package aria-hidden />
           </ItemMedia>
           <ItemContent>
-            <ItemTitle className="[overflow-wrap:anywhere]">
-              {valor.nome}
-            </ItemTitle>
-            <ItemDescription className="[overflow-wrap:anywhere]">
+            <ItemTitle>{valor.nome}</ItemTitle>
+            <ItemDescription>
               Código {valor.codigo} · Identificador {valor.id}
               {saldo &&
                 ` · Saldo em ${saldo.estoque}: ${formatarQuantidade(saldo.quantidade)} ${valor.unidade}`}

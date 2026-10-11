@@ -28,12 +28,8 @@ export function VisualizadorFluxo({
             )}
             <Badge
               variant={setor?.status === "Ativo" ? "outline" : "destructive"}
-              className="max-w-48"
-              title={setor?.name}
             >
-              <span className="truncate">
-                {indice + 1}. {setor?.name ?? "Setor removido"}
-              </span>
+              {indice + 1}. {setor?.name ?? "Setor removido"}
             </Badge>
           </Fragment>
         )
