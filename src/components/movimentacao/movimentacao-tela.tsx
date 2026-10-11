@@ -33,7 +33,16 @@ import {
 } from "@/components/ui/input-group"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { LIMITE_OBSERVACAO } from "@/lib/movimentacao/validacao"
+import {
+  LIMITE_OBSERVACAO,
+  TAMANHO_MAXIMO_QUANTIDADE,
+} from "@/lib/movimentacao/validacao"
+import { unidadeExigeInteiro } from "@/lib/unidades"
+import { tetoDigitacao } from "@/lib/validacao/texto"
+import {
+  RodapeLimite,
+  idRodapeLimite,
+} from "@/components/ui/contador-caracteres"
 import {
   TIPOS_MOVIMENTACAO,
   rotuloTipo,
@@ -58,6 +67,9 @@ export function MovimentacaoTela({ opcoes }: { opcoes: OpcoesMovimentacao }) {
   const f = useFormularioMovimentacao(opcoes)
   const { tipo, campos, erros, fase, resumo } = f
   const bloqueado = fase !== "editando"
+  const unidadeItem = campos.item?.unidade
+  const quantidadeInteira = unidadeExigeInteiro(unidadeItem)
+  const erroQuantidadeTela = erros.quantidade ?? f.avisoQuantidade
 
   if (opcoes.itens.length === 0 || opcoes.estoques.length === 0) {
     return (
@@ -175,17 +187,19 @@ export function MovimentacaoTela({ opcoes }: { opcoes: OpcoesMovimentacao }) {
           </div>
         )}
 
-        <Field data-invalid={!!erros.quantidade}>
+        <Field data-invalid={!!erroQuantidadeTela}>
           <FieldLabel htmlFor="mov-quantidade">Quantidade</FieldLabel>
           <InputGroup className="sm:max-w-xs">
             <InputGroupInput
               id="mov-quantidade"
-              inputMode="decimal"
+              inputMode={quantidadeInteira ? "numeric" : "decimal"}
               autoComplete="off"
               placeholder="0"
+              maxLength={TAMANHO_MAXIMO_QUANTIDADE + 8}
               value={campos.quantidade}
               onChange={(e) => f.atualizarCampo("quantidade", e.target.value)}
-              aria-invalid={!!erros.quantidade}
+              aria-invalid={!!erroQuantidadeTela}
+              aria-describedby="mov-quantidade-ajuda"
               disabled={bloqueado}
             />
             {campos.item && (
@@ -194,13 +208,17 @@ export function MovimentacaoTela({ opcoes }: { opcoes: OpcoesMovimentacao }) {
               </InputGroupAddon>
             )}
           </InputGroup>
-          {erros.quantidade ? (
-            <FieldError>{erros.quantidade}</FieldError>
-          ) : (
-            <FieldDescription>
-              Use vírgula para decimais, ex.: 12,5.
-            </FieldDescription>
-          )}
+          <div id="mov-quantidade-ajuda">
+            {erroQuantidadeTela ? (
+              <FieldError>{erroQuantidadeTela}</FieldError>
+            ) : (
+              <FieldDescription>
+                {quantidadeInteira
+                  ? `Este item é contado em ${unidadeItem}: use apenas números inteiros, ex.: 12.`
+                  : "Use vírgula para decimais, ex.: 12,5."}
+              </FieldDescription>
+            )}
+          </div>
         </Field>
 
         <Field data-invalid={!!erros.observacao}>
@@ -210,13 +228,19 @@ export function MovimentacaoTela({ opcoes }: { opcoes: OpcoesMovimentacao }) {
           <Textarea
             id="mov-observacao"
             placeholder="Ex.: reposição de estoque"
-            maxLength={LIMITE_OBSERVACAO}
+            maxLength={tetoDigitacao(LIMITE_OBSERVACAO)}
             value={campos.observacao}
             onChange={(e) => f.atualizarCampo("observacao", e.target.value)}
             aria-invalid={!!erros.observacao}
+            aria-describedby={idRodapeLimite("mov-observacao")}
             disabled={bloqueado}
           />
-          {erros.observacao && <FieldError>{erros.observacao}</FieldError>}
+          <RodapeLimite
+            id="mov-observacao"
+            valor={campos.observacao}
+            limite={LIMITE_OBSERVACAO}
+            erro={erros.observacao}
+          />
         </Field>
       </FieldGroup>
 

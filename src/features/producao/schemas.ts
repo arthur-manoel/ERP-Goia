@@ -1,5 +1,11 @@
 import { z } from "zod"
-import { dataIso, numeroNaoNegativo, texto } from "@/features/erp/validacao"
+import {
+  dataIso,
+  numeroNaoNegativo,
+  texto,
+  textoLivre,
+} from "@/features/erp/validacao"
+import { LIMITES } from "@/lib/validacao/texto"
 
 // Uma linha da grade de produção: uma combinação de cor + tamanho (variação
 // cadastrada no produto) e a quantidade planejada para essa combinação.
@@ -26,7 +32,7 @@ export const ordemProducaoSchema = z
     dueDate: dataIso,
     responsible: z.string().min(1, "Selecione o responsável pela produção."),
     status: z.enum(["Planejada", "Em produção", "Concluída", "Cancelada"]),
-    notes: z.string().trim().max(500, "Use até 500 caracteres."),
+    notes: textoLivre(LIMITES.descricaoLonga),
   })
   .refine((data) => data.dueDate >= data.startDate, {
     path: ["dueDate"],

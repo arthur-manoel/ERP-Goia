@@ -10,6 +10,7 @@ import {
   Workflow,
 } from "lucide-react"
 import { toast } from "sonner"
+import { LIMITES } from "@/lib/validacao/texto"
 import { PageHeader } from "@/components/layout/page-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -151,6 +152,7 @@ export function TelaFluxosProducao() {
             aria-label="Pesquisar fluxos de produção"
             className="pl-9"
             placeholder="Pesquisar por nome..."
+            maxLength={LIMITES.busca}
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
           />
@@ -172,9 +174,14 @@ export function TelaFluxosProducao() {
               {filtrados.map((fluxo) => (
                 <TableRow key={fluxo.id}>
                   <TableCell className="align-top font-medium">
-                    <p>{fluxo.name}</p>
+                    <p className="max-w-md [overflow-wrap:anywhere]">
+                      {fluxo.name}
+                    </p>
                     {fluxo.description && (
-                      <p className="text-xs font-normal text-muted-foreground">
+                      <p
+                        className="line-clamp-2 max-w-md text-xs font-normal [overflow-wrap:anywhere] text-muted-foreground"
+                        title={fluxo.description}
+                      >
                         {fluxo.description}
                       </p>
                     )}

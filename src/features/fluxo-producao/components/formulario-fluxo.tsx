@@ -8,6 +8,12 @@ import { toast } from "sonner"
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  RodapeLimite,
+  idRodapeLimite,
+} from "@/components/ui/contador-caracteres"
+import { LIMITES, tetoDigitacao } from "@/lib/validacao/texto"
 import {
   Dialog,
   DialogContent,
@@ -57,6 +63,8 @@ export function FormularioFluxo({
     name: "steps",
   })
   const pendente = form.formState.isSubmitting
+  const nome = form.watch("name") ?? ""
+  const descricao = form.watch("description") ?? ""
 
   const idsSelecionados = new Set(fields.map((field) => field.sectorId))
   const setoresPorId = new Map(
@@ -121,32 +129,44 @@ export function FormularioFluxo({
           onSubmit={form.handleSubmit(salvar)}
           className="space-y-5"
         >
-          <fieldset disabled={pendente} className="space-y-5">
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field data-invalid={!!form.formState.errors.name}>
-                <FieldLabel htmlFor="fluxo-nome">Nome *</FieldLabel>
-                <Input
-                  id="fluxo-nome"
-                  placeholder="Ex.: Camiseta Básica"
-                  aria-invalid={!!form.formState.errors.name}
-                  {...form.register("name")}
-                />
-                {form.formState.errors.name && (
-                  <FieldError>{form.formState.errors.name.message}</FieldError>
-                )}
-              </Field>
+          <fieldset disabled={pendente} className="min-w-0 space-y-5">
+            <Field data-invalid={!!form.formState.errors.name}>
+              <FieldLabel htmlFor="fluxo-nome">Nome *</FieldLabel>
+              <Input
+                id="fluxo-nome"
+                placeholder="Ex.: Camiseta Básica"
+                maxLength={tetoDigitacao(LIMITES.nomeFluxo)}
+                aria-invalid={!!form.formState.errors.name}
+                aria-describedby={idRodapeLimite("fluxo-nome")}
+                {...form.register("name")}
+              />
+              <RodapeLimite
+                id="fluxo-nome"
+                valor={nome}
+                limite={LIMITES.nomeFluxo}
+                erro={form.formState.errors.name?.message}
+              />
+            </Field>
 
-              <Field data-invalid={!!form.formState.errors.description}>
-                <FieldLabel htmlFor="fluxo-descricao">
-                  Descrição (opcional)
-                </FieldLabel>
-                <Input
-                  id="fluxo-descricao"
-                  placeholder="Para que produtos este fluxo serve"
-                  {...form.register("description")}
-                />
-              </Field>
-            </div>
+            <Field data-invalid={!!form.formState.errors.description}>
+              <FieldLabel htmlFor="fluxo-descricao">
+                Descrição (opcional)
+              </FieldLabel>
+              <Textarea
+                id="fluxo-descricao"
+                placeholder="Para que produtos este fluxo serve"
+                maxLength={tetoDigitacao(LIMITES.descricaoCurta)}
+                aria-invalid={!!form.formState.errors.description}
+                aria-describedby={idRodapeLimite("fluxo-descricao")}
+                {...form.register("description")}
+              />
+              <RodapeLimite
+                id="fluxo-descricao"
+                valor={descricao}
+                limite={LIMITES.descricaoCurta}
+                erro={form.formState.errors.description?.message}
+              />
+            </Field>
 
             <Field data-invalid={!!form.formState.errors.steps}>
               <FieldLabel>Etapas do fluxo *</FieldLabel>
@@ -253,7 +273,7 @@ export function FormularioFluxo({
 
             {form.formState.errors.root?.server && (
               <Alert variant="destructive">
-                <AlertDescription>
+                <AlertDescription className="[overflow-wrap:anywhere]">
                   {form.formState.errors.root.server.message}
                 </AlertDescription>
               </Alert>

@@ -1,3 +1,5 @@
+import { unidadeExigeInteiro } from "../unidades"
+import { LIMITES, excedeLimite, mensagemLimite } from "../validacao/texto"
 import {
   usaDestino,
   usaOrigem,
@@ -7,7 +9,7 @@ import {
   type TipoMovimentacao,
 } from "./tipos"
 
-export const LIMITE_OBSERVACAO = 500
+export const LIMITE_OBSERVACAO = LIMITES.observacaoMovimentacao
 
 /**
  * Converte o texto digitado em decimal com ponto. Só aceita dígitos e vírgula
@@ -17,6 +19,38 @@ export function interpretarQuantidade(texto: string): string | null {
   const limpo = texto.trim()
   if (!/^\d{1,12}(,\d{1,3})?$/.test(limpo)) return null
   return limpo.replace(",", ".")
+}
+
+/** Tamanho máximo do texto digitado: 12 dígitos + vírgula + 3 casas. */
+export const TAMANHO_MAXIMO_QUANTIDADE = 16
+
+export const MENSAGEM_QUANTIDADE_INTEIRA = (unidade: string) =>
+  `Este item é contado em ${unidade}: informe um número inteiro, sem vírgula nem casas decimais (ex.: 12).`
+
+/**
+ * Explica por que o texto digitado não é uma quantidade válida, ou devolve
+ * `null` se está tudo certo. Usado ao vivo (enquanto digita/cola) e no envio.
+ * `unidade` é a unidade do item selecionado (pode ser vazia antes de escolher).
+ */
+export function erroQuantidade(texto: string, unidade?: string): string | null {
+  const limpo = texto.trim()
+  if (limpo === "") return null
+  if (/^-/.test(limpo)) return "A quantidade deve ser maior que zero."
+  if (limpo.includes(".") && !limpo.includes(","))
+    return "Use vírgula (e não ponto) para decimais, ex.: 12,5."
+  if (limpo.includes(".")) return "Não use ponto como separador de milhar."
+  const quantidade = interpretarQuantidade(limpo)
+  if (quantidade === null) {
+    if (/^\d+$/.test(limpo) && limpo.length > 12)
+      return "A quantidade pode ter no máximo 12 dígitos inteiros."
+    if (/^\d+,\d{4,}$/.test(limpo)) return "Use no máximo 3 casas decimais."
+    return "Use apenas números positivos, com vírgula para decimais (ex.: 12,5)."
+  }
+  if (unidade && unidadeExigeInteiro(unidade)) {
+    const [, decimais = ""] = quantidade.split(".")
+    if (/[1-9]/.test(decimais)) return MENSAGEM_QUANTIDADE_INTEIRA(unidade)
+  }
+  return null
 }
 
 export type ResultadoValidacao =
@@ -50,18 +84,21 @@ export function validarMovimentacao(
     erros.destino = "O estoque de destino deve ser diferente do de origem."
   }
 
-  const quantidade = interpretarQuantidade(campos.quantidade)
+  let quantidade = interpretarQuantidade(campos.quantidade)
   if (campos.quantidade.trim() === "") {
     erros.quantidade = "Informe a quantidade."
-  } else if (quantidade === null) {
-    erros.quantidade =
-      "Use apenas números positivos, com vírgula para decimais (ex.: 12,5)."
-  } else if (Number(quantidade) <= 0) {
-    erros.quantidade = "A quantidade deve ser maior que zero."
+  } else {
+    const erroDigitado = erroQuantidade(campos.quantidade, item?.unidade)
+    if (erroDigitado) erros.quantidade = erroDigitado
+    else if (quantidade !== null && Number(quantidade) <= 0)
+      erros.quantidade = "A quantidade deve ser maior que zero."
+    else if (quantidade !== null && item && unidadeExigeInteiro(item.unidade))
+      // "2,0" / "2,000" valem 2: normaliza para o inteiro.
+      quantidade = String(Number(quantidade))
   }
 
-  if (observacao.length > LIMITE_OBSERVACAO) {
-    erros.observacao = `A observação pode ter no máximo ${LIMITE_OBSERVACAO} caracteres.`
+  if (excedeLimite(observacao, LIMITE_OBSERVACAO)) {
+    erros.observacao = mensagemLimite(LIMITE_OBSERVACAO)
   }
 
   if (Object.keys(erros).length > 0 || !item || quantidade === null) {

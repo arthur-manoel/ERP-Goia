@@ -17,6 +17,11 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  RodapeLimite,
+  idRodapeLimite,
+} from "@/components/ui/contador-caracteres"
+import { LIMITES, tetoDigitacao } from "@/lib/validacao/texto"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import { useErp } from "@/features/erp/components/provedor"
 import { insumoSchema, unidades, type Insumo, type Material } from "../schemas"
@@ -52,6 +57,10 @@ export function FormularioInsumo({
   const saldo = useWatch({ control: form.control, name: "quantity" })
   const minimo = useWatch({ control: form.control, name: "minimum" })
   const unidade = useWatch({ control: form.control, name: "unit" })
+  const nomeAtual = useWatch({ control: form.control, name: "name" }) ?? ""
+  const codigoAtual = useWatch({ control: form.control, name: "code" }) ?? ""
+  const descricaoAtual =
+    useWatch({ control: form.control, name: "description" }) ?? ""
   const pendente = form.formState.isSubmitting
   const abaixoDoMinimo =
     Number.isFinite(saldo) && Number.isFinite(minimo) && saldo <= minimo
@@ -110,7 +119,7 @@ export function FormularioInsumo({
           onSubmit={form.handleSubmit(salvar)}
           className="space-y-6"
         >
-          <fieldset disabled={pendente} className="space-y-6">
+          <fieldset disabled={pendente} className="min-w-0 space-y-6">
             <div className="grid gap-5 sm:grid-cols-2">
               <Field data-invalid={!!erro("name")} className="sm:col-span-2">
                 <FieldLabel htmlFor="insumo-nome">Nome do insumo *</FieldLabel>
@@ -118,14 +127,16 @@ export function FormularioInsumo({
                   id="insumo-nome"
                   placeholder="Ex.: Tricoline 100% algodão"
                   aria-invalid={!!erro("name")}
-                  aria-describedby={
-                    erro("name") ? "insumo-nome-erro" : undefined
-                  }
+                  maxLength={tetoDigitacao(LIMITES.nome)}
+                  aria-describedby={idRodapeLimite("insumo-nome")}
                   {...form.register("name")}
                 />
-                {erro("name") && (
-                  <FieldError id="insumo-nome-erro">{erro("name")}</FieldError>
-                )}
+                <RodapeLimite
+                  id="insumo-nome"
+                  valor={nomeAtual}
+                  limite={LIMITES.nome}
+                  erro={erro("name")}
+                />
               </Field>
 
               <Field data-invalid={!!erro("code")}>
@@ -134,16 +145,16 @@ export function FormularioInsumo({
                   id="insumo-codigo"
                   placeholder="Ex.: TEC-001"
                   aria-invalid={!!erro("code")}
-                  aria-describedby={
-                    erro("code") ? "insumo-codigo-erro" : undefined
-                  }
+                  maxLength={tetoDigitacao(LIMITES.nome)}
+                  aria-describedby={idRodapeLimite("insumo-codigo")}
                   {...form.register("code")}
                 />
-                {erro("code") && (
-                  <FieldError id="insumo-codigo-erro">
-                    {erro("code")}
-                  </FieldError>
-                )}
+                <RodapeLimite
+                  id="insumo-codigo"
+                  valor={codigoAtual}
+                  limite={LIMITES.nome}
+                  erro={erro("code")}
+                />
               </Field>
 
               <Field data-invalid={!!erro("category")}>
@@ -303,16 +314,16 @@ export function FormularioInsumo({
                 id="insumo-descricao"
                 placeholder="Composição, características ou observações do insumo."
                 aria-invalid={!!erro("description")}
-                aria-describedby={
-                  erro("description") ? "insumo-descricao-erro" : undefined
-                }
+                maxLength={tetoDigitacao(LIMITES.descricaoLonga)}
+                aria-describedby={idRodapeLimite("insumo-descricao")}
                 {...form.register("description")}
               />
-              {erro("description") && (
-                <FieldError id="insumo-descricao-erro">
-                  {erro("description")}
-                </FieldError>
-              )}
+              <RodapeLimite
+                id="insumo-descricao"
+                valor={descricaoAtual}
+                limite={LIMITES.descricaoLonga}
+                erro={erro("description")}
+              />
             </Field>
 
             {form.formState.errors.root?.server && (

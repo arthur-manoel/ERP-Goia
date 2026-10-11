@@ -22,7 +22,8 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Input } from "@/components/ui/input"
+import { IntervaloDatas } from "@/components/ui/intervalo-datas"
+import { erroIntervalo } from "@/lib/validacao/datas"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -77,7 +78,7 @@ export function FluxoCaixa() {
   const client = (id: string) =>
     data.clients.find((row) => row.id === id)?.name ?? "Cadastro não encontrado"
 
-  const periodoValido = Boolean(de) && Boolean(ate) && de <= ate
+  const periodoValido = erroIntervalo(de, ate, { obrigatorio: true }) === null
 
   const dentroDoPeriodo = periodoValido
     ? data.transactions.filter((row) => row.dueDate >= de && row.dueDate <= ate)
@@ -112,32 +113,13 @@ export function FluxoCaixa() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <Input
-            type="date"
-            aria-label="De"
-            value={de}
-            onChange={(e) => setDe(e.target.value)}
-            aria-invalid={!periodoValido}
-            className="w-[160px]"
-          />
-          <span className="text-sm text-muted-foreground">até</span>
-          <Input
-            type="date"
-            aria-label="Até"
-            value={ate}
-            onChange={(e) => setAte(e.target.value)}
-            aria-invalid={!periodoValido}
-            className="w-[160px]"
-          />
-        </div>
-        {!periodoValido && (
-          <span className="text-sm text-destructive">
-            {!de || !ate
-              ? "Preencha as duas datas do período."
-              : 'A data "De" não pode ser depois da data "Até".'}
-          </span>
-        )}
+        <IntervaloDatas
+          de={de}
+          ate={ate}
+          onChangeDe={setDe}
+          onChangeAte={setAte}
+          obrigatorio
+        />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
