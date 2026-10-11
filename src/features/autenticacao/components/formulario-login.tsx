@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/input-group"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAutenticacao } from "../provedor-autenticacao"
+import { retornoSeguro } from "../retorno"
 import { loginSchema, type DadosLogin } from "../schemas"
 
 export function FormularioLogin({ retorno = "/" }: { retorno?: string }) {
@@ -38,7 +39,7 @@ export function FormularioLogin({ retorno = "/" }: { retorno?: string }) {
         setErro("")
         try {
           await entrar(usuario, senha)
-          router.replace(retorno)
+          router.replace(retornoSeguro(retorno))
         } catch {
           setErro("Usuário ou senha incorretos.")
           form.resetField("senha")

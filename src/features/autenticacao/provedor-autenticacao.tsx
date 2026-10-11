@@ -8,6 +8,11 @@ import {
   useRef,
   useState,
 } from "react"
+import {
+  comBloqueioSessao,
+  renovarToken,
+  solicitarLogin,
+} from "./requisicoes-sessao"
 
 type Empresa = { id: number; nome: string }
 type Usuario = { nome: string; email: string }
@@ -26,28 +31,7 @@ type Contexto = {
 
 const AutenticacaoContexto = createContext<Contexto | null>(null)
 const chaveEmpresa = "erp-goia-empresa-ativa"
-const nomeBloqueioSessao = "erp-goia-sessao"
 const nomeCanalSessao = "erp-goia-sessao"
-
-async function comBloqueioSessao<T>(operacao: () => Promise<T>) {
-  if (typeof navigator === "undefined" || !navigator.locks) return operacao()
-  return navigator.locks.request(nomeBloqueioSessao, operacao)
-}
-
-// O refresh token é rotativo. Requisições simultâneas compartilham uma única
-// rotação para não revogar a sessão por reutilização acidental do cookie.
-let renovacao: Promise<string | null> | null = null
-function renovarToken() {
-  renovacao ??= comBloqueioSessao(async () => {
-    const response = await fetch("/api/auth/refresh", { method: "POST" })
-    if (!response.ok) return null
-    const body: { accessToken?: string } = await response.json()
-    return body.accessToken ?? null
-  }).finally(() => {
-    renovacao = null
-  })
-  return renovacao
-}
 
 async function mensagemErro(response: Response) {
   const body: { error?: string } = await response.json().catch(() => ({}))
@@ -152,11 +136,7 @@ export function ProvedorAutenticacao({
     async (email: string, password: string) => {
       const versaoLogin = versaoSessao.current + 1
       versaoSessao.current = versaoLogin
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      })
+      const response = await solicitarLogin(email, password)
       if (!response.ok) throw new Error(await mensagemErro(response))
       const body: { accessToken: string } = await response.json()
       const carregado = await carregarAcesso(body.accessToken, versaoLogin)
