@@ -13,7 +13,10 @@ import {
   usaDestino,
   usaOrigem,
 } from "@/lib/movimentacao/tipos"
-import { validarMovimentacao } from "@/lib/movimentacao/validacao"
+import {
+  erroQuantidade,
+  validarMovimentacao,
+} from "@/lib/movimentacao/validacao"
 
 /** editando → confirmando (resumo aberto) → enviando → concluida */
 export type FaseMovimentacao =
@@ -135,10 +138,18 @@ export function useFormularioMovimentacao({ estoques }: OpcoesMovimentacao) {
     setFase("editando")
   }
 
+  // Aviso imediato (digitando ou colando): decimal em unidade inteira, ponto no
+  // lugar da vírgula, etc. Não depende do envio e acompanha a troca de item.
+  const avisoQuantidade = erroQuantidade(
+    campos.quantidade,
+    campos.item?.unidade,
+  )
+
   return {
     tipo,
     campos,
     erros,
+    avisoQuantidade,
     fase,
     resumo: preparada?.resumo ?? null,
     erroEnvio,

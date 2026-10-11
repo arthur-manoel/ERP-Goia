@@ -10,6 +10,7 @@ import {
   Waypoints,
 } from "lucide-react"
 import { toast } from "sonner"
+import { LIMITES } from "@/lib/validacao/texto"
 import { PageHeader } from "@/components/layout/page-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -141,6 +142,7 @@ export function TelaSetores() {
             aria-label="Pesquisar setores"
             className="pl-9"
             placeholder="Pesquisar por nome..."
+            maxLength={LIMITES.busca}
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
           />
@@ -162,11 +164,22 @@ export function TelaSetores() {
             <TableBody>
               {filtrados.map((setor) => (
                 <TableRow key={setor.id}>
-                  <TableCell className="font-medium">{setor.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell
+                    className="max-w-[16rem] truncate font-medium"
+                    title={setor.name}
+                  >
+                    {setor.name}
+                  </TableCell>
+                  <TableCell
+                    className="max-w-[10rem] truncate text-muted-foreground"
+                    title={setor.type}
+                  >
                     {setor.type}
                   </TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">
+                  <TableCell
+                    className="max-w-xs truncate text-muted-foreground"
+                    title={setor.description}
+                  >
                     {setor.description || "—"}
                   </TableCell>
                   <TableCell>
