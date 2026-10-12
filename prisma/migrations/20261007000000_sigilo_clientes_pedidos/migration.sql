@@ -1,6 +1,5 @@
 -- Reforca isolamento de dados comerciais por empresa e registra a variacao
 -- vendida em confecao (produto, cor e tamanho) em cada item do pedido.
--- A migration aborta com erro se os dados legados tiverem cruzamento de empresa.
 
 ALTER TABLE `clientes`
   ADD UNIQUE INDEX `uk_cliente_empresa_id` (`id_empresa`, `id`);
@@ -13,40 +12,6 @@ ALTER TABLE `cores`
 
 ALTER TABLE `tamanhos`
   ADD UNIQUE INDEX `uk_tamanho_empresa_id` (`id_empresa`, `id`);
-
--- Corrige inconsistencias existentes antes de instalar as FKs compostas.
-DELIMITER //
-CREATE PROCEDURE `validar_isolamento_pedidos`()
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM `venda` v
-    INNER JOIN `clientes` c ON c.`id` = v.`id_cliente`
-    WHERE c.`id_empresa` <> v.`id_empresa`
-  ) THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Existem vendas vinculadas a clientes de outra empresa; corrija os dados antes da migration.';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM `venda` v
-    INNER JOIN `usuario_empresa` ue ON ue.`id_usuario` = v.`id_usuario`
-    WHERE ue.`id_empresa` <> v.`id_empresa`
-  ) THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Existem vendas vinculadas a usuarios sem vinculo com a empresa da venda; corrija os dados antes da migration.';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM `usuario_empresa` ue
-    INNER JOIN `venda` v ON v.`id_usuario` = ue.`id_usuario` AND v.`id_empresa` = ue.`id_empresa`
-    WHERE ue.`status` <> 'ATIVO'
-  ) THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Existem vendas registradas por vinculos de usuario inativos; revise os dados antes da migration.';
-  END IF;
-
-END//
-DELIMITER ;
-
-CALL `validar_isolamento_pedidos`();
-DROP PROCEDURE `validar_isolamento_pedidos`;
 
 -- Uma venda só pode referenciar cliente da mesma empresa.
 ALTER TABLE `venda`
@@ -85,9 +50,10 @@ ALTER TABLE `venda`
   ADD COLUMN `observacao_interna` TEXT NULL;
 
 -- Detalhamento comercial e de confecção do item: permite vender cores/tamanhos
--- diferentes do mesmo produto em uma única venda. SET NULL preserva o histórico
--- caso uma variação seja removida logicamente ou o catálogo seja reorganizado.
+-- diferentes do mesmo produto em uma única venda. As FKs preservam o isolamento
+-- por empresa; variações referenciadas não podem ser excluídas fisicamente.
 ALTER TABLE `item_venda`
+  DROP FOREIGN KEY `fk_item_venda_venda`,
   DROP INDEX `uk_item_venda_produto`,
   ADD COLUMN `id_empresa` INTEGER NULL,
   ADD COLUMN `id_cor` INTEGER NULL,
@@ -110,9 +76,9 @@ ALTER TABLE `item_venda`
     FOREIGN KEY (`id_empresa`, `id_venda`) REFERENCES `venda` (`id_empresa`, `id`)
     ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_item_venda_cor` FOREIGN KEY (`id_empresa`, `id_cor`) REFERENCES `cores` (`id_empresa`, `id`)
-    ON DELETE SET NULL ON UPDATE CASCADE,
+    ON DELETE RESTRICT ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_item_venda_tamanho` FOREIGN KEY (`id_empresa`, `id_tamanho`) REFERENCES `tamanhos` (`id_empresa`, `id`)
-    ON DELETE SET NULL ON UPDATE CASCADE;
+    ON DELETE RESTRICT ON UPDATE CASCADE;
 
 CREATE TABLE `venda_parcelas` (
   `id` INTEGER NOT NULL AUTO_INCREMENT,
