@@ -1,7 +1,8 @@
 "use client"
 import Link from "next/link"
 import { useState } from "react"
-import { UserRound } from "lucide-react"
+import { LoaderCircle, UserRound } from "lucide-react"
+import { toast } from "sonner"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,6 +18,7 @@ import { useAutenticacao } from "../provedor-autenticacao"
 
 export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
   const [aberto, setAberto] = useState(false)
+  const [saindo, setSaindo] = useState(false)
   const { estado, usuario: conta, empresa, sair } = useAutenticacao()
   const usuarioAtual =
     estado === "autenticado" && conta
@@ -92,12 +94,23 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
             </dl>
             <Button
               variant="outline"
-              onClick={() => {
-                void sair()
-                setAberto(false)
+              disabled={saindo}
+              onClick={async () => {
+                setSaindo(true)
+                try {
+                  await sair()
+                  setAberto(false)
+                } catch {
+                  toast.error(
+                    "Não foi possível encerrar a sessão. Tente novamente.",
+                  )
+                } finally {
+                  setSaindo(false)
+                }
               }}
             >
-              Sair
+              {saindo && <LoaderCircle className="animate-spin" />}
+              {saindo ? "Saindo…" : "Sair"}
             </Button>
           </div>
         ) : (
