@@ -1,5 +1,6 @@
 "use client"
 
+import { LIMITES } from "@/lib/validacao/texto"
 import { useState } from "react"
 
 import { useErp } from "@/features/erp/components/provedor"
@@ -190,6 +191,7 @@ export function SituacaoPedidos() {
       <div className="flex flex-wrap items-center gap-3">
         <Input
           placeholder="Buscar por pedido ou cliente..."
+          maxLength={LIMITES.busca}
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           className="max-w-xs"

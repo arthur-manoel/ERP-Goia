@@ -1,21 +1,12 @@
 import { z } from "zod"
-import { texto } from "@/features/erp/validacao"
+import { texto, textoOpcional } from "@/features/erp/validacao"
+import { LIMITES } from "@/lib/validacao/texto"
 
 /** Setor = local/etapa onde uma atividade de produção acontece. */
 export const setorSchema = z.object({
-  name: texto("Nome", 2),
-  type: z
-    .string()
-    .trim()
-    .max(80, "Use até 80 caracteres.")
-    .optional()
-    .transform((value) => (value && value.length > 0 ? value : "Outro")),
-  description: z
-    .string()
-    .trim()
-    .max(255, "Use até 255 caracteres.")
-    .optional()
-    .transform((value) => value ?? ""),
+  name: texto("Nome", 2, LIMITES.nomeSetor),
+  type: textoOpcional(LIMITES.tipoSetor, "Outro"),
+  description: textoOpcional(LIMITES.descricaoCurta),
   status: z.enum(["Ativo", "Inativo"]),
 })
 

@@ -23,6 +23,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
+import {
+  RodapeLimite,
+  idRodapeLimite,
+} from "@/components/ui/contador-caracteres"
+import { LIMITES, tetoDigitacao } from "@/lib/validacao/texto"
 import { Input } from "@/components/ui/input"
 import {
   Table,
@@ -175,6 +180,8 @@ export function FormularioAberturaOP({
   ) {
     const erro = form.getFieldState(nome, form.formState).error
     const id = `op-${nome}`
+    const limite =
+      nome === "code" && !configuracao.opcoes ? LIMITES.nome : undefined
     return (
       <Field data-invalid={!!erro}>
         <FieldLabel htmlFor={id}>{rotulo} *</FieldLabel>
@@ -205,12 +212,24 @@ export function FormularioAberturaOP({
             type={configuracao.tipo ?? "text"}
             min={configuracao.min}
             disabled={salvando || configuracao.disabled}
+            maxLength={limite ? tetoDigitacao(limite) : undefined}
             aria-invalid={!!erro}
-            aria-describedby={erro ? `${id}-erro` : undefined}
+            aria-describedby={
+              limite ? idRodapeLimite(id) : erro ? `${id}-erro` : undefined
+            }
             {...form.register(nome)}
           />
         )}
-        {erro && <FieldError id={`${id}-erro`}>{erro.message}</FieldError>}
+        {limite ? (
+          <RodapeLimite
+            id={id}
+            valor={String(form.watch(nome) ?? "")}
+            limite={limite}
+            erro={erro?.message}
+          />
+        ) : (
+          erro && <FieldError id={`${id}-erro`}>{erro.message}</FieldError>
+        )}
       </Field>
     )
   }
@@ -464,12 +483,19 @@ export function FormularioAberturaOP({
                     <FieldLabel htmlFor="op-notas">
                       Observações (opcional)
                     </FieldLabel>
-                    <Textarea id="op-notas" {...form.register("notes")} />
-                    {form.formState.errors.notes && (
-                      <FieldError>
-                        {form.formState.errors.notes.message}
-                      </FieldError>
-                    )}
+                    <Textarea
+                      id="op-notas"
+                      maxLength={tetoDigitacao(LIMITES.descricaoLonga)}
+                      aria-invalid={!!form.formState.errors.notes}
+                      aria-describedby={idRodapeLimite("op-notas")}
+                      {...form.register("notes")}
+                    />
+                    <RodapeLimite
+                      id="op-notas"
+                      valor={form.watch("notes") ?? ""}
+                      limite={LIMITES.descricaoLonga}
+                      erro={form.formState.errors.notes?.message}
+                    />
                   </Field>
                 </section>
 

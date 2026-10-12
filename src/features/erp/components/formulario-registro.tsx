@@ -40,6 +40,11 @@ import {
 } from "@/components/ui/field"
 import { SearchSelect, type Option } from "./seletor-pesquisavel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  RodapeLimite,
+  idRodapeLimite,
+} from "@/components/ui/contador-caracteres"
+import { LIMITES, tetoDigitacao } from "@/lib/validacao/texto"
 import { FormularioPedido } from "@/features/pedidos/components/formulario-pedido"
 import { FormularioAberturaOP } from "@/features/producao/components/formulario-abertura-op"
 
@@ -60,6 +65,28 @@ type RecordFormProps = {
   title: string
   onClose: () => void
   returnFocus: () => void
+}
+
+/**
+ * Limite de caracteres de um campo de texto do formulário genérico (os mesmos
+ * valores dos schemas em features/*). Campos sem limite próprio (e-mail,
+ * telefone, CEP, documento, números, datas) retornam `undefined`.
+ */
+function limiteDoCampo(collection: Collection, key: string) {
+  const campo = key.split(".").pop() ?? key
+  if (collection === "materials" && key === "description")
+    return LIMITES.descricaoLonga
+  return [
+    "name",
+    "code",
+    "description",
+    "size",
+    "color",
+    "street",
+    "neighborhood",
+  ].includes(campo)
+    ? LIMITES.nome
+    : undefined
 }
 
 export function RecordForm(props: RecordFormProps) {
@@ -251,6 +278,17 @@ function FormularioRegistro({
   function renderField(field: FormField) {
     const error = form.getFieldState(field.key, form.formState).error
     const id = `record-${field.key}`
+    const ehTexto =
+      !field.options &&
+      field.type !== "number" &&
+      field.type !== "date" &&
+      field.type !== "email"
+    const limite = ehTexto ? limiteDoCampo(collection, field.key) : undefined
+    const descritoPor = limite
+      ? idRodapeLimite(id)
+      : error
+        ? `${id}-error`
+        : undefined
     return (
       <Field
         key={field.key}
@@ -311,9 +349,10 @@ function FormularioRegistro({
         ) : field.type === "textarea" ? (
           <Textarea
             id={id}
+            maxLength={limite ? tetoDigitacao(limite) : undefined}
             {...form.register(field.key)}
             aria-invalid={!!error}
-            aria-describedby={error ? `${id}-error` : undefined}
+            aria-describedby={descritoPor}
           />
         ) : field.mask ? (
           <Controller
@@ -363,13 +402,8 @@ function FormularioRegistro({
             id={id}
             type={field.type ?? "text"}
             readOnly={field.readOnly}
-            aria-describedby={
-              field.readOnly
-                ? "explicacao-preco"
-                : error
-                  ? `${id}-error`
-                  : undefined
-            }
+            maxLength={limite ? tetoDigitacao(limite) : undefined}
+            aria-describedby={field.readOnly ? "explicacao-preco" : descritoPor}
             min={field.type === "number" ? 0 : undefined}
             step={field.type === "number" ? "any" : undefined}
             {...form.register(field.key, {
@@ -394,8 +428,17 @@ function FormularioRegistro({
             aria-invalid={!!error}
           />
         )}
-        {error && (
-          <FieldError id={`${id}-error`}>{String(error.message)}</FieldError>
+        {limite ? (
+          <RodapeLimite
+            id={id}
+            valor={String(form.watch(field.key) ?? "")}
+            limite={limite}
+            erro={error ? String(error.message) : undefined}
+          />
+        ) : (
+          error && (
+            <FieldError id={`${id}-error`}>{String(error.message)}</FieldError>
+          )
         )}
       </Field>
     )
@@ -434,7 +477,7 @@ function FormularioRegistro({
         >
           <fieldset
             disabled={form.formState.isSubmitting}
-            className="space-y-6"
+            className="min-w-0 space-y-6"
           >
             {/* O grid usa breakpoints de viewport; sem contenção, os campos mantêm a altura ao inserir componentes no diálogo. */}
             <div className="grid gap-5 sm:grid-cols-2">

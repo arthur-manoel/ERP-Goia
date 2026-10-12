@@ -23,6 +23,13 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
+import { RodapeLimite } from "@/components/ui/contador-caracteres"
+import {
+  LIMITES,
+  excedeLimite,
+  mensagemLimite,
+  tetoDigitacao,
+} from "@/lib/validacao/texto"
 import {
   Select,
   SelectContent,
@@ -108,12 +115,18 @@ export function Apontamento() {
 
     if (!ordemId) return setErro("Selecione a ordem de produção.")
     if (!etapa.trim()) return setErro("Informe a etapa.")
+    if (excedeLimite(etapa, LIMITES.nome))
+      return setErro(`Etapa: ${mensagemLimite(LIMITES.nome)}`)
     if (!quantidadeProduzida || produzida <= 0)
       return setErro("Informe uma quantidade produzida maior que zero.")
     if (perdida < 0)
       return setErro("A quantidade perdida não pode ser negativa.")
     if (perdida > 0 && !motivoPerda.trim())
       return setErro("Informe o motivo da perda.")
+    if (excedeLimite(motivoPerda, LIMITES.descricaoCurta))
+      return setErro(
+        `Motivo da perda: ${mensagemLimite(LIMITES.descricaoCurta)}`,
+      )
 
     setApontamentos((atual) => [
       ...atual,
@@ -186,6 +199,7 @@ export function Apontamento() {
             </Select>
             <Input
               placeholder="Etapa (ex.: Corte, Costura, Acabamento)"
+              maxLength={tetoDigitacao(LIMITES.nome)}
               value={etapa}
               onChange={(e) => setEtapa(e.target.value)}
             />
@@ -203,12 +217,21 @@ export function Apontamento() {
               value={quantidadePerdida}
               onChange={(e) => setQuantidadePerdida(e.target.value)}
             />
-            <Input
-              placeholder="Motivo da perda (obrigatório se houver perda)"
-              value={motivoPerda}
-              onChange={(e) => setMotivoPerda(e.target.value)}
-              className="sm:col-span-2"
-            />
+            <div className="space-y-1 sm:col-span-2">
+              <Input
+                placeholder="Motivo da perda (obrigatório se houver perda)"
+                aria-label="Motivo da perda"
+                aria-describedby="apontamento-motivo-limite"
+                maxLength={tetoDigitacao(LIMITES.descricaoCurta)}
+                value={motivoPerda}
+                onChange={(e) => setMotivoPerda(e.target.value)}
+              />
+              <RodapeLimite
+                id="apontamento-motivo"
+                valor={motivoPerda}
+                limite={LIMITES.descricaoCurta}
+              />
+            </div>
             <Input
               type="date"
               value={dataApontamento}
@@ -321,7 +344,12 @@ export function Apontamento() {
                           0
                         )}
                       </TableCell>
-                      <TableCell>{item.motivoPerda || "—"}</TableCell>
+                      <TableCell
+                        className="max-w-xs truncate"
+                        title={item.motivoPerda}
+                      >
+                        {item.motivoPerda || "—"}
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
