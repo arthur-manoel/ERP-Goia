@@ -579,6 +579,8 @@ model item_requisicao_compra {
   @@index([id_produto], map: "fk_item_req_compra_produto")
 }
 
+/// A migration-managed null-safe unique index uses generated normalization columns
+/// because MySQL permits duplicate UNIQUE keys when nullable variation fields are NULL.
 model item_venda {
   id             Int       @id @default(autoincrement())
   id_venda       Int
@@ -1402,6 +1404,7 @@ model usuario_empresa {
   venda_status_historico venda_status_historico[]
 
   @@unique([id_usuario, id_empresa], map: "uk_usuario_empresa_usuario_empresa")
+  @@unique([id, id_empresa], map: "uk_usuario_empresa_id_empresa")
   @@index([id_cargo], map: "fk_usuario_empresa_cargo")
   @@index([id_empresa], map: "fk_usuario_empresa_empresa")
   @@index([id_setor], map: "fk_usuario_empresa_setor")
@@ -1480,7 +1483,6 @@ model venda {
   @@unique([id_empresa, id], map: "uk_venda_empresa_id")
   @@index([id_empresa, id_cliente], map: "idx_venda_empresa_cliente")
   @@index([id_empresa, id_usuario], map: "idx_venda_empresa_usuario")
-  @@index([id_cliente], map: "fk_venda_cliente")
   @@index([id_usuario], map: "fk_venda_usuario")
   @@index([id_condicao_pagamento])
   @@index([id_endereco_entrega])
@@ -1520,10 +1522,10 @@ model venda_status_historico {
   data_evento        DateTime         @default(now()) @db.Timestamp(0)
   empresas           empresas         @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_venda_historico_empresa")
   venda              venda            @relation(fields: [id_empresa, id_venda], references: [id_empresa, id], onDelete: Cascade, map: "fk_venda_historico_venda")
-  usuario_empresa    usuario_empresa? @relation(fields: [id_usuario_empresa], references: [id], onDelete: SetNull, map: "fk_venda_historico_usuario")
+  usuario_empresa    usuario_empresa? @relation(fields: [id_usuario_empresa, id_empresa], references: [id, id_empresa], onDelete: Restrict, map: "fk_venda_historico_usuario_empresa")
 
   @@index([id_empresa, id_venda, data_evento], map: "idx_venda_historico_data")
-  @@index([id_usuario_empresa], map: "fk_venda_historico_usuario")
+  @@index([id_usuario_empresa, id_empresa], map: "idx_venda_historico_usuario_empresa")
 }
 
 model estoque_minimo_local {
