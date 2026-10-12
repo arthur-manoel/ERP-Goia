@@ -1,6 +1,7 @@
 import { requireRole } from "../../src/lib/authorize"
 import { HttpError } from "../../src/lib/api/errors"
 import { handleRequest } from "../../src/lib/api/http"
+import { enforceRateLimit, type RateLimit } from "../../src/lib/api/rate-limit"
 import { allowedCompanies, type Resource, type Action } from "./repository"
 export function assertCompany(id: number | undefined, companies: number[]) {
   if (id !== undefined && !companies.includes(id))
@@ -12,8 +13,10 @@ export function catalogRequest<T>(
   action: Action,
   operation: (companies: number[]) => Promise<T>,
   status = 200,
+  rateLimit?: RateLimit,
 ) {
   return handleRequest(async () => {
+    if (rateLimit) enforceRateLimit(request, rateLimit)
     const auth = await requireRole(request, [
       "ADMINISTRACAO",
       "PRODUCAO",
