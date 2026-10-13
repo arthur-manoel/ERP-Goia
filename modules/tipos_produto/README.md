@@ -1,7 +1,7 @@
 # Tipos de produto
 
-O módulo usa `tipos_produto` do Prisma atual: `id`, `nome` único e `descricao`
-opcional. Não há coluna de empresa ou status nesse schema.
+O módulo usa `tipos_produto`: `id`, `nome` único, `descricao` opcional e
+`status` com padrão `ATIVO`.
 
 As rotas exigem JWT válido e um vínculo ativo a uma empresa com autorização para
 `PRODUTOS`: administrador global, vínculo de nível `EMPRESA`, ou permissão
@@ -15,9 +15,9 @@ no cabeçalho `X-Empresa-Id` enviado pelo cliente.
 - `PUT /api/tipos_produto/:id` substitui os campos; `nome` é obrigatório e a
   descrição omitida é limpa.
 - `PATCH /api/tipos_produto/:id` atualiza somente os campos informados.
-- `DELETE /api/tipos_produto/:id` retorna 409 quando houver produtos vinculados.
-  Sem status no schema, essa regra protege o histórico; tipos sem vínculo são
-  removidos fisicamente, pois não possuem histórico associado.
+- `DELETE /api/tipos_produto/:id` altera o status para `INATIVO`; o registro e
+  seus vínculos continuam disponíveis no histórico. A listagem retorna somente
+  os tipos ativos.
 
 As rotas usam limite local por processo: 120 leituras/minuto e 30 escritas/minuto
 por cliente. Ao exceder, retornam 429 com o envelope JSON padrão. Em ambiente com

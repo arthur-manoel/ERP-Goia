@@ -62,6 +62,8 @@ export async function getTipoProduto(idInput: unknown) {
 export async function patchTipoProduto(idInput: unknown, input: unknown) {
   const id = validate(tipoProdutoIdSchema, idInput)
   const data = validate(updateTipoProdutoSchema, input)
+  if (!(await repository.findById(id)))
+    throw new NotFoundError("Tipo de produto não encontrado.")
   if (data.nome !== undefined) await assertUniqueNome(data.nome, id)
   const row = await write(() => repository.patch(id, data))
   if (!row) throw new NotFoundError("Tipo de produto não encontrado.")
@@ -71,6 +73,8 @@ export async function patchTipoProduto(idInput: unknown, input: unknown) {
 export async function updateTipoProduto(idInput: unknown, input: unknown) {
   const id = validate(tipoProdutoIdSchema, idInput)
   const data = validate(replaceTipoProdutoSchema, input)
+  if (!(await repository.findById(id)))
+    throw new NotFoundError("Tipo de produto não encontrado.")
   await assertUniqueNome(data.nome, id)
   const row = await write(() => repository.update(id, data))
   if (!row) throw new NotFoundError("Tipo de produto não encontrado.")
@@ -79,12 +83,7 @@ export async function updateTipoProduto(idInput: unknown, input: unknown) {
 
 export async function deleteTipoProduto(idInput: unknown) {
   const id = validate(tipoProdutoIdSchema, idInput)
-  const result = await write(() => repository.inactivate(id))
-  if (result === "notFound")
+  if (!(await write(() => repository.inactivate(id))))
     throw new NotFoundError("Tipo de produto não encontrado.")
-  if (result === "inUse")
-    throw new ConflictError(
-      "Tipo de produto vinculado a produtos não pode ser removido.",
-    )
-  return { message: "Tipo de produto removido com sucesso." }
+  return { message: "Tipo de produto inativado com sucesso." }
 }

@@ -12,6 +12,54 @@ const knownError = (code: string) =>
     clientVersion: "7.10.0",
   })
 
+const protectedOperations = [
+  ["GET lista", (req: Request) => collection.GET(req)],
+  ["POST cria", (req: Request) => collection.POST(req)],
+  ["GET por ID", (req: Request) => item.GET(req, context())],
+  ["PUT", (req: Request) => item.PUT(req, context())],
+  ["PATCH", (req: Request) => item.PATCH(req, context())],
+  ["DELETE", (req: Request) => item.DELETE(req, context())],
+] as const
+
+it.each(protectedOperations)(
+  "%s rejeita requisição sem token",
+  async (_, invoke) => {
+    const req = await request("/api/tipos_produto", "GET")
+    req.headers.delete("Authorization")
+
+    const response = await invoke(req)
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({
+      success: false,
+      error: "Não autenticado.",
+    })
+    expect(db.usuario_empresa.findMany).not.toHaveBeenCalled()
+    expect(db.tipos_produto.findMany).not.toHaveBeenCalled()
+    expect(db.tipos_produto.create).not.toHaveBeenCalled()
+    expect(db.tipos_produto.update).not.toHaveBeenCalled()
+  },
+)
+
+it.each(protectedOperations)(
+  "%s rejeita usuário sem empresa/permissão",
+  async (_, invoke) => {
+    db.usuario_empresa.findMany.mockResolvedValue([])
+
+    const response = await invoke(await request("/api/tipos_produto", "GET"))
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({
+      success: false,
+      error: "Sem vínculo ativo ou permissão para esta operação.",
+    })
+    expect(db.tipos_produto.findMany).not.toHaveBeenCalled()
+    expect(db.tipos_produto.create).not.toHaveBeenCalled()
+    expect(db.tipos_produto.update).not.toHaveBeenCalled()
+    expect(db.tipos_produto.delete).not.toHaveBeenCalled()
+  },
+)
+
 it("lista uma página e conta os registros com o mesmo filtro", async () => {
   db.tipos_produto.findMany.mockResolvedValue([row])
   db.tipos_produto.count.mockResolvedValue(21)
@@ -23,7 +71,7 @@ it("lista uma página e conta os registros com o mesmo filtro", async () => {
     success: true,
     data: { rows: [row], count: 21, page: 2, limit: 20, totalPages: 2 },
   })
-  const where = { nome: "Matéria-prima" }
+  const where = { nome: "Matéria-prima", status: "ATIVO" }
   expect(db.tipos_produto.findMany).toHaveBeenCalledWith({
     where,
     orderBy: [{ nome: "asc" }, { id: "asc" }],
@@ -86,6 +134,7 @@ it("GET por ID retorna 404 se não existir", async () => {
 })
 
 it("PUT substitui a descrição e PATCH atualiza somente o campo enviado", async () => {
+  db.tipos_produto.findUnique.mockResolvedValue(row)
   db.tipos_produto.findFirst.mockResolvedValue(null)
   db.tipos_produto.update.mockResolvedValue(row)
   expect(
@@ -114,24 +163,54 @@ it("PUT substitui a descrição e PATCH atualiza somente o campo enviado", async
   })
 })
 
-it("bloqueia remoção de tipo em uso e remove tipo sem histórico", async () => {
-  db.produtos.count.mockResolvedValue(1)
+it("prioriza 404 para ID inexistente antes de verificar nome duplicado", async () => {
+  db.tipos_produto.findUnique.mockResolvedValue(null)
+  db.tipos_produto.findFirst.mockResolvedValue(row)
+
   expect(
     (
-      await item.DELETE(
-        await request("/api/tipos_produto/1", "DELETE"),
-        context(),
+      await item.PATCH(
+        await request("/api/tipos_produto/999", "PATCH", { nome: row.nome }),
+        context("999"),
       )
     ).status,
-  ).toBe(409)
-  db.produtos.count.mockResolvedValue(0)
-  db.tipos_produto.delete.mockResolvedValue(row)
+  ).toBe(404)
+  expect(
+    (
+      await item.PUT(
+        await request("/api/tipos_produto/999", "PUT", { nome: row.nome }),
+        context("999"),
+      )
+    ).status,
+  ).toBe(404)
+  expect(db.tipos_produto.findFirst).not.toHaveBeenCalled()
+  expect(db.tipos_produto.update).not.toHaveBeenCalled()
+})
+
+it("inativa sem apagar tipo vinculado ao histórico", async () => {
+  db.tipos_produto.update.mockResolvedValue({ ...row, status: "INATIVO" })
   const response = await item.DELETE(
     await request("/api/tipos_produto/1", "DELETE", undefined),
     context(),
   )
   expect(response.status).toBe(200)
-  expect(db.tipos_produto.delete).toHaveBeenCalledWith({ where: { id: 1 } })
+  expect(db.tipos_produto.update).toHaveBeenCalledWith({
+    where: { id: 1 },
+    data: { status: "INATIVO" },
+  })
+  expect((await response.json()).data.message).toBe(
+    "Tipo de produto inativado com sucesso.",
+  )
+
+  db.tipos_produto.update.mockRejectedValueOnce(knownError("P2025"))
+  expect(
+    (
+      await item.DELETE(
+        await request("/api/tipos_produto/999", "DELETE"),
+        context("999"),
+      )
+    ).status,
+  ).toBe(404)
 })
 
 it("valida JSON, campos imutáveis e parâmetros de consulta", async () => {

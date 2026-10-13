@@ -14,9 +14,13 @@ const buckets = new Map<string, Bucket>()
 const maxBuckets = 5_000
 
 function clientKey(request: Request) {
-  const authorization = request.headers.get("authorization") ?? ""
+  const rawAuthorization = request.headers.get("authorization") ?? ""
+  const bearer = /^\s*Bearer\s+(.+?)\s*$/i.exec(rawAuthorization)
+  const token = bearer?.[1]
+  const authorization =
+    token === undefined ? rawAuthorization.trim() : `Bearer ${token}`
   const forwardedFor =
-    request.headers.get("x-forwarded-for")?.split(",")[0] ?? ""
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? ""
   return createHash("sha256")
     .update(`${authorization}\u0000${forwardedFor}`)
     .digest("hex")
@@ -26,7 +30,6 @@ function discardExpired(now: number) {
   for (const [key, bucket] of buckets) {
     if (bucket.resetAt <= now) buckets.delete(key)
   }
-  if (buckets.size >= maxBuckets) buckets.delete(buckets.keys().next().value)
 }
 
 /** Limite local por processo. Para múltiplas instâncias, use uma store partilhada. */
@@ -35,14 +38,24 @@ export function enforceRateLimit(request: Request, config: RateLimit) {
   discardExpired(now)
   const key = `${config.scope}:${clientKey(request)}`
   const current = buckets.get(key)
-  if (!current || current.resetAt <= now) {
-    buckets.set(key, { count: 1, resetAt: now + config.windowMs })
+  if (current) {
+    if (current.count >= config.limit)
+      throw new HttpError(
+        429,
+        "Limite de requisições excedido. Tente novamente em breve.",
+      )
+    current.count += 1
     return
   }
-  if (current.count >= config.limit)
+  if (buckets.size >= maxBuckets)
     throw new HttpError(
       429,
-      "Limite de requisições excedido. Tente novamente em breve.",
+      "Capacidade temporariamente esgotada. Tente novamente em breve.",
     )
-  current.count += 1
+  buckets.set(key, { count: 1, resetAt: now + config.windowMs })
+}
+
+/** Exclusivo para isolamento dos testes unitários. */
+export function resetRateLimitsForTests() {
+  buckets.clear()
 }

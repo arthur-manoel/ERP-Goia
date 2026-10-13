@@ -23,7 +23,7 @@ export async function findAll(
   filters: TipoProdutoFilters,
   { page, limit }: Pagination,
 ): Promise<{ rows: TipoProduto[]; count: number }> {
-  const where: Prisma.tipos_produtoWhereInput = { ...filters }
+  const where: Prisma.tipos_produtoWhereInput = { ...filters, status: "ATIVO" }
   const [rows, count] = await prisma.$transaction(
     [
       prisma.tipos_produto.findMany({
@@ -78,26 +78,20 @@ export async function update(
   return patch(id, data)
 }
 
-export type InactivateResult = "deleted" | "inUse" | "notFound"
-
-/** O schema não possui status; só remove um tipo sem produtos vinculados. */
-export async function inactivate(id: number): Promise<InactivateResult> {
-  if (await prisma.produtos.count({ where: { id_tipo_produto: id } }))
-    return "inUse"
+/** Mantém o registro e todos os vínculos históricos no banco. */
+export async function inactivate(id: number): Promise<boolean> {
   try {
-    await prisma.tipos_produto.delete({ where: { id } })
-    return "deleted"
+    await prisma.tipos_produto.update({
+      where: { id },
+      data: { status: "INATIVO" },
+    })
+    return true
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2025"
     )
-      return "notFound"
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2003"
-    )
-      return "inUse"
+      return false
     throw error
   }
 }
