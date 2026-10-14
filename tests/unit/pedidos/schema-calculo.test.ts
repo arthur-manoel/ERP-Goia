@@ -194,6 +194,19 @@ describe("cálculo exclusivamente decimal", () => {
         "5.00",
       ).total.toFixed(2),
     ).toBe("37.00"))
+  it("aceita bruto acima do limite quando o líquido legado arredondado cabe", () => {
+    expect(
+      subtotal("2.000", "5000000000000.00", "0.02", "0.01").toFixed(2),
+    ).toBe("9999999999999.99")
+  })
+  it("limite do subtotal persistido não é dispensado por desconto geral", () => {
+    expect(() =>
+      total(
+        [new Prisma.Decimal("9999999999999.99"), new Prisma.Decimal("0.01")],
+        "0.01",
+      ),
+    ).toThrow()
+  })
   it("impede overflow de item e agregado", () => {
     expect(() => subtotal("999999999999.999", "9999999999999.99")).toThrow()
     expect(() =>

@@ -1262,6 +1262,191 @@ test("Pedidos: persistência real, HTTP de produção, permissões e concorrênc
         }
       },
     )
+    await t.test(
+      "36 troca de cliente bloqueia cada snapshot de entrega sem FK e preserva o pedido",
+      async () => {
+        const novoCliente = await prisma.clientes.create({
+          data: {
+            id_empresa: empresas[0],
+            nome_razao_social: "Outro cliente ativo",
+          },
+        })
+        const criado = await crear(corpo())
+        assert.equal(criado.status, 201)
+        const p = criado.body.idPedido
+        const entrega = {
+          destinatario: "Cliente anterior",
+          telefone_entrega: "85999999999",
+          endereco_entrega: "Rua anterior",
+          numero_entrega: "123",
+          complemento_entrega: "Casa",
+          bairro_entrega: "Centro",
+          cidade_entrega: "Fortaleza",
+          estado_entrega: "CE",
+          cep_entrega: "60000000",
+          referencia_entrega: "Portão azul",
+        }
+        const vazia = Object.fromEntries(
+          Object.keys(entrega).map((campo) => [campo, null]),
+        )
+        for (const [campo, valor] of Object.entries(entrega)) {
+          await prisma.pedido_cliente.update({
+            where: { id: p },
+            data: { ...vazia, [campo]: valor },
+          })
+          const antes = await prisma.pedido_cliente.findUnique({
+            where: { id: p },
+          })
+          const auditorias = await prisma.auditoria.count({
+            where: { tabela: "pedido_cliente", id_registro: p },
+          })
+          const r = await chamar(
+            `/api/pedidos/${p}`,
+            "PATCH",
+            { idCliente: novoCliente.id },
+            { versao: antes.versao },
+          )
+          assert.equal(
+            r.status,
+            409,
+            `Snapshot ${campo} deve impedir troca implícita de cliente.`,
+          )
+          assert.deepEqual(
+            await prisma.pedido_cliente.findUnique({ where: { id: p } }),
+            antes,
+          )
+          assert.equal(
+            await prisma.auditoria.count({
+              where: { tabela: "pedido_cliente", id_registro: p },
+            }),
+            auditorias,
+          )
+        }
+        await prisma.pedido_cliente.update({ where: { id: p }, data: entrega })
+        assert.equal(
+          (
+            await chamar(
+              `/api/pedidos/${p}`,
+              "PATCH",
+              { idCliente: clientes[0].id },
+              { versao: 1 },
+            )
+          ).status,
+          200,
+        )
+        const mantido = await prisma.pedido_cliente.findUnique({
+          where: { id: p },
+        })
+        for (const [campo, valor] of Object.entries(entrega))
+          assert.equal(mantido[campo], valor)
+        await prisma.pedido_cliente.update({ where: { id: p }, data: vazia })
+        assert.equal(
+          (
+            await chamar(
+              `/api/pedidos/${p}`,
+              "PATCH",
+              { idCliente: novoCliente.id },
+              { versao: mantido.versao },
+            )
+          ).status,
+          200,
+        )
+        const trocado = await prisma.pedido_cliente.findUnique({
+          where: { id: p },
+        })
+        assert.equal(trocado.id_cliente, novoCliente.id)
+        for (const campo of Object.keys(entrega))
+          assert.equal(trocado[campo], null)
+      },
+    )
+    await t.test(
+      "37 edição aceita líquido legado no limite após ajustes e reverte overflow real",
+      async () => {
+        const criado = await crear(corpo())
+        assert.equal(criado.status, 201)
+        const p = criado.body.idPedido
+        let d = (await chamar(`/api/pedidos/${p}`)).body
+        const item = d.itens[0].idItem
+        await prisma.pedido_cliente_item.update({
+          where: { id: item },
+          data: {
+            quantidade: "1.000",
+            valor_unitario: "5000000000000.00",
+            valor_desconto: "0.02",
+            valor_acrescimo: "0.01",
+            valor_total: "4999999999999.99",
+          },
+        })
+        await prisma.pedido_cliente.update({
+          where: { id: p },
+          data: {
+            valor_subtotal: "4999999999999.99",
+            valor_total: "4999999999999.99",
+          },
+        })
+        for (const input of [
+          { quantidade: "2.000" },
+          { precoPraticado: "5000000000000.00" },
+          { idProduto: produtos[0], idVariacao: variacoes[0].id },
+        ]) {
+          const r = await chamar(
+            `/api/pedidos/${p}/itens/${item}`,
+            "PATCH",
+            input,
+            { versao: d.versao },
+          )
+          assert.equal(
+            r.status,
+            200,
+            "O bruto intermediário não é a coluna persistida.",
+          )
+          d = (await chamar(`/api/pedidos/${p}`)).body
+          assert.equal(d.itens[0].subtotal, "9999999999999.99")
+          assert.equal(d.subtotal, "9999999999999.99")
+          assert.equal(d.total, "9999999999999.99")
+          assert.equal(d.itens[0].desconto, "0.02")
+          assert.equal(d.itens[0].acrescimo, "0.01")
+        }
+        const antes = await prisma.pedido_cliente.findUnique({
+          where: { id: p },
+        })
+        const antesItem = await prisma.pedido_cliente_item.findUnique({
+          where: { id: item },
+        })
+        const auditorias = await prisma.auditoria.count({
+          where: { tabela: "pedido_cliente", id_registro: p },
+        })
+        for (const input of [
+          { quantidade: "2.001" },
+          { precoPraticado: "0.00" },
+        ]) {
+          assert.equal(
+            (
+              await chamar(`/api/pedidos/${p}/itens/${item}`, "PATCH", input, {
+                versao: d.versao,
+              })
+            ).status,
+            409,
+          )
+          assert.deepEqual(
+            await prisma.pedido_cliente.findUnique({ where: { id: p } }),
+            antes,
+          )
+          assert.deepEqual(
+            await prisma.pedido_cliente_item.findUnique({
+              where: { id: item },
+            }),
+            antesItem,
+          )
+          assert.equal(
+            await prisma.auditoria.count({
+              where: { tabela: "pedido_cliente", id_registro: p },
+            }),
+            auditorias,
+          )
+        }
+      },
+    )
   } finally {
     if (server?.exitCode === null) {
       const exited = once(server, "exit")

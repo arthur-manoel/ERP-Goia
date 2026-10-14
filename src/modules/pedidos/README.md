@@ -104,7 +104,10 @@ HALF_UP para duas casas e os subtotais arredondados são somados. Exemplo acima:
 
 Novos ajustes são zero. Ajustes já persistidos em legados são preservados e
 reaplicados segundo o guia atual: linha = quantidade × preço − desconto + acréscimo;
-total = soma das linhas − desconto geral + frete + acréscimo geral. Alteração
+total = soma das linhas − desconto geral + frete + acréscimo geral. O limite da
+linha é validado após aplicar seus ajustes: o bruto intermediário pode superar
+o limite se o líquido arredondado couber na coluna. Subtotal e total do pedido
+também precisam caber nas respectivas colunas, mesmo com desconto geral. Alteração
 incompatível com esses valores é rejeitada, não truncada nem corrigida em GET.
 Código/descrição/unidade e preço do item são históricos; mudar catálogo não
 reescreve pedidos. Edição só de quantidade/preço mantém o snapshot do produto.
@@ -142,8 +145,11 @@ repetição automática de edição que perdeu disputa; consulte antes de tentar
 Criação pode repetir transações após rollback de deadlock/unicidade, até 5 tentativas.
 
 PATCH cabeçalho aceita somente `idCliente`, `dataEntregaPrevista`, `observacao`.
-Troca de cliente em legado com endereço/condição vinculados exige revisão e é
-bloqueada. PATCH item aceita campos de referência, quantidade e preço, parciais;
+Troca de cliente em legado com endereço/condição vinculados ou dados de entrega
+preenchidos diretamente (destinatário, telefone, endereço e seus complementos)
+exige revisão e é bloqueada, mesmo sem FK de endereço. A API não apaga esses dados
+nem os transfere para outro cliente; manter o mesmo cliente não ativa esse bloqueio.
+PATCH item aceita campos de referência, quantidade e preço, parciais;
 troca de produto/variação deve resultar numa combinação válida. Inclusão/edição/
 remoção recalculam total e auditam antes do mesmo commit. Remover último item é 409.
 Falha de item/auditoria reverte cabeçalho, itens, total, versão e sequência.

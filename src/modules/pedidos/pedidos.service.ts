@@ -98,7 +98,6 @@ async function prepararItens(
       unidade: produto.unidade,
       quantidade: new Prisma.Decimal(item.quantidade),
       valor_unitario: new Prisma.Decimal(item.precoPraticado),
-      valor_total: subtotal(item.quantidade, item.precoPraticado),
     }
   })
 }
@@ -142,7 +141,13 @@ export async function criarPedido(
       }
     }
     await validarCliente(tx, ctx, input.idCliente)
-    const itens = await prepararItens(tx, ctx, input.itens)
+    const itens = (await prepararItens(tx, ctx, input.itens)).map((item) => ({
+      ...item,
+      valor_total: subtotal(
+        item.quantidade.toFixed(3),
+        item.valor_unitario.toFixed(2),
+      ),
+    }))
     const calculado = total(itens.map((i) => i.valor_total))
     const numero = await repo.proximoNumero(tx, ctx.idEmpresa)
     const pedido = await tx.pedido_cliente.create({
@@ -194,15 +199,27 @@ export async function editarPedido(
     const antes = await repo.bloquearRascunho(tx, ctx, id, versao)
     await validarCliente(tx, ctx, input.idCliente ?? antes.id_cliente)
     if (input.idCliente !== undefined) {
-      // Endereço e condições legados são do cliente original; nunca reapontá-los implicitamente.
+      // Vínculos e snapshots de entrega são do cliente original; não reapontá-los implicitamente.
       if (
         input.idCliente !== antes.id_cliente &&
         (antes.id_endereco_entrega !== null ||
-          antes.id_condicao_pagamento !== null)
+          antes.id_condicao_pagamento !== null ||
+          [
+            antes.destinatario,
+            antes.telefone_entrega,
+            antes.endereco_entrega,
+            antes.numero_entrega,
+            antes.complemento_entrega,
+            antes.bairro_entrega,
+            antes.cidade_entrega,
+            antes.estado_entrega,
+            antes.cep_entrega,
+            antes.referencia_entrega,
+          ].some((valor) => valor !== null && valor.trim().length > 0))
       )
         throw new PedidoError(
           409,
-          "Pedido possui endereço ou condição comercial vinculada; troca de cliente requer revisão.",
+          "Pedido possui dados de entrega ou condição comercial vinculada; troca de cliente requer revisão.",
         )
     }
     const depois = await repo.recalcular(tx, ctx, antes, {
@@ -254,7 +271,12 @@ export async function incluirItem(
     if (maior >= 2147483647)
       throw new PedidoError(409, "Numeração de itens esgotada.")
     const item = await tx.pedido_cliente_item.create({
-      data: { ...dados, id_pedido_cliente: id, numero_item: maior + 1 },
+      data: {
+        ...dados,
+        valor_total: subtotal(input.quantidade, input.precoPraticado),
+        id_pedido_cliente: id,
+        numero_item: maior + 1,
+      },
     })
     const depois = await repo.recalcular(tx, ctx, antes)
     await repo.auditar(tx, ctx, antes, depois)
