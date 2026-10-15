@@ -43,7 +43,7 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Compras | ⬜ | `requisicao_compra`, `item_requisicao_compra`, `pedido_compra`, `item_pedido_compra`, `compras`, `compra_itens` | [#33](https://github.com/arthur-manoel/ERP-Goia/issues/33) a [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Notas fiscais de entrada | ⬜ | `nota_fiscal`, `item_nota_fiscal` | [#36](https://github.com/arthur-manoel/ERP-Goia/issues/36) |
 | Produção | ⬜ | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
-| Vendas | ⬜ | `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39) |
+| Vendas | 🟨 | `pedido_cliente`, `pedido_cliente_item`, `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39); API de rascunhos com SQL DB-first pendente de aprovação/aplicação. |
 | Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
 As 49 tabelas do schema atual estão distribuídas acima; cada uma aparece em um único módulo.
@@ -455,10 +455,19 @@ Novos vínculos começam com saldo zero, são auditados e idempotentes, preserva
 as duas unicidades do banco. Entrega de back-end, sem telas ou alteração de schema.
 Contrato e testes locais: [documentação da API](src/modules/estoque/README.md).
 
+## API de pedidos e itens por variação
+
+API de back-end persistida em `pedido_cliente`/`pedido_cliente_item`: consultas,
+criação idempotente e edição de rascunhos, com variações, totais decimais calculados
+no servidor, autorização comercial e auditoria. Sem alterações de interface ou
+geração financeira. Implantação depende de aprovação/aplicação do SQL mínimo
+pelo responsável do banco. [Contrato e testes locais](src/modules/pedidos/README.md).
+
 ## Histórico
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-10-10 | Maria | `feature/api-pedidos-itens-variacoes` | API de pedidos/itens por variação, cálculos no servidor e controle transacional de rascunhos. SQL DB-first para aprovação da equipe. |
 | 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |
 | 2026-09-18 | Everton | `feature/guia-contribuicao` | CONTRIBUTING, templates de PR e issue, CODEOWNERS; roadmap convertido em 37 issues com milestones e labels. |
 | 2026-09-18 | Everton | PR [#5](https://github.com/arthur-manoel/ERP-Goia/pull/5) | Esqueleto da aplicação (layout, menu, 26 rotas), sessão provisória, helpers e guia de arquitetura. |

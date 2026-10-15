@@ -971,6 +971,10 @@ model pedido_cliente {
   @@index([id_empresa, status], map: "idx_pedido_cliente_empresa_status")
   @@index([id_empresa, data_pedido], map: "idx_pedido_cliente_empresa_data")
   @@index([id_empresa, data_previsao_entrega], map: "idx_pedido_cliente_previsao")
+  versao                   Int                        @default(1)
+  chave_idempotencia       String?                    @db.VarChar(128)
+  hash_requisicao          String?                    @db.Char(64)
+  @@unique([id_empresa, chave_idempotencia], map: "uk_pedido_empresa_idempotencia")
 }
 
 model pedido_cliente_entrega {
@@ -1063,6 +1067,10 @@ model pedido_cliente_item {
   @@index([id_produto], map: "fk_pedido_item_produto")
   @@index([id_cor], map: "fk_pedido_item_cor")
   @@index([id_tamanho], map: "fk_pedido_item_tamanho")
+  id_variacao                 Int?
+  produto_variacoes           produto_variacoes?            @relation(fields: [id_variacao], references: [id], onDelete: Restrict, map: "fk_pedido_item_variacao")
+  @@unique([id_pedido_cliente, id_produto, id_variacao], map: "uk_pedido_item_produto_variacao")
+  @@index([id_variacao], map: "fk_pedido_item_variacao")
 }
 
 model pedido_compra {
@@ -1178,6 +1186,7 @@ model produto_variacoes {
   @@index([id_cor], map: "fk_produto_variacao_cor")
   @@index([id_produto], map: "fk_produto_variacao_produto")
   @@index([id_tamanho], map: "fk_produto_variacao_tamanho")
+  pedido_cliente_item pedido_cliente_item[]
 }
 
 model produtos {
@@ -1484,6 +1493,7 @@ enum permissoes_usuario_recurso {
   MODELOS
   CATEGORIAS
   CLIENTES
+  PEDIDOS
 }
 
 enum tipos_setor_status {
