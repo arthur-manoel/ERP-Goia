@@ -94,7 +94,7 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Compras",
     itens: [
       {
-        titulo: "Requisições",
+        titulo: "Solicitações de compra",
         href: "/compras/requisicoes",
         icone: ClipboardPen,
       },
