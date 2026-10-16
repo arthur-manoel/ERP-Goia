@@ -1,6 +1,5 @@
 import "server-only"
-import { PrismaPg } from "@prisma/adapter-pg"
-import { databaseProvider, postgresqlNamespace } from "./database-config"
+import { databaseProvider } from "./database-config"
 import { PrismaMariaDb } from "@prisma/adapter-mariadb"
 import { PrismaClient } from "../generated/prisma/client"
 
@@ -12,18 +11,7 @@ function createPrismaClient() {
   const databaseUrl = process.env.DATABASE_URL
   if (!databaseUrl) throw new Error("Defina DATABASE_URL no .env.local.")
 
-  if (databaseProvider(databaseUrl) === "postgresql") {
-    return new PrismaClient({
-      adapter: new PrismaPg(
-        {
-          connectionString: databaseUrl,
-          max: 5,
-          connectionTimeoutMillis: 10000,
-        },
-        { schema: postgresqlNamespace(databaseUrl) },
-      ),
-    })
-  }
+  databaseProvider(databaseUrl)
   const url = new URL(databaseUrl)
   const adapter = new PrismaMariaDb({
     host: url.hostname,

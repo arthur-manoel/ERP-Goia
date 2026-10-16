@@ -3,7 +3,7 @@ export type Resource = "PRODUTOS" | "CORES"
 export type Action = "pode_ler" | "pode_criar" | "pode_editar" | "pode_excluir"
 export async function allowedCompanies(
   id: number,
-  recurso: Resource,
+  recurso: Resource | null,
   action: Action,
 ) {
   const authorization = {
@@ -13,7 +13,11 @@ export async function allowedCompanies(
       // Responsáveis pela empresa administram os cadastros dela.
       { nivel_acesso: "EMPRESA" as const },
       // Demais usuários só recebem a operação explicitamente concedida.
-      { permissoes_usuario: { some: { recurso, [action]: true } } },
+      {
+        permissoes_usuario: {
+          some: { recurso: recurso as Resource, [action]: true },
+        },
+      },
     ],
   }
   const rows = await prisma.usuario_empresa.findMany({
@@ -22,7 +26,7 @@ export async function allowedCompanies(
       status: "ATIVO",
       usuarios: { status: "ATIVO" },
       empresas: { status: "ATIVA" },
-      ...authorization,
+      ...(recurso === null ? {} : authorization),
     },
     select: { id_empresa: true },
   })
