@@ -1366,6 +1366,7 @@ model tipos_produto {
   id        Int        @id @default(autoincrement())
   nome      String     @unique(map: "uk_tipo_produto_nome") @db.VarChar(100)
   descricao String?    @db.VarChar(255)
+  status    tipos_produto_status @default(ATIVO)
   produtos  produtos[]
 }
 
@@ -1572,6 +1573,11 @@ enum setores_status {
 }
 
 enum tamanhos_status {
+  ATIVO
+  INATIVO
+}
+
+enum tipos_produto_status {
   ATIVO
   INATIVO
 }

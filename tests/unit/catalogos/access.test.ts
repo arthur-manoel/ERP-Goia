@@ -53,9 +53,15 @@ for (const [name, collection, item, resource] of [
             status: "ATIVO",
             usuarios: { status: "ATIVO" },
             empresas: { status: "ATIVA" },
-            permissoes_usuario: {
-              some: { recurso: resource, [permission]: true },
-            },
+            OR: [
+              { usuarios: { nivel_acesso: "ADMIN" } },
+              { nivel_acesso: "EMPRESA" },
+              {
+                permissoes_usuario: {
+                  some: { recurso: resource, [permission]: true },
+                },
+              },
+            ],
           },
           select: { id_empresa: true },
         })
