@@ -43,10 +43,11 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Compras | ⬜ | `requisicao_compra`, `item_requisicao_compra`, `pedido_compra`, `item_pedido_compra`, `compras`, `compra_itens` | [#33](https://github.com/arthur-manoel/ERP-Goia/issues/33) a [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Notas fiscais de entrada | ⬜ | `nota_fiscal`, `item_nota_fiscal` | [#36](https://github.com/arthur-manoel/ERP-Goia/issues/36) |
 | Produção | ⬜ | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
-| Vendas | 🟨 | `pedido_cliente`, `pedido_cliente_item`, `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39); API de rascunhos com SQL DB-first pendente de aprovação/aplicação. |
+| Vendas | 🟨 | `pedido_cliente`, `pedido_cliente_item`, `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39); API de rascunhos e fechamento explícito após recebimento confirmado. SQL DB-first pendente de aprovação/aplicação. |
+| Financeiro do pedido | 🟨 | `pedido_cliente_fechamento`, `contas_receber`, `pagamentos_receber`, `categoria_financeira`, `condicoes_pagamento` | Geração transacional de títulos, sem baixa automática. Decisão técnica/implantação: [#91](https://github.com/arthur-manoel/ERP-Goia/issues/91). |
 | Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
-As 49 tabelas do schema atual estão distribuídas acima; cada uma aparece em um único módulo.
+O quadro acompanha os módulos e suas tabelas principais; a estrutura completa está em `prisma/schema.prisma`.
 
 ### Interface de pedidos de venda
 
@@ -463,10 +464,26 @@ no servidor, autorização comercial e auditoria. Sem alterações de interface 
 geração financeira. Implantação depende de aprovação/aplicação do SQL mínimo
 pelo responsável do banco. [Contrato e testes locais](src/modules/pedidos/README.md).
 
+## Fechamento de pedido e contas a receber
+
+`POST /api/pedidos/{id}/fechar` fecha comercialmente um pedido após o recebimento
+completo confirmado pelo cliente, preservando o status operacional. Uma única
+transação registra a data própria do fechamento, venda, parcelas abertas e
+auditoria. Valores vêm do pedido calculado no servidor; vencimentos são explícitos,
+com divisão exata em centavos e resíduo na última parcela. Repetição íntegra não
+duplica cobranças e mutações comuns ficam bloqueadas após o fechamento.
+
+`GET /api/pedidos/{id}/conta-a-receber` exige leitura de FINANCEIRO separada da
+permissão comercial de fechamento. Não há alteração de front-end, baixa, estoque
+ou geração retroativa. O SQL proposto e a aprovação/aplicação compartilhada seguem
+pendentes na [decisão #91](https://github.com/arthur-manoel/ERP-Goia/issues/91).
+[Contrato, implantação e testes locais](src/modules/pedido-recebiveis/README.md).
+
 ## Histórico
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-10-17 | Maria | `feature/pedido-contas-receber-automaticas` | Fechamento após recebimento confirmado e geração atômica de venda/parcelas, consulta financeira protegida e SQL DB-first para aprovação da equipe (#91). Sem front-end ou baixa. |
 | 2026-10-10 | Maria | `feature/api-pedidos-itens-variacoes` | API de pedidos/itens por variação, cálculos no servidor e controle transacional de rascunhos. SQL DB-first para aprovação da equipe. |
 | 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |
 | 2026-09-18 | Everton | `feature/guia-contribuicao` | CONTRIBUTING, templates de PR e issue, CODEOWNERS; roadmap convertido em 37 issues com milestones e labels. |

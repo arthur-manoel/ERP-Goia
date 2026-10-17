@@ -30,6 +30,5 @@ export const db = {
   tipos_produto: model(),
   $queryRaw: vi.fn(),
   fornecedores: model(),
-  $queryRaw: vi.fn(),
   $transaction: vi.fn(),
 }

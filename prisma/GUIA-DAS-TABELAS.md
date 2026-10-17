@@ -1,6 +1,6 @@
 # Guia das tabelas do banco Goia
 
-Documento baseado no `schema.prisma` desta pasta, após a integração do módulo financeiro e dos pedidos de clientes. Abrange os **64 modelos de tabela**, em ordem alfabética, conforme a organização do schema.
+Documento de referência baseado no `schema.prisma` desta pasta, após a integração do módulo financeiro e dos pedidos de clientes, com complemento da proposta DB-first de fechamento. A lista abaixo não substitui a estrutura completa do schema nem confirma a aplicação das propostas no banco compartilhado.
 
 As finalidades abaixo são descritas a partir dos campos e relacionamentos definidos no schema. Os exemplos ilustram possibilidades de uso; a criação automática de registros, os cálculos e as mudanças de status dependem da implementação da aplicação. Este documento não confirma quais rotinas já estão implementadas nem se o banco em execução já recebeu todas as alterações.
 
@@ -103,7 +103,7 @@ As finalidades abaixo são descritas a partir dos campos e relacionamentos defin
 
 **Utilidade:** registrar valores a receber de vendas, com identificação de parcela, vencimento, valores e situação financeira.
 
-**Relações e uso:** exige vínculos com `empresas`, `venda` e `categoria_financeira`, e pode ter vários `pagamentos_receber`. O cliente é identificado por meio da venda. Exemplo: uma parcela de R$ 500 que será quitada em dois recebimentos.
+**Relações e uso:** exige vínculos com `empresas`, `venda` e `categoria_financeira`, e pode ter vários `pagamentos_receber`. O cliente é identificado por meio da venda. A proposta de fechamento acrescenta `id_fechamento` e `saldo` opcionais para preservar registros anteriores; novos títulos desse fluxo exigem saldo válido e número de parcela único no fechamento. Exemplo: uma parcela de R$ 500 que será quitada em dois recebimentos. Criar o título não registra recebimento.
 
 ### 16. `cores`
 
@@ -175,7 +175,7 @@ As finalidades abaixo são descritas a partir dos campos e relacionamentos defin
 
 **Utilidade:** armazenar os produtos vendidos, suas quantidades e seus valores unitários e totais.
 
-**Relações e uso:** liga `venda` a `produtos`. Há uma restrição de unicidade por venda e produto. Exemplo: uma venda contendo uma linha de camisetas e outra de calças. O modelo atual não possui cor e tamanho próprios no item.
+**Relações e uso:** liga `venda` a `produtos` e, opcionalmente, à linha real de `pedido_cliente_item`. O item não possui cor e tamanho próprios: a linha do pedido preserva a variação acordada. Na proposta DB-first de fechamento, linhas avulsas conservam unicidade por venda/produto por meio da coluna gerada `id_produto_sem_pedido`; linhas de pedido passam a usar unicidade por venda/item do pedido. Assim, uma venda pode conter duas variações do mesmo produto sem duplicar a mesma linha encomendada.
 
 ### 28. `kardex`
 
@@ -401,6 +401,19 @@ As finalidades abaixo são descritas a partir dos campos e relacionamentos defin
 
 ## Diferenças entre tabelas próximas
 
+### Complemento DB-first: `pedido_cliente_fechamento`
+
+Registra o evento comercial explícito e seu instante, separados do andamento
+operacional do pedido. Preserva o plano de pagamento, o snapshot comercial e
+seus hashes canônicos. Há um fechamento por empresa/pedido e uma venda por
+fechamento; chaves compostas protegem empresa, cliente, pedido, venda e categoria.
+As parcelas continuam em `contas_receber`, com vínculos RESTRICT para preservar
+o histórico. Não substitui venda, cliente nem registros de recebimento.
+Artefato: `ddl/pedido-recebiveis.sql`; aprovação técnica/aplicação compartilhada
+pendente na [decisão #91](https://github.com/arthur-manoel/ERP-Goia/issues/91).
+
+### Comparação
+
 | Conjunto | Papel de cada tabela |
 | --- | --- |
 | `produtos`, `produto_empresa`, `produto_variacoes` | Cadastro principal; configuração comercial por empresa; combinações de cor e tamanho. |
@@ -451,7 +464,8 @@ Esses fluxos explicam como as tabelas podem trabalhar juntas. O schema define on
 - `ordem_producao.id_pedido_cliente` identifica a encomenda atendida pela ordem; `ordem_producao_item.id_pedido_cliente_item` identifica a linha produzida. Cada ordem atende, neste desenho, no máximo um pedido, e um pedido pode ter várias ordens.
 - O financeiro continua ligado a `venda`: pedido → vendas → contas a receber → recebimentos. Criar o pedido não gera cobrança automaticamente.
 - As relações opcionais preservam operações existentes sem pedido. Para operações de pedido, a aplicação deve verificar que cabeçalho e itens apontam para o mesmo pedido, produto, empresa e cliente. Também deve validar a empresa dos cadastros e das variações utilizados.
-- O schema existente de `item_venda` mantém sua unicidade por venda/produto. Assim, duas linhas de pedido com o mesmo produto não podem ser lançadas separadamente na mesma venda, mesmo que tenham cores ou tamanhos diferentes. Esse caso exige vendas separadas no desenho atual; não houve alteração dessa regra preexistente.
+- A proposta `ddl/pedido-recebiveis.sql` substitui a unicidade simples venda/produto por duas regras: venda/produto para linhas avulsas, via coluna STORED gerada, e venda/item do pedido para linhas vinculadas. Duas variações do mesmo produto podem compor a mesma venda, desde que venham de linhas distintas do pedido. O banco compartilhado só terá essa regra depois da aprovação e aplicação do DDL; não remover índices por conta própria.
+- No fechamento explícito aprovado, o pedido precisa estar ENTREGUE ou CONCLUIDO e ter todas as quantidades com recebimento confirmado pelo cliente. A transação registra uma data própria, preserva o status operacional e cria uma venda com títulos abertos. FATURADA indica títulos emitidos nesse fluxo, não nota fiscal nem pagamento. A criação de pedido e as consultas não geram cobranças.
 
 ### Valores do pedido
 
