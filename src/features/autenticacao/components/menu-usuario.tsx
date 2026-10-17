@@ -1,7 +1,8 @@
 "use client"
 import Link from "next/link"
 import { useState } from "react"
-import { UserRound } from "lucide-react"
+import { LoaderCircle, UserRound } from "lucide-react"
+import { toast } from "sonner"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -13,9 +14,21 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import type { UsuarioLogado } from "../types"
+import { useAutenticacao } from "../provedor-autenticacao"
 
 export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
   const [aberto, setAberto] = useState(false)
+  const [saindo, setSaindo] = useState(false)
+  const { estado, usuario: conta, empresa, sair } = useAutenticacao()
+  const usuarioAtual =
+    estado === "autenticado" && conta
+      ? {
+          nome: conta.nome,
+          usuario: conta.email,
+          email: conta.email,
+          empresa: empresa?.nome ?? "Selecione uma empresa",
+        }
+      : usuario
   return (
     <Dialog open={aberto} onOpenChange={setAberto}>
       <DialogTrigger
@@ -24,8 +37,8 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
             variant="ghost"
             className="h-auto max-w-60 gap-2 px-2 py-1"
             aria-label={
-              usuario
-                ? `Conta de ${usuario.nome}`
+              usuarioAtual
+                ? `Conta de ${usuarioAtual.nome}`
                 : "Minha conta: não autenticado"
             }
           />
@@ -33,8 +46,8 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
       >
         <Avatar>
           <AvatarFallback>
-            {usuario ? (
-              usuario.nome
+            {usuarioAtual ? (
+              usuarioAtual.nome
                 .trim()
                 .split(/\s+/)
                 .slice(0, 2)
@@ -48,10 +61,10 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
         </Avatar>
         <span className="hidden min-w-0 text-left sm:block">
           <span className="block truncate text-sm font-medium">
-            {usuario?.nome ?? "Minha conta"}
+            {usuarioAtual?.nome ?? "Minha conta"}
           </span>
           <span className="block truncate text-xs text-muted-foreground">
-            {usuario?.empresa ?? "Não autenticado"}
+            {usuarioAtual?.empresa ?? "Não autenticado"}
           </span>
         </span>
       </DialogTrigger>
@@ -59,25 +72,47 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
         <DialogHeader>
           <DialogTitle>Minha conta</DialogTitle>
           <DialogDescription>
-            {usuario
+            {usuarioAtual
               ? "Dados do usuário conectado à empresa."
               : "Nenhum usuário está autenticado nesta sessão."}
           </DialogDescription>
         </DialogHeader>
-        {usuario ? (
-          <dl className="space-y-4">
-            {[
-              ["Nome", usuario.nome],
-              ["Usuário", usuario.usuario],
-              ["Empresa", usuario.empresa],
-              ...(usuario.email ? [["E-mail", usuario.email]] : []),
-            ].map(([label, value]) => (
-              <div key={label}>
-                <dt className="text-sm text-muted-foreground">{label}</dt>
-                <dd className="font-medium break-words">{value}</dd>
-              </div>
-            ))}
-          </dl>
+        {usuarioAtual ? (
+          <div className="space-y-5">
+            <dl className="space-y-4">
+              {[
+                ["Nome", usuarioAtual.nome],
+                ["Usuário", usuarioAtual.usuario],
+                ["Empresa", usuarioAtual.empresa],
+                ...(usuarioAtual.email ? [["E-mail", usuarioAtual.email]] : []),
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-sm text-muted-foreground">{label}</dt>
+                  <dd className="font-medium break-words">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <Button
+              variant="outline"
+              disabled={saindo}
+              onClick={async () => {
+                setSaindo(true)
+                try {
+                  await sair()
+                  setAberto(false)
+                } catch {
+                  toast.error(
+                    "Não foi possível encerrar a sessão. Tente novamente.",
+                  )
+                } finally {
+                  setSaindo(false)
+                }
+              }}
+            >
+              {saindo && <LoaderCircle className="animate-spin" />}
+              {saindo ? "Saindo…" : "Sair"}
+            </Button>
+          </div>
         ) : (
           <Button
             nativeButton={false}

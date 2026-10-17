@@ -28,6 +28,7 @@ export const db = {
   clientes: model(),
   sequencias_automaticas: { ...model(), upsert: vi.fn() },
   tipos_produto: model(),
+  $queryRaw: vi.fn(),
   fornecedores: model(),
   $queryRaw: vi.fn(),
   $transaction: vi.fn(),

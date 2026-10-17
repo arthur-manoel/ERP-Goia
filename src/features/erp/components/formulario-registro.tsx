@@ -13,6 +13,11 @@ import { toast } from "sonner"
 import { schemas, type Collection, type Data } from "@/features/erp/tipos"
 import { unidades, calcularVenda } from "@/features/estoque/schemas"
 import { tiposEndereco as addressTypes } from "@/features/clientes/schemas"
+import {
+  formatarCep,
+  formatarDocumento,
+  formatarTelefone,
+} from "@/features/clientes/formatacao"
 import { formatarMoeda as brl } from "@/lib/formatacao"
 
 import { useErp } from "./provedor"
@@ -36,14 +41,16 @@ import {
 import { SearchSelect, type Option } from "./seletor-pesquisavel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { FormularioPedido } from "@/features/pedidos/components/formulario-pedido"
+import { FormularioAberturaOP } from "@/features/producao/components/formulario-abertura-op"
 
 type FormField = {
   key: string
   label: string
-  type?: "number" | "email" | "date" | "textarea"
+  type?: "number" | "email" | "date" | "tel" | "textarea"
   readOnly?: boolean
   optional?: boolean
   options?: Option[]
+  mask?: "document" | "phone" | "zip"
 }
 const options = (values: string[]) =>
   values.map((value) => ({ value, label: value }))
@@ -57,6 +64,8 @@ type RecordFormProps = {
 
 export function RecordForm(props: RecordFormProps) {
   if (props.collection === "orders") return <FormularioPedido {...props} />
+  if (props.collection === "productions")
+    return <FormularioAberturaOP {...props} />
   return <FormularioRegistro {...props} />
 }
 
@@ -92,13 +101,10 @@ function FormularioRegistro({
   const addresses = useFieldArray({ control: form.control, name: "addresses" })
   const values = useWatch({ control: form.control })
   const db = data as Data
-  const productOptions = db.materials
-    .filter((row) => row.category === "Produto pronto")
-    .map((row) => ({ value: row.id, label: row.name }))
   const componentOptions = db.materials
     .filter((row) => row.id !== initial.id)
     .map((row) => ({ value: row.id, label: row.name + " · " + row.unit }))
-  const fields: Record<Collection, FormField[]> = {
+  const fields: Partial<Record<Collection, FormField[]>> = {
     materials: [
       { key: "name", label: "Nome do material" },
       { key: "code", label: "Código" },
@@ -147,7 +153,11 @@ function FormularioRegistro({
           { value: "PJ", label: "Pessoa jurídica" },
         ],
       },
-      { key: "document", label: values.personType === "PJ" ? "CNPJ" : "CPF" },
+      {
+        key: "document",
+        label: values.personType === "PJ" ? "CNPJ" : "CPF",
+        mask: "document",
+      },
       {
         key: "role",
         label: "Perfil do cadastro",
@@ -155,47 +165,12 @@ function FormularioRegistro({
       },
       { key: "name", label: "Nome / razão social" },
       { key: "email", label: "E-mail", type: "email" },
-      { key: "phone", label: "Telefone com DDD" },
+      { key: "phone", label: "Telefone com DDD", type: "tel", mask: "phone" },
       {
         key: "status",
         label: "Situação",
         options: options(["Ativo", "Inativo"]),
       },
-    ],
-    productions: [
-      { key: "code", label: "Código da ordem" },
-      { key: "productId", label: "Produto pronto", options: productOptions },
-      ...(db.materials.find((produto) => produto.id === values.productId)
-        ?.variations?.length
-        ? [
-            {
-              key: "variationId",
-              label: "Tamanho / cor",
-              optional: true,
-              options: (
-                db.materials.find((produto) => produto.id === values.productId)
-                  ?.variations ?? []
-              ).map((variacao) => ({
-                value: variacao.id,
-                label: `${variacao.size} · ${variacao.color}`,
-              })),
-            },
-          ]
-        : []),
-      { key: "quantity", label: "Quantidade de peças", type: "number" },
-      {
-        key: "status",
-        label: "Situação",
-        options: options([
-          "Planejada",
-          "Em produção",
-          "Concluída",
-          "Cancelada",
-        ]),
-      },
-      { key: "startDate", label: "Data de início", type: "date" },
-      { key: "dueDate", label: "Previsão de conclusão", type: "date" },
-      { key: "notes", label: "Observações", type: "textarea", optional: true },
     ],
     orders: [
       { key: "code", label: "Código do pedido" },
@@ -265,6 +240,14 @@ function FormularioRegistro({
       toast.error(message)
     }
   }
+  function formatarCampo(mask: FormField["mask"], value: unknown) {
+    const texto = typeof value === "string" ? value : ""
+    if (mask === "document")
+      return formatarDocumento(texto, values.personType === "PJ" ? "PJ" : "PF")
+    if (mask === "phone") return formatarTelefone(texto)
+    if (mask === "zip") return formatarCep(texto)
+    return texto
+  }
   function renderField(field: FormField) {
     const error = form.getFieldState(field.key, form.formState).error
     const id = `record-${field.key}`
@@ -288,8 +271,6 @@ function FormularioRegistro({
                 options={field.options ?? []}
                 onValueChange={(value) => {
                   control.onChange(value)
-                  if (collection === "productions" && field.key === "productId")
-                    form.setValue("variationId", "")
                   if (
                     collection === "materials" &&
                     field.key === "category" &&
@@ -333,6 +314,49 @@ function FormularioRegistro({
             {...form.register(field.key)}
             aria-invalid={!!error}
             aria-describedby={error ? `${id}-error` : undefined}
+          />
+        ) : field.mask ? (
+          <Controller
+            control={form.control}
+            name={field.key}
+            render={({ field: control }) => (
+              <Input
+                id={id}
+                ref={control.ref}
+                name={control.name}
+                type={field.type ?? "text"}
+                value={formatarCampo(field.mask, control.value)}
+                onChange={(event) =>
+                  control.onChange(
+                    formatarCampo(field.mask, event.target.value),
+                  )
+                }
+                onBlur={control.onBlur}
+                inputMode={
+                  field.mask === "document" && values.personType === "PJ"
+                    ? "text"
+                    : "numeric"
+                }
+                maxLength={
+                  field.mask === "document"
+                    ? values.personType === "PJ"
+                      ? 18
+                      : 14
+                    : field.mask === "phone"
+                      ? 15
+                      : 9
+                }
+                autoComplete={
+                  field.mask === "phone"
+                    ? "tel"
+                    : field.mask === "zip"
+                      ? "postal-code"
+                      : "off"
+                }
+                aria-invalid={!!error}
+                aria-describedby={error ? `${id}-error` : undefined}
+              />
+            )}
           />
         ) : (
           <Input
@@ -414,7 +438,7 @@ function FormularioRegistro({
           >
             {/* O grid usa breakpoints de viewport; sem contenção, os campos mantêm a altura ao inserir componentes no diálogo. */}
             <div className="grid gap-5 sm:grid-cols-2">
-              {fields[collection].map(renderField)}
+              {(fields[collection] ?? []).map(renderField)}
             </div>
             {collection === "materials" && (
               <p
@@ -666,6 +690,7 @@ function FormularioRegistro({
                       {renderField({
                         key: `addresses.${index}.zip`,
                         label: "CEP",
+                        mask: "zip",
                       })}
                       {renderField({
                         key: `addresses.${index}.street`,
@@ -687,7 +712,7 @@ function FormularioRegistro({
               </section>
             )}
             {collection === "transactions" &&
-              !fields.transactions.find((field) => field.key === "partyId")
+              !fields.transactions?.find((field) => field.key === "partyId")
                 ?.options?.length && (
                 <p className="text-sm text-muted-foreground">
                   Cadastre um{" "}

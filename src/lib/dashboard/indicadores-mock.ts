@@ -1,6 +1,5 @@
 import "server-only"
 import type {
-  InsumosAbaixoDoMinimo,
   OrdensProducaoAbertas,
   PedidosAEntregar,
   SaldoDoMes,
@@ -18,39 +17,6 @@ import type {
 function garantirAmbienteDeDesenvolvimento() {
   if (process.env.NODE_ENV === "production") {
     throw new Error("Dados mock da Dashboard não podem ser usados em produção.")
-  }
-}
-
-export async function mockInsumosAbaixoDoMinimo(): Promise<InsumosAbaixoDoMinimo> {
-  garantirAmbienteDeDesenvolvimento()
-  return {
-    total: 12,
-    semEstoque: 2,
-    totalMonitorados: 148,
-    maisCriticos: [
-      {
-        id: 1,
-        nome: "Insumo exemplo A",
-        saldo: "0.000",
-        minimo: "10.000",
-        unidade: "un",
-      },
-      {
-        id: 2,
-        nome: "Insumo exemplo B",
-        saldo: "0.000",
-        minimo: "25.000",
-        unidade: "m",
-      },
-      {
-        id: 3,
-        nome: "Insumo exemplo C",
-        saldo: "3.500",
-        minimo: "20.000",
-        unidade: "kg",
-      },
-    ],
-    comparativo: { rotulo: "vs. 30 dias atrás", valorAnterior: 9 },
   }
 }
 
