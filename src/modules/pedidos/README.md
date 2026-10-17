@@ -6,6 +6,11 @@ O fluxo atual é pedido → venda → contas a receber. Este card implementa som
 rascunhos e consultas; não cria venda, cobrança, reserva, movimentação ou produção.
 O front-end e seu adaptador temporário permanecem inalterados.
 
+O fechamento comercial posterior fica no módulo
+[`pedido-recebiveis`](../pedido-recebiveis/README.md): ele reutiliza este pedido,
+valida o recebimento completo confirmado e gera venda/parcelas na mesma transação.
+Não é uma ampliação do PATCH de rascunho nem da criação idempotente documentados aqui.
+
 ## Banco e implantação DB-first
 
 Proposta mínima: `prisma/ddl/pedidos-itens-variacoes.sql`. Requer as tabelas de
@@ -137,7 +142,10 @@ Recurso ausente ou de outra empresa recebe o mesmo 404, inclusive item alheio.
 
 Para qualquer mutação de rascunho, envie `If-Match: "<VERSAO_CONSULTADA>"`.
 GET detalhe/confirmacões retornam `versao` e ETag `"<VERSAO>"`. Versão antiga,
-estado não RASCUNHO ou operação vinculada a venda/produção/entrega resulta 409.
+estado não RASCUNHO ou operação vinculada a venda/produção/entrega/fechamento resulta 409.
+O marcador `pedido_cliente_fechamento` também bloqueia edição se o status
+operacional for indevidamente alterado de volta para RASCUNHO; cliente, itens,
+preços e totais não podem contornar o fechamento pelas mutações comuns.
 Toda mutação revalida o cliente ativo na empresa; consulta e repetição idempotente
 de uma criação já concluída não reescrevem registros após inativação do cliente.
 Lock é no banco, entre processos. Cada sucesso incrementa a versão. Não há

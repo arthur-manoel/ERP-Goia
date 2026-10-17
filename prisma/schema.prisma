@@ -58,8 +58,10 @@ model categoria_financeira {
   contas_receber contas_receber[]
   contas_pagar   contas_pagar[]
   despesas       despesas[]
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
 
   @@unique([id_empresa, nome], map: "uk_categoria_financeira_empresa_nome")
+  @@unique([id, id_empresa], map: "uk_categoria_financeira_id_empresa")
   @@index([id_empresa], map: "idx_categoria_financeira_empresa")
 }
 
@@ -144,7 +146,9 @@ model clientes {
   cliente_contato       cliente_contato[]
 
   pedido_cliente pedido_cliente[]
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
 
+  @@unique([id, id_empresa], map: "uk_cliente_id_empresa")
   @@index([id_empresa], map: "idx_cliente_empresa")
   @@index([id_condicao_pagamento])
 }
@@ -303,6 +307,8 @@ model contas_receber {
   id_empresa           Int
   id_venda             Int
   id_categoria         Int
+  id_fechamento        Int?
+  saldo                Decimal?                    @db.Decimal(15, 2)
   numero_parcela       Int                         @default(1)
   total_parcelas       Int                         @default(1)
   descricao            String?                     @db.VarChar(255)
@@ -320,7 +326,10 @@ model contas_receber {
   venda                venda                       @relation(fields: [id_venda], references: [id], onDelete: Restrict, onUpdate: Cascade)
   categoria_financeira categoria_financeira        @relation(fields: [id_categoria], references: [id], onDelete: Restrict, onUpdate: Cascade)
   pagamentos_receber   pagamentos_receber[]
+  pedido_cliente_fechamento pedido_cliente_fechamento? @relation(fields: [id_fechamento, id_empresa, id_venda, id_categoria], references: [id, id_empresa, id_venda, id_categoria], onDelete: Restrict, onUpdate: Restrict, map: "fk_conta_receber_fechamento")
 
+  @@unique([id_fechamento, numero_parcela], map: "uk_conta_receber_fechamento_parcela")
+  @@index([id_fechamento, id_empresa, id_venda, id_categoria], map: "idx_conta_receber_fechamento")
   @@index([id_empresa], map: "idx_contas_receber_empresa")
   @@index([id_venda], map: "idx_contas_receber_venda")
   @@index([id_categoria], map: "idx_contas_receber_categoria")
@@ -385,6 +394,7 @@ model empresa_fornecedor {
 }
 
 model empresas {
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
   fluxos_producao            fluxos_producao[]
   estoque_minimo_local      estoque_minimo_local[]
   id                        Int                         @id @default(autoincrement())
@@ -582,12 +592,15 @@ model item_venda {
   quantidade             Decimal  @db.Decimal(15, 3)
   valor_unitario         Decimal  @db.Decimal(15, 2)
   valor_total            Decimal  @db.Decimal(15, 2)
-  produtos               produtos @relation(fields: [id_produto], references: [id], map: "fk_item_venda_produto")
+  /// Coluna gerada somente pelo banco; mantém a unicidade das vendas avulsas.
+  id_produto_sem_pedido   Int?     @ignore
+  produtos               produtos @relation(fields: [id_produto], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_item_venda_produto_restrict")
   venda                  venda    @relation(fields: [id_venda], references: [id], onDelete: Cascade, map: "fk_item_venda_venda")
 
-  pedido_cliente_item pedido_cliente_item? @relation(fields: [id_pedido_cliente_item], references: [id], onDelete: Restrict, map: "fk_item_venda_pedido_item")
+  pedido_cliente_item pedido_cliente_item? @relation(fields: [id_pedido_cliente_item], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_item_venda_pedido_item_restrict")
 
-  @@unique([id_venda, id_produto], map: "uk_item_venda_produto")
+  @@unique([id_venda, id_pedido_cliente_item], map: "uk_item_venda_pedido_item")
+  @@unique([id_venda, id_produto_sem_pedido], map: "uk_item_venda_produto_avulso")
   @@index([id_produto], map: "fk_item_venda_produto")
   @@index([id_pedido_cliente_item], map: "fk_item_venda_pedido_item")
 }
@@ -917,6 +930,7 @@ model pagamentos_receber {
 }
 
 model pedido_cliente {
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
   id                       Int                        @id @default(autoincrement())
   id_empresa               Int
   id_cliente               Int
@@ -964,6 +978,7 @@ model pedido_cliente {
   venda                    venda[]
 
   @@unique([id_empresa, numero], map: "uk_pedido_cliente_empresa_numero")
+  @@unique([id, id_empresa, id_cliente], map: "uk_pedido_cliente_id_empresa_cliente")
   @@index([id_cliente], map: "fk_pedido_cliente_cliente")
   @@index([id_usuario], map: "fk_pedido_cliente_usuario")
   @@index([id_condicao_pagamento], map: "fk_pedido_cliente_condicao")
@@ -975,6 +990,38 @@ model pedido_cliente {
   chave_idempotencia       String?                    @db.VarChar(128)
   hash_requisicao          String?                    @db.Char(64)
   @@unique([id_empresa, chave_idempotencia], map: "uk_pedido_empresa_idempotencia")
+}
+
+model pedido_cliente_fechamento {
+  id                       Int                    @id @default(autoincrement())
+  id_empresa               Int
+  id_pedido_cliente        Int
+  id_cliente               Int
+  id_venda                 Int                    @unique(map: "uk_fechamento_venda")
+  id_categoria             Int
+  id_usuario               Int
+  data_fechamento          DateTime               @default(now()) @db.DateTime(3)
+  valor_total              Decimal                @db.Decimal(15, 2)
+  total_parcelas           Int
+  plano_pagamento          Json
+  hash_plano               String                 @db.Char(64)
+  hash_pedido              String                 @db.Char(64)
+  snapshot_pedido          Json
+  empresas                 empresas               @relation(fields: [id_empresa], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_empresa")
+  pedido_cliente           pedido_cliente         @relation(fields: [id_pedido_cliente, id_empresa, id_cliente], references: [id, id_empresa, id_cliente], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_pedido")
+  clientes                 clientes               @relation(fields: [id_cliente, id_empresa], references: [id, id_empresa], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_cliente")
+  venda                    venda                  @relation(fields: [id_venda, id_empresa, id_cliente, id_pedido_cliente], references: [id, id_empresa, id_cliente, id_pedido_cliente], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_venda")
+  categoria_financeira      categoria_financeira   @relation(fields: [id_categoria, id_empresa], references: [id, id_empresa], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_categoria")
+  usuarios                 usuarios               @relation(fields: [id_usuario], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_usuario")
+  contas_receber            contas_receber[]
+
+  @@unique([id_empresa, id_pedido_cliente], map: "uk_fechamento_empresa_pedido")
+  @@unique([id, id_empresa, id_venda, id_categoria], map: "uk_fechamento_id_empresa_venda_categoria")
+  @@index([id_pedido_cliente, id_empresa, id_cliente], map: "idx_fechamento_pedido")
+  @@index([id_cliente, id_empresa], map: "idx_fechamento_cliente")
+  @@index([id_venda, id_empresa, id_cliente, id_pedido_cliente], map: "idx_fechamento_venda")
+  @@index([id_categoria, id_empresa], map: "idx_fechamento_categoria")
+  @@index([id_usuario], map: "idx_fechamento_usuario")
 }
 
 model pedido_cliente_entrega {
@@ -1402,6 +1449,7 @@ model usuario_empresa {
 }
 
 model usuarios {
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
   id                                                                                                   Int                                 @id @default(autoincrement())
   nome                                                                                                 String                              @db.VarChar(150)
   email                                                                                                String                              @unique(map: "uk_usuario_email") @db.VarChar(150)
@@ -1428,6 +1476,7 @@ model usuarios {
 }
 
 model venda {
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
   id                    Int                     @id @default(autoincrement())
   id_pedido_cliente     Int?
   id_empresa            Int
@@ -1460,6 +1509,7 @@ model venda {
   pedido_cliente pedido_cliente? @relation(fields: [id_pedido_cliente], references: [id], onDelete: Restrict, map: "fk_venda_pedido_cliente")
 
   @@unique([id_empresa, numero], map: "uk_venda_empresa_numero")
+  @@unique([id, id_empresa, id_cliente, id_pedido_cliente], map: "uk_venda_id_empresa_cliente_pedido")
   @@index([id_cliente], map: "fk_venda_cliente")
   @@index([id_usuario], map: "fk_venda_usuario")
   @@index([id_condicao_pagamento])
@@ -1495,6 +1545,7 @@ enum permissoes_usuario_recurso {
   CATEGORIAS
   CLIENTES
   PEDIDOS
+  FINANCEIRO
 }
 
 enum tipos_setor_status {
