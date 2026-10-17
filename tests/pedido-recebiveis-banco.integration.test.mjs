@@ -1,10 +1,48 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import path from "node:path"
 import mariadb from "mariadb"
 import { bancoLocal } from "./helpers/integracao-pedidos.mjs"
 
-test("DDL de recebíveis preserva legado e impõe os novos vínculos no banco local", async (t) => {
+const HISTORICAS = [
+  "20260918000000_baseline",
+  "20260920000000_refresh_token_rotation",
+  "20260922000000_estoque_minimo_local",
+  "20261004000000_setores_fluxos_producao",
+  "20261013000000_add_status_tipos_produto",
+]
+const NOVA = "20261017000000_pedido_contas_receber"
+const checksum = (name) =>
+  createHash("sha256")
+    .update(
+      readFileSync(path.resolve("prisma/migrations", name, "migration.sql")),
+    )
+    .digest("hex")
+
+function aplicarMigration(value) {
+  const result = spawnSync(
+    process.execPath,
+    [path.resolve("node_modules/prisma/build/index.js"), "migrate", "deploy"],
+    {
+      env: { ...process.env, DATABASE_URL: value },
+      encoding: "utf8",
+      maxBuffer: 16000000,
+      windowsHide: true,
+    },
+  )
+  // Não publica a saída da CLI: erros de conexão podem conter credenciais.
+  assert.ok(!result.error, "Não foi possível iniciar o Prisma CLI local.")
+  assert.equal(
+    result.status,
+    0,
+    "migrate deploy falhou no banco local. Preserve o banco para inspeção; nada será apagado.",
+  )
+}
+
+test("migration de recebíveis preserva legado e impõe os novos vínculos no banco local", async (t) => {
   const url = bancoLocal(process.env.RECEBIVEIS_UPGRADE_TEST_DATABASE_URL)
   const db = await mariadb.createConnection({
     host: url.hostname,
@@ -19,10 +57,15 @@ test("DDL de recebíveis preserva legado e impõe os novos vínculos no banco lo
   let fixtures = false
   const rejeitar = (sql, args, code) =>
     assert.rejects(db.query(sql, args), (error) => error.code === code)
+  const migracoes = () =>
+    db.query(
+      "SELECT id,checksum,finished_at,migration_name,logs,rolled_back_at,started_at,applied_steps_count FROM _prisma_migrations ORDER BY migration_name,id",
+    )
   try {
     for (const row of await db.query("SHOW TABLES")) {
       const table = Object.values(row)[0]
       assert.match(table, /^[a-z_]+$/)
+      if (table === "_prisma_migrations") continue
       assert.equal(
         String((await db.query(`SELECT COUNT(*) AS n FROM \`${table}\``))[0].n),
         "0",
@@ -33,8 +76,20 @@ test("DDL de recebíveis preserva legado e impõe os novos vínculos no banco lo
       (await db.query("SHOW COLUMNS FROM contas_receber LIKE 'id_fechamento'"))
         .length,
       0,
-      "Prepare o banco anterior com --legado; este teste aplica o DDL uma única vez.",
+      "Prepare o banco anterior com --legado; a nova migration ainda não deve estar aplicada.",
     )
+    const historicoAnterior = await migracoes()
+    assert.deepEqual(
+      historicoAnterior.map((row) => row.migration_name),
+      HISTORICAS,
+      "A base local deve ter somente as cinco migrations históricas registradas.",
+    )
+    for (const row of historicoAnterior) {
+      assert.notEqual(row.finished_at, null)
+      assert.equal(row.rolled_back_at, null)
+      assert.ok(row.logs === null || row.logs === "")
+      assert.equal(row.checksum, checksum(row.migration_name))
+    }
     await db.beginTransaction()
     for (let offset = 0; offset < 2; offset++) {
       await db.query(
@@ -127,15 +182,37 @@ test("DDL de recebíveis preserva legado e impõe os novos vínculos no banco lo
         ),
       })
     const antes = await snapshot()
-    for (const statement of readFileSync(
-      "prisma/ddl/pedido-recebiveis.sql",
-      "utf8",
+    aplicarMigration(url.toString())
+
+    await t.test(
+      "registra a nova migration e preserva o histórico anterior",
+      async () => {
+        const historicoAtual = await migracoes()
+        assert.deepEqual(
+          historicoAtual.map((row) => row.migration_name),
+          [...HISTORICAS, NOVA],
+        )
+        assert.deepEqual(
+          historicoAtual.filter((row) => row.migration_name !== NOVA),
+          historicoAnterior,
+        )
+        const nova = historicoAtual.find((row) => row.migration_name === NOVA)
+        assert.equal(nova.checksum, checksum(NOVA))
+        assert.notEqual(nova.finished_at, null)
+        assert.equal(nova.rolled_back_at, null)
+        assert.ok(nova.logs === null || nova.logs === "")
+        assert.equal(nova.applied_steps_count, 1)
+      },
     )
-      .replace(/^--.*$/gm, "")
-      .split(";")
-      .map((value) => value.trim())
-      .filter(Boolean))
-      await db.query(statement)
+    await t.test(
+      "segunda execução de deploy não reaplica SQL nem altera dados ou histórico",
+      async () => {
+        const historicoAntes = await migracoes()
+        aplicarMigration(url.toString())
+        assert.deepEqual(await migracoes(), historicoAntes)
+        assert.equal(await snapshot(), antes)
+      },
+    )
 
     await t.test(
       "preserva pedidos, vendas, títulos, pagamentos e permissões legados",

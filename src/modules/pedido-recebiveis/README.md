@@ -168,15 +168,22 @@ reparo por GET/retry ou cobrança retroativa por pressupor que CONCLUIDO é fech
 Pedido sem fechamento comprovado recebe 409 na consulta. Ajustes financeiros
 manuais, cancelamento e regularização exigem entrega própria.
 
-## Banco e implantação DB-first
+## Banco, migration e implantação DB-first
 
-Decisão técnica e implantação compartilhada pendentes da equipe na
-[issue #91](https://github.com/arthur-manoel/ERP-Goia/issues/91). O artefato é
-`prisma/ddl/pedido-recebiveis.sql`, baseado na `develop`
-`90b64eea48067c07da8c56387e82f67c8d3c7316`. Não é migration Prisma nem confirmação
-de aplicação no banco compartilhado. Nenhum DDL desta entrega é executado nele.
+A alteração está versionada como migration Prisma em
+`prisma/migrations/20261017000000_pedido_contas_receber/migration.sql`, baseada na
+`develop@90b64eea48067c07da8c56387e82f67c8d3c7316`. Este é o único arquivo SQL
+da alteração: não há uma cópia paralela em `prisma/ddl`. A migration pode ser
+executada pelo Prisma em bancos locais, e seu SQL pode ser aplicado no banco
+compartilhado pelo responsável autorizado. A restrição é do comando e do fluxo
+de implantação, não uma limitação do arquivo ao ambiente local.
 
-O SQL propõe `pedido_cliente_fechamento`, plano/snapshot/hashes e chaves compostas
+A aprovação técnica e a aplicação compartilhada continuam pendentes na
+[issue #91](https://github.com/arthur-manoel/ERP-Goia/issues/91). Versionar, enviar
+ou incorporar a migration na PR não a executa automaticamente. Esta entrega não
+aplica DDL no banco compartilhado nem libera comandos remotos em `prisma.config.ts`.
+
+O SQL cria `pedido_cliente_fechamento`, plano/snapshot/hashes e chaves compostas
 para empresa/cliente/pedido/venda/categoria; acrescenta `contas_receber.id_fechamento`
 e `saldo` nullable, preservando registros antigos sem inventar saldo; impõe
 unicidade por parcela e CHECK condicional de saldo. FKs novas usam RESTRICT,
@@ -191,10 +198,53 @@ usadas na expressão passam a ON UPDATE RESTRICT por compatibilidade com MySQL.
 
 O responsável deve revisar a estrutura real, índices/FKs e valores adicionais do
 enum, verificar duplicidades incompatíveis, aprovar, fazer backup e aplicar o SQL
-em janela adequada. ALTER TABLE pode fazer commit implícito; não tratar como
-migration reversível por transação. Depois deve introspectar o alvo autorizado
-com `npm run db:pull`, revisar o diff e gerar o Client antes de implantar o código.
-Não executar baseline de testes, `db push` ou migration automática no compartilhado.
+da migration em janela adequada. O alvo precisa conter as alterações DB-first
+anteriores de pedidos e financeiro; esta migration é incremental, não um baseline
+completo do ERP. Antes da aplicação, estas consultas somente de leitura ajudam a
+verificar as pré-condições; não aplicam a migration:
+
+```sql
+SELECT id_venda, id_pedido_cliente_item, COUNT(*) AS quantidade
+FROM item_venda
+WHERE id_pedido_cliente_item IS NOT NULL
+GROUP BY id_venda, id_pedido_cliente_item
+HAVING COUNT(*) > 1;
+
+SELECT COLUMN_TYPE
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'permissoes_usuario'
+  AND COLUMN_NAME = 'recurso';
+
+SHOW CREATE TABLE item_venda;
+```
+
+A primeira consulta deve retornar zero linhas; duplicidades exigem regularização
+explícita, nunca exclusão automática de dados. Compare o enum real com o `MODIFY`
+da migration: valores extras existentes precisam ser preservados e revisados antes
+da aplicação, não removidos para caber na lista fixa. Confirme também as FKs
+anteriores `fk_item_venda_produto` e `fk_item_venda_pedido_item` e o índice
+`uk_item_venda_produto`, incluindo suas definições. Se algum nome ou contrato for
+diferente, interrompa para reconciliação aprovada antes do primeiro ALTER; essas
+consultas não substituem a revisão completa da estrutura. Não edite uma migration
+já aplicada para esconder divergências de histórico.
+
+ALTER TABLE pode fazer commit implícito: em caso de falha parcial,
+inspecione e reconcilie o estado antes de nova tentativa, sem marcar sucesso para
+ocultar a falha nem reaplicar o SQL indiscriminadamente.
+
+Depois da aplicação, introspecte o alvo autorizado com `npm run db:pull`, revise o
+diff e gere o Client antes de implantar o código. Se a mesma estrutura já tiver
+sido aplicada manualmente, valide sua equivalência integral antes de registrar
+essa migration como aplicada no histórico pelo fluxo autorizado. `migrate resolve
+--applied` registra histórico, mas não cria nem confere tabelas, colunas ou índices;
+não é uma alternativa à aplicação/validação do SQL. O bloqueio de `prisma migrate`
+remoto permanece: não altere a configuração para contorná-lo.
+
+Não execute o preparador/baseline de testes, `db push` ou migration automática no
+compartilhado. Para cópias locais existentes, valide primeiro a estrutura anterior
+e o histórico; não aplique migrations históricas sobre tabelas já existentes nem
+aceite reset. Use os bancos vazios isolados abaixo para reprodução automatizada.
 Em MariaDB, JSON é representado como alias de texto com validação; uma introspecção
 pode exibir LongText e CHECKs em vez do tipo JSON nativo MySQL. Preserve a semântica
 e as constraints do DDL ao revisar o schema; não substitua por texto sem validação.
@@ -204,9 +254,21 @@ e as constraints do DDL ao revisar o schema; não substitua por texto sem valida
 Use Node 24 e MySQL/MariaDB somente em loopback, com dois bancos vazios dedicados
 de sufixo `_test`. Não utilize dados reais nem credenciais versionadas. O preparador
 recusa host remoto ou banco com tabelas; não remove nem sobrescreve banco existente.
-As migrations antigas não incluem todo o contrato atual: ele gera a estrutura
-local a partir do schema do commit-base acima, depois aplica o SQL proposto.
-`--legado` prepara somente a base anterior para testar atualização com fixtures.
+O histórico antigo de migrations não inclui todas as alterações DB-first já
+integradas de pedidos/financeiro. Executar `migrate deploy` diretamente em um banco
+vazio, sem essa base, não instala o contrato necessário. Por isso, o preparador
+reconstrói a estrutura anterior a partir do schema do commit-base acima e só então
+registra como aplicadas as migrations históricas já representadas nessa base.
+Antes desse registro, também restaura o CHECK de ordem em `fluxo_producao_setor`
+e o ON UPDATE dos timestamps de `estoque_minimo_local`, `setores` e
+`fluxos_producao`, efeitos históricos que o snapshot Prisma não representa.
+Essa adoção controlada é exclusiva do banco local vazio preparado pelo script;
+não se deve copiar o registro de histórico para outro banco sem validar equivalência.
+
+No preparo principal, a migration nova é executada por `prisma migrate deploy`,
+que registra seu estado em `_prisma_migrations`. Com `--legado`, o preparador deixa
+somente a migration nova pendente para o teste de atualização com dados anteriores.
+Não usa `db execute` para aplicar a migration nova sem registrar seu histórico.
 
 ```powershell
 $env:RECEBIVEIS_TEST_DATABASE_URL='mysql://<USER>:<SENHA>@127.0.0.1:3306/erp_goia_pedido_recebiveis_test'
@@ -235,8 +297,12 @@ o build real com `NODE_ENV=production`, login JWT real e empresa ativa; não uti
 sessão DEV nem mock do banco. Os runners criam e removem apenas suas fixtures.
 Falhas de parcela/auditoria são provocadas por triggers temporárias restritas às
 fixtures locais e removidas ao final, não por opção disponível em produção.
-O teste de atualização aplica o DDL uma vez; para repeti-lo, use outro banco
-anterior vazio, não tente reaplicar sobre estrutura já atualizada. Para repetir
-o preparo do zero, use outro banco vazio, preservando os anteriores.
+O teste de atualização executa `migrate deploy`, verifica o registro concluído em
+`_prisma_migrations` e executa novamente o comando para comprovar que a migration
+concluída não reaplica o DDL. Também verifica a preservação dos registros antigos
+e as novas constraints. Para repetir esse teste com as fixtures anteriores, use
+outro banco de upgrade vazio; não tente aplicar o arquivo SQL diretamente sobre
+estrutura já atualizada. Para repetir o preparo do zero, use outro banco vazio,
+preservando os anteriores.
 Falta de banco/configuração falha nos runners desta entrega e não é aprovação.
 Resultados de execução ficam na descrição da PR, sem relatórios ou capturas no Git.

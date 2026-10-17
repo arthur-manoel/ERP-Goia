@@ -1,4 +1,7 @@
--- Proposta DB-first. Aplicar somente após aprovação da equipe e backup.
+-- Migration de fechamento e contas a receber sobre o contrato DB-first existente.
+-- Aplicar somente após aprovação da equipe e backup; não executa em deploy por si só.
+-- Não editar após aplicada. Em caso de aplicação manual anterior, conferir toda a
+-- estrutura antes de registrar esta migration como aplicada no histórico autorizado.
 -- A validação desta entrega utiliza exclusivamente MySQL/MariaDB local isolado.
 -- Base: develop 90b64eea48067c07da8c56387e82f67c8d3c7316, com a API de pedidos.
 -- ALTER TABLE tem commit implícito: usar janela de manutenção e plano de backup.
