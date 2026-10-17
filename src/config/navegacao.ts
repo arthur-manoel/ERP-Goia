@@ -13,6 +13,7 @@ import {
   MapPin,
   Network,
   Package,
+  PackageSearch,
   Palette,
   Receipt,
   Route,
@@ -22,9 +23,12 @@ import {
   ShoppingCart,
   Tags,
   Truck,
+  TrendingUp,
   UserCog,
+  Wallet,
   Users,
   Warehouse,
+  Workflow,
   type LucideIcon,
 } from "lucide-react"
 
@@ -107,12 +111,17 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Produção",
     itens: [
       {
+        titulo: "Fluxos de produção",
+        href: "/producao/fluxos",
+        icone: Workflow,
+      },
+      {
         titulo: "Ordens de produção",
         href: "/producao/ordens",
         icone: Factory,
       },
       {
-        titulo: "Movimentação entre setores",
+        titulo: "Apontamento de produção",
         href: "/producao/movimentacoes",
         icone: Route,
       },
@@ -122,6 +131,11 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Vendas",
     itens: [
       { titulo: "Pedidos de venda", href: "/vendas/pedidos", icone: FileText },
+      {
+        titulo: "Situação dos pedidos",
+        href: "/vendas/pedidos/situacao",
+        icone: PackageSearch,
+      },
       { titulo: "Vendas", href: "/vendas", icone: BadgeDollarSign },
     ],
   },
@@ -129,6 +143,16 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Financeiro",
     itens: [
       { titulo: "Lançamentos", href: "/financeiro", icone: BadgeDollarSign },
+      {
+        titulo: "Fluxo de caixa",
+        href: "/financeiro/fluxo-caixa",
+        icone: Wallet,
+      },
+      {
+        titulo: "Relatório de resultado",
+        href: "/financeiro/resultado",
+        icone: TrendingUp,
+      },
     ],
   },
   {

@@ -1,17 +1,8 @@
 import type { Metadata } from "next"
-import { EmConstrucao } from "@/components/layout/em-construcao"
-import { PageHeader } from "@/components/layout/page-header"
+import { TelaVariacoes } from "@/features/variacoes/components/tela-variacoes"
 
 export const metadata: Metadata = { title: "Cores" }
 
 export default function Page() {
-  return (
-    <>
-      <PageHeader
-        titulo="Cores"
-        descricao="Cores usadas nas variações de produto."
-      />
-      <EmConstrucao tabelas={["cores"]} />
-    </>
-  )
+  return <TelaVariacoes tipo="cor" />
 }

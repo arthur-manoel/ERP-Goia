@@ -64,9 +64,8 @@ function setup() {
         try {
           return await fn({
             refresh_tokens: table,
-            $queryRaw: async () => [],
-            $queryRawUnsafe: async (sql, ...values) => {
-              rawQueries.push({ sql, values })
+            $queryRaw: async (parts, ...values) => {
+              rawQueries.push({ sql: parts.join("?"), values })
               return []
             },
           })

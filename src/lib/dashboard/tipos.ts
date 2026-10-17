@@ -1,3 +1,5 @@
+import type { EstadoPosicaoEstoque } from "@/features/estoque-minimo/tipos"
+
 // Tipos da Dashboard. Sem dependências de servidor: podem ser importados em qualquer lugar.
 //
 // Regra do projeto para a Dashboard: SÓ o valor principal de cada indicador é
@@ -37,21 +39,27 @@ export type ComparativoMonetario = {
 export type InsumoCritico = {
   id: number
   nome: string
+  tipo: string
+  local: string
   /** Decimais em texto (Decimal(15, 3) no banco). */
   saldo: string
   minimo: string
+  deficit: string
+  estado: EstadoPosicaoEstoque
   /** Ex.: "m", "un", "kg". */
   unidade: string
 }
 
 export type InsumosAbaixoDoMinimo = {
-  /** Insumos com saldo abaixo do estoque mínimo. */
+  /** Posições físicas com saldo igual ou inferior ao mínimo local. */
   total: number
   /** Dentre os abaixo do mínimo, quantos estão com saldo zerado. */
   semEstoque?: number
-  /** Total de insumos que têm estoque mínimo definido (base de comparação). */
+  /** Posições físicas ainda sem um mínimo específico para o local. */
+  semMinimo?: number
+  /** Total de posições que têm estoque mínimo definido (base de comparação). */
   totalMonitorados?: number
-  /** Os mais críticos, do pior para o menos pior. A tela mostra no máximo 3. */
+  /** As posições mais críticas, do pior para o menos pior. */
   maisCriticos?: InsumoCritico[]
   comparativo?: ComparativoContagem
 }

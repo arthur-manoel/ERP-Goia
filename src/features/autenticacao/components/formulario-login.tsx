@@ -1,9 +1,9 @@
 "use client"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
-import { Eye, EyeOff, LockKeyhole, UserRound } from "lucide-react"
+import { Eye, EyeOff, LoaderCircle, LockKeyhole, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Field,
@@ -18,26 +18,33 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAutenticacao } from "../provedor-autenticacao"
+import { retornoSeguro } from "../retorno"
+import { loginSchema, type DadosLogin } from "../schemas"
 
-const schema = z.object({
-  usuario: z.string().trim().min(1, "Informe seu usuário."),
-  senha: z.string().min(1, "Informe sua senha."),
-})
-
-export function FormularioLogin() {
+export function FormularioLogin({ retorno = "/" }: { retorno?: string }) {
+  const router = useRouter()
+  const { entrar } = useAutenticacao()
   const [mostrarSenha, setMostrarSenha] = useState(false)
-  const [aviso, setAviso] = useState(false)
-  const form = useForm<z.infer<typeof schema>>({
-    resolver: zodResolver(schema),
+  const [erro, setErro] = useState("")
+  const form = useForm<DadosLogin>({
+    resolver: zodResolver(loginSchema),
     defaultValues: { usuario: "", senha: "" },
   })
+
   return (
     <form
       noValidate
-      onSubmit={form.handleSubmit(() => {
-        setAviso(true)
-        form.resetField("senha")
-        setMostrarSenha(false)
+      onSubmit={form.handleSubmit(async ({ usuario, senha }) => {
+        setErro("")
+        try {
+          await entrar(usuario, senha)
+          router.replace(retornoSeguro(retorno))
+        } catch {
+          setErro("Usuário ou senha incorretos.")
+          form.resetField("senha")
+          setMostrarSenha(false)
+        }
       })}
       className="space-y-6"
     >
@@ -53,7 +60,7 @@ export function FormularioLogin() {
               autoComplete="username"
               autoCapitalize="none"
               spellCheck={false}
-              placeholder="Seu usuário na empresa"
+              placeholder="E-mail ou nome de usuário"
               {...form.register("usuario")}
               aria-invalid={!!form.formState.errors.usuario}
               aria-describedby={
@@ -102,22 +109,21 @@ export function FormularioLogin() {
           )}
         </Field>
       </FieldGroup>
-      {aviso && (
-        <Alert role="status">
-          <AlertDescription>
-            O acesso está em configuração. Entre em contato com o administrador
-            da empresa.
-          </AlertDescription>
+      {erro && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{erro}</AlertDescription>
         </Alert>
       )}
-      <Button type="submit" className="h-11 w-full">
-        Entrar
+      <Button
+        type="submit"
+        className="h-11 w-full"
+        disabled={form.formState.isSubmitting}
+      >
+        {form.formState.isSubmitting ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : null}
+        {form.formState.isSubmitting ? "Entrando…" : "Entrar"}
       </Button>
-      <p className="text-center text-xs leading-relaxed text-muted-foreground">
-        Precisa de acesso ou esqueceu sua senha?
-        <br />
-        Procure o administrador da sua empresa.
-      </p>
     </form>
   )
 }

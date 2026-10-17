@@ -26,7 +26,9 @@ export function validarMaterial(
         ),
       ) ||
       dados.productions.some(
-        (ordem) => ordem.productId === id && ordem.variationId === variacao.id,
+        (ordem) =>
+          ordem.productId === id &&
+          ordem.items.some((item) => item.variationId === variacao.id),
       )
     const atual = material.variations?.find((item) => item.id === variacao.id)
     if (

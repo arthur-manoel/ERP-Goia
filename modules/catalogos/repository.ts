@@ -1,6 +1,8 @@
 import { prisma } from "../../src/lib/prisma"
+
 export type Resource = "PRODUTOS" | "CORES"
 export type Action = "pode_ler" | "pode_criar" | "pode_editar" | "pode_excluir"
+
 export async function allowedCompanies(
   id: number,
   recurso: Resource | null,
@@ -20,6 +22,7 @@ export async function allowedCompanies(
       },
     ],
   }
+
   const rows = await prisma.usuario_empresa.findMany({
     where: {
       id_usuario: id,
@@ -30,5 +33,6 @@ export async function allowedCompanies(
     },
     select: { id_empresa: true },
   })
+
   return rows.map((row) => row.id_empresa)
 }
