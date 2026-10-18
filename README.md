@@ -43,10 +43,11 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Compras | ⬜ | `requisicao_compra`, `item_requisicao_compra`, `pedido_compra`, `item_pedido_compra`, `compras`, `compra_itens` | [#33](https://github.com/arthur-manoel/ERP-Goia/issues/33) a [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Notas fiscais de entrada | ⬜ | `nota_fiscal`, `item_nota_fiscal` | [#36](https://github.com/arthur-manoel/ERP-Goia/issues/36) |
 | Produção | ⬜ | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
-| Vendas | ⬜ | `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39) |
+| Vendas | 🟨 | `pedido_cliente`, `pedido_cliente_item`, `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39); API de rascunhos e fechamento explícito após recebimento confirmado. Migration versionada; aprovação/aplicação compartilhada pendentes. |
+| Financeiro do pedido | 🟨 | `pedido_cliente_fechamento`, `contas_receber`, `pagamentos_receber`, `categoria_financeira`, `condicoes_pagamento` | Geração transacional de títulos, sem baixa automática. Decisão técnica/implantação: [#91](https://github.com/arthur-manoel/ERP-Goia/issues/91). |
 | Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
-As 49 tabelas do schema atual estão distribuídas acima; cada uma aparece em um único módulo.
+O quadro acompanha os módulos e suas tabelas principais; a estrutura completa está em `prisma/schema.prisma`.
 
 ### Interface de pedidos de venda
 
@@ -189,7 +190,7 @@ Abra [http://localhost:3000](http://localhost:3000). Versão do Node em `.nvmrc`
 
 ## Banco de dados (DB-first)
 
-**O MySQL é a fonte da verdade.** A estrutura é alterada direto no banco e trazida para o código com introspecção. O projeto não usa migrations do Prisma. O banco **não tem triggers nem procedures**: toda regra de negócio fica na aplicação.
+**O MySQL é a fonte da verdade.** A estrutura compartilhada segue aprovação DB-first e introspecção. Há migrations versionadas em `prisma/migrations`, executáveis pelo Prisma em bancos locais; seu SQL também pode ser aplicado pelo responsável em um banco compartilhado, após revisão e aprovação. O arquivo não é exclusivo do ambiente local, mas incluí-lo em uma PR não executa a alteração no banco. O banco **não tem triggers nem procedures**: toda regra de negócio fica na aplicação.
 
 ```bash
 npm run db:pull      # prisma db pull + prisma generate
@@ -198,14 +199,16 @@ npm run db:pull      # prisma db pull + prisma generate
 Fluxo para mudar a estrutura:
 
 1. Abra uma issue com a label `decisão` (o banco de desenvolvimento é compartilhado).
-2. Aplique o DDL no MySQL.
+2. Após aprovação, o responsável aplica o SQL da alteração no MySQL, preservando os dados e o histórico do ambiente.
 3. Rode `npm run db:pull` e revise o diff de `prisma/schema.prisma`.
 4. Faça commit do schema junto com o código que depende dele.
 
 **Proteções** (em `prisma.config.ts` e `src/lib/prisma.ts`):
 
-- `prisma migrate *` (exceto `migrate diff`) e `prisma db push` são bloqueados para que ninguém altere o banco compartilhado a partir do schema.
+- No banco remoto, `prisma migrate *` (exceto `migrate diff`) e `prisma db push` são bloqueados para que ninguém altere o compartilhado a partir do schema. Migrations pelo Prisma são permitidas em localhost/127.0.0.1/::1; `db push` continua bloqueado.
 - No MySQL remoto, `DATABASE_URL` só aceita o banco `joseev47_erp_dev`. Em localhost/127.0.0.1/::1, também aceita outros nomes para bancos locais de testes, como `compet`.
+
+O histórico antigo não representa todas as alterações DB-first de pedidos e financeiro. Não basta executar `migrate deploy` em um banco vazio para instalar o contrato atual. Para reproduzir o fechamento em banco local isolado, veja o [preparo controlado e a migration de recebíveis](src/modules/pedido-recebiveis/README.md#testes-locais-reproduzíveis). Nunca marque migrations como aplicadas sem validar que suas alterações já existem no alvo.
 
 **Uso no código.** O cliente é `server-only`. Use-o em Server Components, Server Actions e Route Handlers, sempre filtrando pela empresa da sessão. O padrão completo está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md#anatomia-de-um-módulo).
 
@@ -398,10 +401,10 @@ histórico antes do deploy; esta alteração não remove automaticamente tabelas
 O projeto veio de introspecção, sem histórico de migrations; foi gerado um baseline do schema anterior em `20260918000000_baseline`.
 Para uma cópia local existente, confira a equivalência do schema antes de registrar
 esse baseline com `npx prisma migrate resolve --applied 20260918000000_baseline`.
-Em banco vazio, as duas migrations serão aplicadas. O baseline reflete o Prisma;
+O baseline e essa migration não cobrem todas as evoluções DB-first posteriores de pedidos/financeiro. Em banco vazio, o histórico antigo sozinho não instala o contrato atual; use a [preparação local controlada](src/modules/pedido-recebiveis/README.md#testes-locais-reproduzíveis) para o fluxo de fechamento. O baseline reflete o Prisma;
 constraints não representadas pelo ORM precisam ser preservadas no dump local. Não aceite reset de um banco com dados a preservar. A configuração
 permite migrations apenas para localhost/127.0.0.1/::1; mantém a proteção do
-banco compartilhado. Depois de configurar a cópia local e o baseline, execute:
+banco compartilhado. Somente depois de validar a estrutura prévia e reconciliar o histórico da cópia local, execute:
 
 ```bash
 npx prisma migrate deploy
@@ -455,10 +458,37 @@ Novos vínculos começam com saldo zero, são auditados e idempotentes, preserva
 as duas unicidades do banco. Entrega de back-end, sem telas ou alteração de schema.
 Contrato e testes locais: [documentação da API](src/modules/estoque/README.md).
 
+## API de pedidos e itens por variação
+
+API de back-end persistida em `pedido_cliente`/`pedido_cliente_item`: consultas,
+criação idempotente e edição de rascunhos, com variações, totais decimais calculados
+no servidor, autorização comercial e auditoria. Sem alterações de interface ou
+geração financeira. Implantação depende de aprovação/aplicação do SQL mínimo
+pelo responsável do banco. [Contrato e testes locais](src/modules/pedidos/README.md).
+
+## Fechamento de pedido e contas a receber
+
+`POST /api/pedidos/{id}/fechar` fecha comercialmente um pedido após o recebimento
+completo confirmado pelo cliente, preservando o status operacional. Uma única
+transação registra a data própria do fechamento, venda, parcelas abertas e
+auditoria. Valores vêm do pedido calculado no servidor; vencimentos são explícitos,
+com divisão exata em centavos e resíduo na última parcela. Repetição íntegra não
+duplica cobranças e mutações comuns ficam bloqueadas após o fechamento.
+
+`GET /api/pedidos/{id}/conta-a-receber` exige leitura de FINANCEIRO separada da
+permissão comercial de fechamento. Não há alteração de front-end, baixa, estoque
+ou geração retroativa. A alteração está versionada em
+`prisma/migrations/20261017000000_pedido_contas_receber/migration.sql`.
+A aprovação/aplicação no banco compartilhado segue pendente na
+[decisão #91](https://github.com/arthur-manoel/ERP-Goia/issues/91); a PR não a executa automaticamente.
+[Contrato, implantação e testes locais](src/modules/pedido-recebiveis/README.md).
+
 ## Histórico
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-10-17 | Maria | `feature/pedido-contas-receber-automaticas` | Fechamento após recebimento confirmado e geração atômica de venda/parcelas, consulta financeira protegida e migration versionada com implantação compartilhada sujeita à aprovação da equipe (#91). Sem front-end ou baixa. |
+| 2026-10-10 | Maria | `feature/api-pedidos-itens-variacoes` | API de pedidos/itens por variação, cálculos no servidor e controle transacional de rascunhos. SQL DB-first para aprovação da equipe. |
 | 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |
 | 2026-09-18 | Everton | `feature/guia-contribuicao` | CONTRIBUTING, templates de PR e issue, CODEOWNERS; roadmap convertido em 37 issues com milestones e labels. |
 | 2026-09-18 | Everton | PR [#5](https://github.com/arthur-manoel/ERP-Goia/pull/5) | Esqueleto da aplicação (layout, menu, 26 rotas), sessão provisória, helpers e guia de arquitetura. |

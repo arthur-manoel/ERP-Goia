@@ -1,6 +1,7 @@
 import "server-only"
 import { Prisma, type clientes } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
+import { disputaPersistencia } from "@/lib/prisma-concorrencia"
 import type { ListarInput, PaginacaoInput } from "./clientes.schema"
 
 export class ClienteError extends Error {
@@ -59,12 +60,12 @@ export async function gravacao<T>(
       { isolationLevel: "Serializable" },
     )
   } catch (error) {
+    if (disputaPersistencia(error))
+      throw new ClienteError(
+        409,
+        "Conflito de cadastro ou operação concorrente. Consulte o cliente e tente novamente.",
+      )
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (["P2002", "P2034"].includes(error.code))
-        throw new ClienteError(
-          409,
-          "Conflito de cadastro ou operação concorrente. Consulte o cliente e tente novamente.",
-        )
       if (["P2003", "P2004", "P2025"].includes(error.code))
         throw new ClienteError(
           409,

@@ -7,6 +7,7 @@ function model() {
     count: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
     updateMany: vi.fn(),
   }
 }
@@ -20,6 +21,13 @@ export const db = {
   setores: model(),
   produto_empresa: model(),
   auditoria: model(),
+  pedido_cliente: model(),
+  pedido_cliente_item: { ...model(), createMany: vi.fn(), delete: vi.fn() },
+  pedido_cliente_historico: model(),
+  produto_variacoes: model(),
+  clientes: model(),
+  sequencias_automaticas: { ...model(), upsert: vi.fn() },
+  tipos_produto: model(),
   $queryRaw: vi.fn(),
   fornecedores: model(),
   $transaction: vi.fn(),

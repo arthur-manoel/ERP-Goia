@@ -47,19 +47,21 @@ model cargos {
 }
 
 model categoria_financeira {
-  id             Int                         @id @default(autoincrement())
-  id_empresa     Int
-  nome           String                      @db.VarChar(100)
-  tipo           categoria_financeira_tipo   @default(AMBOS)
-  descricao      String?                     @db.VarChar(255)
-  status         categoria_financeira_status @default(ATIVA)
-  data_cadastro  DateTime                    @default(now())
-  empresas       empresas                    @relation(fields: [id_empresa], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  contas_receber contas_receber[]
-  contas_pagar   contas_pagar[]
-  despesas       despesas[]
+  id                        Int                         @id @default(autoincrement())
+  id_empresa                Int
+  nome                      String                      @db.VarChar(100)
+  tipo                      categoria_financeira_tipo   @default(AMBOS)
+  descricao                 String?                     @db.VarChar(255)
+  status                    categoria_financeira_status @default(ATIVA)
+  data_cadastro             DateTime                    @default(now())
+  empresas                  empresas                    @relation(fields: [id_empresa], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  contas_receber            contas_receber[]
+  contas_pagar              contas_pagar[]
+  despesas                  despesas[]
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
 
   @@unique([id_empresa, nome], map: "uk_categoria_financeira_empresa_nome")
+  @@unique([id, id_empresa], map: "uk_categoria_financeira_id_empresa")
   @@index([id_empresa], map: "idx_categoria_financeira_empresa")
 }
 
@@ -143,9 +145,11 @@ model clientes {
   cliente_endereco      cliente_endereco[]
   cliente_contato       cliente_contato[]
 
-  pedido_cliente pedido_cliente[]
+  pedido_cliente            pedido_cliente[]
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
 
   @@unique([id_empresa, id], map: "uk_cliente_empresa_id")
+  @@unique([id, id_empresa], map: "uk_cliente_id_empresa")
   @@index([id_empresa], map: "idx_cliente_empresa")
   @@index([id_condicao_pagamento])
 }
@@ -300,28 +304,33 @@ model contas_pagar {
 }
 
 model contas_receber {
-  id                   Int                         @id @default(autoincrement())
-  id_empresa           Int
-  id_venda             Int
-  id_categoria         Int
-  numero_parcela       Int                         @default(1)
-  total_parcelas       Int                         @default(1)
-  descricao            String?                     @db.VarChar(255)
-  data_lancamento      DateTime                    @default(now())
-  data_vencimento      DateTime                    @db.Date
-  valor_original       Decimal                     @db.Decimal(15, 2)
-  valor_desconto       Decimal                     @default(0) @db.Decimal(15, 2)
-  valor_acrescimo      Decimal                     @default(0) @db.Decimal(15, 2)
-  valor_final          Decimal                     @db.Decimal(15, 2)
-  situacao             contas_financeiras_situacao @default(ABERTO)
-  observacao           String?                     @db.Text
-  data_cadastro        DateTime                    @default(now())
-  data_atualizacao     DateTime                    @updatedAt
-  empresas             empresas                    @relation(fields: [id_empresa], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  venda                venda                       @relation(fields: [id_venda], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  categoria_financeira categoria_financeira        @relation(fields: [id_categoria], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  pagamentos_receber   pagamentos_receber[]
+  id                        Int                         @id @default(autoincrement())
+  id_empresa                Int
+  id_venda                  Int
+  id_categoria              Int
+  id_fechamento             Int?
+  saldo                     Decimal?                    @db.Decimal(15, 2)
+  numero_parcela            Int                         @default(1)
+  total_parcelas            Int                         @default(1)
+  descricao                 String?                     @db.VarChar(255)
+  data_lancamento           DateTime                    @default(now())
+  data_vencimento           DateTime                    @db.Date
+  valor_original            Decimal                     @db.Decimal(15, 2)
+  valor_desconto            Decimal                     @default(0) @db.Decimal(15, 2)
+  valor_acrescimo           Decimal                     @default(0) @db.Decimal(15, 2)
+  valor_final               Decimal                     @db.Decimal(15, 2)
+  situacao                  contas_financeiras_situacao @default(ABERTO)
+  observacao                String?                     @db.Text
+  data_cadastro             DateTime                    @default(now())
+  data_atualizacao          DateTime                    @updatedAt
+  empresas                  empresas                    @relation(fields: [id_empresa], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  venda                     venda                       @relation(fields: [id_venda], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  categoria_financeira      categoria_financeira        @relation(fields: [id_categoria], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  pagamentos_receber        pagamentos_receber[]
+  pedido_cliente_fechamento pedido_cliente_fechamento?  @relation(fields: [id_fechamento, id_empresa, id_venda, id_categoria], references: [id, id_empresa, id_venda, id_categoria], onDelete: Restrict, onUpdate: Restrict, map: "fk_conta_receber_fechamento")
 
+  @@unique([id_fechamento, numero_parcela], map: "uk_conta_receber_fechamento_parcela")
+  @@index([id_fechamento, id_empresa, id_venda, id_categoria], map: "idx_conta_receber_fechamento")
   @@index([id_empresa], map: "idx_contas_receber_empresa")
   @@index([id_venda], map: "idx_contas_receber_venda")
   @@index([id_categoria], map: "idx_contas_receber_categoria")
@@ -388,65 +397,66 @@ model empresa_fornecedor {
 }
 
 model empresas {
-  id                     Int                      @id @default(autoincrement())
-  razao_social           String                   @db.VarChar(150)
-  nome_fantasia          String?                  @db.VarChar(150)
-  cnpj                   String                   @unique(map: "uk_empresa_cnpj") @db.VarChar(18)
-  inscricao_estadual     String?                  @db.VarChar(30)
-  email                  String?                  @db.VarChar(150)
-  telefone               String?                  @db.VarChar(30)
-  endereco               String?                  @db.VarChar(255)
-  numero                 String?                  @db.VarChar(20)
-  complemento            String?                  @db.VarChar(100)
-  bairro                 String?                  @db.VarChar(100)
-  cidade                 String?                  @db.VarChar(100)
-  estado                 String?                  @db.Char(2)
-  cep                    String?                  @db.VarChar(10)
-  logo_url               String?                  @db.LongText
-  cor_tema               String                   @default("#22c55e") @db.VarChar(50)
-  status                 empresas_status          @default(ATIVA)
-  data_cadastro          DateTime                 @default(now()) @db.Timestamp(0)
-  auditoria              auditoria[]
-  cargos                 cargos[]
-  categorias             categorias[]
-  clientes               clientes[]
-  compras                compras[]
-  cores                  cores[]
-  empresa_fornecedor     empresa_fornecedor[]
-  estoque                estoque[]
-  estoque_minimo_local   estoque_minimo_local[]
-  ficha_tecnica          ficha_tecnica[]
-  fornecedores           fornecedores[]
-  kardex                 kardex[]
-  locais_estoque         locais_estoque[]
-  movimentacao_estoque   movimentacao_estoque[]
-  nota_fiscal            nota_fiscal[]
-  ordem_producao         ordem_producao[]
-  pedido_compra          pedido_compra[]
-  produto_empresa        produto_empresa[]
-  produto_fornecedor     produto_fornecedor[]
-  produto_variacoes      produto_variacoes[]
-  requisicao_compra      requisicao_compra[]
-  reserva_estoque        reserva_estoque[]
-  sequencias_automaticas sequencias_automaticas[]
-  setores                setores[]
-  tamanhos               tamanhos[]
-  tipos_setor            tipos_setor[]
-  usuario_empresa        usuario_empresa[]
-  venda                  venda[]
-  venda_parcelas         venda_parcelas[]
-  venda_status_historico venda_status_historico[]
-  fluxos_producao        fluxos_producao[]
-  condicoes_pagamento    condicoes_pagamento[]
-  categoria_financeira   categoria_financeira[]
-  contas_receber         contas_receber[]
-  pagamentos_receber     pagamentos_receber[]
-  contas_pagar           contas_pagar[]
-  pagamentos_pagar       pagamentos_pagar[]
-  despesas               despesas[]
-  contas_bancarias       contas_bancarias[]
+  id                        Int                         @id @default(autoincrement())
+  razao_social              String                      @db.VarChar(150)
+  nome_fantasia             String?                     @db.VarChar(150)
+  cnpj                      String                      @unique(map: "uk_empresa_cnpj") @db.VarChar(18)
+  inscricao_estadual        String?                     @db.VarChar(30)
+  email                     String?                     @db.VarChar(150)
+  telefone                  String?                     @db.VarChar(30)
+  endereco                  String?                     @db.VarChar(255)
+  numero                    String?                     @db.VarChar(20)
+  complemento               String?                     @db.VarChar(100)
+  bairro                    String?                     @db.VarChar(100)
+  cidade                    String?                     @db.VarChar(100)
+  estado                    String?                     @db.Char(2)
+  cep                       String?                     @db.VarChar(10)
+  logo_url                  String?                     @db.LongText
+  cor_tema                  String                      @default("#22c55e") @db.VarChar(50)
+  status                    empresas_status             @default(ATIVA)
+  data_cadastro             DateTime                    @default(now()) @db.Timestamp(0)
+  auditoria                 auditoria[]
+  cargos                    cargos[]
+  categorias                categorias[]
+  clientes                  clientes[]
+  compras                   compras[]
+  cores                     cores[]
+  empresa_fornecedor        empresa_fornecedor[]
+  estoque                   estoque[]
+  estoque_minimo_local      estoque_minimo_local[]
+  ficha_tecnica             ficha_tecnica[]
+  fornecedores              fornecedores[]
+  kardex                    kardex[]
+  locais_estoque            locais_estoque[]
+  movimentacao_estoque      movimentacao_estoque[]
+  nota_fiscal               nota_fiscal[]
+  ordem_producao            ordem_producao[]
+  pedido_compra             pedido_compra[]
+  produto_empresa           produto_empresa[]
+  produto_fornecedor        produto_fornecedor[]
+  produto_variacoes         produto_variacoes[]
+  requisicao_compra         requisicao_compra[]
+  reserva_estoque           reserva_estoque[]
+  sequencias_automaticas    sequencias_automaticas[]
+  setores                   setores[]
+  tamanhos                  tamanhos[]
+  tipos_setor               tipos_setor[]
+  usuario_empresa           usuario_empresa[]
+  venda                     venda[]
+  venda_parcelas            venda_parcelas[]
+  venda_status_historico    venda_status_historico[]
+  fluxos_producao           fluxos_producao[]
+  condicoes_pagamento       condicoes_pagamento[]
+  categoria_financeira      categoria_financeira[]
+  contas_receber            contas_receber[]
+  pagamentos_receber        pagamentos_receber[]
+  contas_pagar              contas_pagar[]
+  pagamentos_pagar          pagamentos_pagar[]
+  despesas                  despesas[]
+  contas_bancarias          contas_bancarias[]
   movimentacoes_financeiras movimentacoes_financeiras[]
-  pedido_cliente         pedido_cliente[]
+  pedido_cliente            pedido_cliente[]
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
 }
 
 model estoque {
@@ -579,31 +589,32 @@ model item_requisicao_compra {
   @@index([id_produto], map: "fk_item_req_compra_produto")
 }
 
-/// A migration-managed null-safe unique index uses generated normalization columns
-/// because MySQL permits duplicate UNIQUE keys when nullable variation fields are NULL.
+
 model item_venda {
-  id             Int       @id @default(autoincrement())
-  id_venda       Int
-  id_empresa     Int
-  id_produto     Int
-  id_cor         Int?
-  id_tamanho     Int?
-  descricao      String?   @db.VarChar(255)
-  quantidade     Decimal   @db.Decimal(15, 3)
-  valor_unitario Decimal   @db.Decimal(15, 2)
-  valor_total    Decimal   @db.Decimal(15, 2)
-  cores          cores?    @relation("item_venda_cor_empresa", fields: [id_empresa, id_cor], references: [id_empresa, id], onDelete: Restrict, map: "fk_item_venda_cor")
-  produtos       produtos  @relation(fields: [id_produto], references: [id], map: "fk_item_venda_produto")
-  tamanhos       tamanhos? @relation("item_venda_tamanho_empresa", fields: [id_empresa, id_tamanho], references: [id_empresa, id], onDelete: Restrict, map: "fk_item_venda_tamanho")
-  venda          venda     @relation(fields: [id_empresa, id_venda], references: [id_empresa, id], onDelete: Cascade, map: "fk_item_venda_venda")
+  id                     Int                  @id @default(autoincrement())
+  id_venda               Int
+  id_empresa             Int
+  id_produto             Int
+  id_cor                 Int?
+  id_tamanho             Int?
+  id_pedido_cliente_item Int?
+  descricao              String?              @db.VarChar(255)
+  quantidade             Decimal              @db.Decimal(15, 3)
+  valor_unitario         Decimal              @db.Decimal(15, 2)
+  valor_total            Decimal              @db.Decimal(15, 2)
+  id_produto_sem_pedido  Int?                 @ignore
+  cores                  cores?               @relation("item_venda_cor_empresa", fields: [id_empresa, id_cor], references: [id_empresa, id], onDelete: Restrict, map: "fk_item_venda_cor")
+  produtos               produtos             @relation(fields: [id_produto], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_item_venda_produto_restrict")
+  tamanhos               tamanhos?            @relation("item_venda_tamanho_empresa", fields: [id_empresa, id_tamanho], references: [id_empresa, id], onDelete: Restrict, map: "fk_item_venda_tamanho")
+  venda                  venda                @relation(fields: [id_empresa, id_venda], references: [id_empresa, id], onDelete: Cascade, map: "fk_item_venda_venda_empresa")
+  pedido_cliente_item    pedido_cliente_item? @relation(fields: [id_pedido_cliente_item], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_item_venda_pedido_item_restrict")
 
   @@unique([id_empresa, id_venda, id_produto, id_cor, id_tamanho], map: "uk_item_venda_produto_variacao")
+  @@unique([id_venda, id_pedido_cliente_item], map: "uk_item_venda_pedido_item")
+  @@unique([id_venda, id_produto_sem_pedido], map: "uk_item_venda_produto_avulso")
   @@index([id_empresa, id_cor], map: "fk_item_venda_cor")
-  @@index([id_produto], map: "fk_item_venda_produto")
   @@index([id_empresa, id_tamanho], map: "fk_item_venda_tamanho")
-  id_pedido_cliente_item Int?
-  pedido_cliente_item pedido_cliente_item? @relation(fields: [id_pedido_cliente_item], references: [id], onDelete: Restrict, map: "fk_item_venda_pedido_item")
-  @@index([id_pedido_cliente_item], map: "fk_item_venda_pedido_item")
+  @@index([id_produto], map: "fk_item_venda_produto")
 }
 
 model kardex {
@@ -931,53 +942,59 @@ model pagamentos_receber {
 }
 
 model pedido_cliente {
-  id                       Int                        @id @default(autoincrement())
-  id_empresa               Int
-  id_cliente               Int
-  id_usuario               Int
-  id_condicao_pagamento    Int?
-  id_endereco_entrega      Int?
-  numero                   String                     @db.VarChar(50)
-  referencia_cliente       String?                    @db.VarChar(100)
-  status                   pedido_cliente_status      @default(RASCUNHO)
-  canal_venda              venda_canal_venda          @default(BALCAO)
-  data_pedido              DateTime                   @default(now()) @db.DateTime(0)
-  data_confirmacao         DateTime?                  @db.DateTime(0)
-  data_previsao_entrega    DateTime?                  @db.DateTime(0)
-  data_conclusao           DateTime?                  @db.DateTime(0)
-  data_cancelamento        DateTime?                  @db.DateTime(0)
-  motivo_cancelamento      String?                    @db.VarChar(255)
-  valor_subtotal           Decimal                    @default(0.00) @db.Decimal(15, 2)
-  valor_desconto           Decimal                    @default(0.00) @db.Decimal(15, 2)
-  valor_frete              Decimal                    @default(0.00) @db.Decimal(15, 2)
-  valor_acrescimo          Decimal                    @default(0.00) @db.Decimal(15, 2)
-  valor_total              Decimal                    @default(0.00) @db.Decimal(15, 2)
-  destinatario             String?                    @db.VarChar(150)
-  telefone_entrega         String?                    @db.VarChar(30)
-  endereco_entrega         String?                    @db.VarChar(255)
-  numero_entrega           String?                    @db.VarChar(20)
-  complemento_entrega      String?                    @db.VarChar(100)
-  bairro_entrega           String?                    @db.VarChar(100)
-  cidade_entrega           String?                    @db.VarChar(100)
-  estado_entrega           String?                    @db.Char(2)
-  cep_entrega              String?                    @db.VarChar(10)
-  referencia_entrega       String?                    @db.VarChar(255)
-  observacao               String?                    @db.Text
-  observacao_interna       String?                    @db.Text
-  data_cadastro            DateTime                   @default(now()) @db.Timestamp(0)
-  data_atualizacao         DateTime                   @updatedAt @db.Timestamp(0)
-  empresas                 empresas                   @relation(fields: [id_empresa], references: [id], onDelete: Restrict, map: "fk_pedido_cliente_empresa")
-  clientes                 clientes                   @relation(fields: [id_cliente], references: [id], onDelete: Restrict, map: "fk_pedido_cliente_cliente")
-  usuarios                 usuarios                   @relation(fields: [id_usuario], references: [id], onDelete: Restrict, map: "fk_pedido_cliente_usuario")
-  condicoes_pagamento      condicoes_pagamento?       @relation(fields: [id_condicao_pagamento], references: [id], onDelete: SetNull, map: "fk_pedido_cliente_condicao")
-  cliente_endereco         cliente_endereco?          @relation(fields: [id_endereco_entrega], references: [id], onDelete: SetNull, map: "fk_pedido_cliente_endereco")
-  pedido_cliente_item      pedido_cliente_item[]
-  pedido_cliente_entrega   pedido_cliente_entrega[]
-  pedido_cliente_historico pedido_cliente_historico[]
-  venda                    venda[]
-  ordem_producao           ordem_producao[]
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
+  id                        Int                         @id @default(autoincrement())
+  id_empresa                Int
+  id_cliente                Int
+  id_usuario                Int
+  id_condicao_pagamento     Int?
+  id_endereco_entrega       Int?
+  numero                    String                      @db.VarChar(50)
+  referencia_cliente        String?                     @db.VarChar(100)
+  status                    pedido_cliente_status       @default(RASCUNHO)
+  canal_venda               venda_canal_venda           @default(BALCAO)
+  data_pedido               DateTime                    @default(now()) @db.DateTime(0)
+  data_confirmacao          DateTime?                   @db.DateTime(0)
+  data_previsao_entrega     DateTime?                   @db.DateTime(0)
+  data_conclusao            DateTime?                   @db.DateTime(0)
+  data_cancelamento         DateTime?                   @db.DateTime(0)
+  motivo_cancelamento       String?                     @db.VarChar(255)
+  valor_subtotal            Decimal                     @default(0.00) @db.Decimal(15, 2)
+  valor_desconto            Decimal                     @default(0.00) @db.Decimal(15, 2)
+  valor_frete               Decimal                     @default(0.00) @db.Decimal(15, 2)
+  valor_acrescimo           Decimal                     @default(0.00) @db.Decimal(15, 2)
+  valor_total               Decimal                     @default(0.00) @db.Decimal(15, 2)
+  destinatario              String?                     @db.VarChar(150)
+  telefone_entrega          String?                     @db.VarChar(30)
+  endereco_entrega          String?                     @db.VarChar(255)
+  numero_entrega            String?                     @db.VarChar(20)
+  complemento_entrega       String?                     @db.VarChar(100)
+  bairro_entrega            String?                     @db.VarChar(100)
+  cidade_entrega            String?                     @db.VarChar(100)
+  estado_entrega            String?                     @db.Char(2)
+  cep_entrega               String?                     @db.VarChar(10)
+  referencia_entrega        String?                     @db.VarChar(255)
+  observacao                String?                     @db.Text
+  observacao_interna        String?                     @db.Text
+  data_cadastro             DateTime                    @default(now()) @db.Timestamp(0)
+  data_atualizacao          DateTime                    @updatedAt @db.Timestamp(0)
+  empresas                  empresas                    @relation(fields: [id_empresa], references: [id], onDelete: Restrict, map: "fk_pedido_cliente_empresa")
+  clientes                  clientes                    @relation(fields: [id_cliente], references: [id], onDelete: Restrict, map: "fk_pedido_cliente_cliente")
+  usuarios                  usuarios                    @relation(fields: [id_usuario], references: [id], onDelete: Restrict, map: "fk_pedido_cliente_usuario")
+  condicoes_pagamento       condicoes_pagamento?        @relation(fields: [id_condicao_pagamento], references: [id], onDelete: SetNull, map: "fk_pedido_cliente_condicao")
+  cliente_endereco          cliente_endereco?           @relation(fields: [id_endereco_entrega], references: [id], onDelete: SetNull, map: "fk_pedido_cliente_endereco")
+  pedido_cliente_item       pedido_cliente_item[]
+  pedido_cliente_entrega    pedido_cliente_entrega[]
+  pedido_cliente_historico  pedido_cliente_historico[]
+  venda                     venda[]
+  ordem_producao            ordem_producao[]
+  versao                    Int                         @default(1)
+  chave_idempotencia        String?                     @db.VarChar(128)
+  hash_requisicao           String?                     @db.Char(64)
 
   @@unique([id_empresa, numero], map: "uk_pedido_cliente_empresa_numero")
+  @@unique([id, id_empresa, id_cliente], map: "uk_pedido_cliente_id_empresa_cliente")
+  @@unique([id_empresa, chave_idempotencia], map: "uk_pedido_empresa_idempotencia")
   @@index([id_cliente], map: "fk_pedido_cliente_cliente")
   @@index([id_usuario], map: "fk_pedido_cliente_usuario")
   @@index([id_condicao_pagamento], map: "fk_pedido_cliente_condicao")
@@ -985,6 +1002,38 @@ model pedido_cliente {
   @@index([id_empresa, status], map: "idx_pedido_cliente_empresa_status")
   @@index([id_empresa, data_pedido], map: "idx_pedido_cliente_empresa_data")
   @@index([id_empresa, data_previsao_entrega], map: "idx_pedido_cliente_previsao")
+}
+
+model pedido_cliente_fechamento {
+  id                   Int                  @id @default(autoincrement())
+  id_empresa           Int
+  id_pedido_cliente    Int
+  id_cliente           Int
+  id_venda             Int                  @unique(map: "uk_fechamento_venda")
+  id_categoria         Int
+  id_usuario           Int
+  data_fechamento      DateTime             @default(now()) @db.DateTime(3)
+  valor_total          Decimal              @db.Decimal(15, 2)
+  total_parcelas       Int
+  plano_pagamento      Json
+  hash_plano           String               @db.Char(64)
+  hash_pedido          String               @db.Char(64)
+  snapshot_pedido      Json
+  empresas             empresas             @relation(fields: [id_empresa], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_empresa")
+  pedido_cliente       pedido_cliente       @relation(fields: [id_pedido_cliente, id_empresa, id_cliente], references: [id, id_empresa, id_cliente], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_pedido")
+  clientes             clientes             @relation(fields: [id_cliente, id_empresa], references: [id, id_empresa], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_cliente")
+  venda                venda                @relation(fields: [id_venda, id_empresa, id_cliente, id_pedido_cliente], references: [id, id_empresa, id_cliente, id_pedido_cliente], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_venda")
+  categoria_financeira categoria_financeira @relation(fields: [id_categoria, id_empresa], references: [id, id_empresa], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_categoria")
+  usuarios             usuarios             @relation(fields: [id_usuario], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_fechamento_usuario")
+  contas_receber       contas_receber[]
+
+  @@unique([id_empresa, id_pedido_cliente], map: "uk_fechamento_empresa_pedido")
+  @@unique([id, id_empresa, id_venda, id_categoria], map: "uk_fechamento_id_empresa_venda_categoria")
+  @@index([id_pedido_cliente, id_empresa, id_cliente], map: "idx_fechamento_pedido")
+  @@index([id_cliente, id_empresa], map: "idx_fechamento_cliente")
+  @@index([id_venda, id_empresa, id_cliente, id_pedido_cliente], map: "idx_fechamento_venda")
+  @@index([id_categoria, id_empresa], map: "idx_fechamento_categoria")
+  @@index([id_usuario], map: "idx_fechamento_usuario")
 }
 
 model pedido_cliente_entrega {
@@ -1071,12 +1120,16 @@ model pedido_cliente_item {
   pedido_cliente_entrega_item pedido_cliente_entrega_item[]
   ordem_producao_item         ordem_producao_item[]
   item_venda                  item_venda[]
+  id_variacao                 Int?
+  produto_variacoes           produto_variacoes?            @relation(fields: [id_variacao], references: [id], onDelete: Restrict, map: "fk_pedido_item_variacao")
 
   @@unique([id_pedido_cliente, numero_item], map: "uk_pedido_cliente_numero_item")
   @@unique([id, id_pedido_cliente], map: "uk_pedido_item_id_pedido")
+  @@unique([id_pedido_cliente, id_produto, id_variacao], map: "uk_pedido_item_produto_variacao")
   @@index([id_produto], map: "fk_pedido_item_produto")
   @@index([id_cor], map: "fk_pedido_item_cor")
   @@index([id_tamanho], map: "fk_pedido_item_tamanho")
+  @@index([id_variacao], map: "fk_pedido_item_variacao")
 }
 
 model pedido_compra {
@@ -1177,16 +1230,17 @@ model produto_fornecedor {
 }
 
 model produto_variacoes {
-  id         Int                      @id @default(autoincrement())
-  id_empresa Int
-  id_produto Int
-  id_cor     Int?
-  id_tamanho Int?
-  status     produto_variacoes_status @default(ATIVO)
-  cores      cores?                   @relation(fields: [id_cor], references: [id], onDelete: Restrict, map: "fk_produto_variacao_cor")
-  empresas   empresas                 @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_produto_variacao_empresa")
-  produtos   produtos                 @relation(fields: [id_produto], references: [id], onDelete: Cascade, map: "fk_produto_variacao_produto")
-  tamanhos   tamanhos?                @relation(fields: [id_tamanho], references: [id], onDelete: Restrict, map: "fk_produto_variacao_tamanho")
+  id                  Int                      @id @default(autoincrement())
+  id_empresa          Int
+  id_produto          Int
+  id_cor              Int?
+  id_tamanho          Int?
+  status              produto_variacoes_status @default(ATIVO)
+  cores               cores?                   @relation(fields: [id_cor], references: [id], onDelete: Restrict, map: "fk_produto_variacao_cor")
+  empresas            empresas                 @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_produto_variacao_empresa")
+  produtos            produtos                 @relation(fields: [id_produto], references: [id], onDelete: Cascade, map: "fk_produto_variacao_produto")
+  tamanhos            tamanhos?                @relation(fields: [id_tamanho], references: [id], onDelete: Restrict, map: "fk_produto_variacao_tamanho")
+  pedido_cliente_item pedido_cliente_item[]
 
   @@unique([id_empresa, id_produto, id_cor, id_tamanho], map: "uk_produto_variacao")
   @@index([id_cor], map: "fk_produto_variacao_cor")
@@ -1370,9 +1424,10 @@ model tamanhos {
 }
 
 model tipos_produto {
-  id        Int        @id @default(autoincrement())
-  nome      String     @unique(map: "uk_tipo_produto_nome") @db.VarChar(100)
-  descricao String?    @db.VarChar(255)
+  id        Int                  @id @default(autoincrement())
+  nome      String               @unique(map: "uk_tipo_produto_nome") @db.VarChar(100)
+  descricao String?              @db.VarChar(255)
+  status    tipos_produto_status @default(ATIVO)
   produtos  produtos[]
 }
 
@@ -1411,6 +1466,7 @@ model usuario_empresa {
 }
 
 model usuarios {
+  pedido_cliente_fechamento                                                                            pedido_cliente_fechamento[]
   id                                                                                                   Int                                 @id @default(autoincrement())
   nome                                                                                                 String                              @db.VarChar(150)
   email                                                                                                String                              @unique(map: "uk_usuario_email") @db.VarChar(150)
@@ -1425,9 +1481,9 @@ model usuarios {
   ordem_producao                                                                                       ordem_producao[]
   ordem_producao_movimentacao_setor_ordem_producao_movimentacao_setor_id_usuario_envioTousuarios       ordem_producao_movimentacao_setor[] @relation("ordem_producao_movimentacao_setor_id_usuario_envioTousuarios")
   ordem_producao_movimentacao_setor_ordem_producao_movimentacao_setor_id_usuario_recebimentoTousuarios ordem_producao_movimentacao_setor[] @relation("ordem_producao_movimentacao_setor_id_usuario_recebimentoTousuarios")
-  pedidos_cliente                                                                                     pedido_cliente[]
-  pedidos_cliente_entregas                                                                            pedido_cliente_entrega[]
-  pedidos_cliente_historico                                                                           pedido_cliente_historico[]
+  pedidos_cliente                                                                                      pedido_cliente[]
+  pedidos_cliente_entregas                                                                             pedido_cliente_entrega[]
+  pedidos_cliente_historico                                                                            pedido_cliente_historico[]
   pedido_compra                                                                                        pedido_compra[]
   refresh_tokens                                                                                       refresh_tokens[]
   requisicao_compra                                                                                    requisicao_compra[]
@@ -1436,53 +1492,55 @@ model usuarios {
 }
 
 model venda {
-  id                        Int                      @id @default(autoincrement())
+  id                        Int                         @id @default(autoincrement())
   id_pedido_cliente         Int?
   id_empresa                Int
   id_cliente                Int
   id_usuario                Int
-  numero                    String                   @db.VarChar(50)
-  status                    venda_status             @default(RASCUNHO)
-  data_venda                DateTime                 @default(now()) @db.Timestamp(0)
-  data_entrega              DateTime?                @db.DateTime(0)
-  valor_total               Decimal                  @default(0.00) @db.Decimal(15, 2)
-  entrega_nome_destinatario String?              @db.VarChar(150)
-  entrega_telefone          String?              @db.VarChar(30)
-  entrega_endereco          String?              @db.VarChar(255)
-  entrega_numero            String?              @db.VarChar(20)
-  entrega_complemento       String?              @db.VarChar(100)
-  entrega_bairro            String?              @db.VarChar(100)
-  entrega_cidade            String?              @db.VarChar(100)
-  entrega_estado            String?              @db.Char(2)
-  entrega_cep               String?              @db.VarChar(10)
-  observacao_interna        String?              @db.Text
-  id_condicao_pagamento Int?
-  id_endereco_entrega   Int?
-  canal_venda           venda_canal_venda       @default(BALCAO)
-  status_financeiro     venda_status_financeiro @default(NAO_FATURADA)
-  valor_subtotal        Decimal                 @default(0) @db.Decimal(15, 2)
-  valor_desconto        Decimal                 @default(0) @db.Decimal(15, 2)
-  valor_frete           Decimal                 @default(0) @db.Decimal(15, 2)
-  valor_acrescimo       Decimal                 @default(0) @db.Decimal(15, 2)
-  observacao            String?                 @db.Text
-  data_atualizacao      DateTime                @updatedAt
-  item_venda            item_venda[]
-  parcelas              venda_parcelas[]
-  historico_status      venda_status_historico[]
-  reserva_estoque       reserva_estoque[]
-  clientes              clientes                @relation("venda_cliente_empresa", fields: [id_empresa, id_cliente], references: [id_empresa, id], map: "fk_venda_cliente_empresa")
-  empresas              empresas                @relation(fields: [id_empresa], references: [id], map: "fk_venda_empresa")
-  usuario_empresa       usuario_empresa         @relation("venda_usuario_empresa", fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], map: "fk_venda_usuario_empresa")
-  condicoes_pagamento   condicoes_pagamento?    @relation(fields: [id_condicao_pagamento], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  cliente_endereco      cliente_endereco?       @relation("VendaEnderecoEntrega", fields: [id_endereco_entrega], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  contas_receber        contas_receber[]
-
-  pedido_cliente pedido_cliente? @relation(fields: [id_pedido_cliente], references: [id], onDelete: Restrict, map: "fk_venda_pedido_cliente")
+  numero                    String                      @db.VarChar(50)
+  status                    venda_status                @default(RASCUNHO)
+  data_venda                DateTime                    @default(now()) @db.Timestamp(0)
+  data_entrega              DateTime?                   @db.DateTime(0)
+  valor_total               Decimal                     @default(0.00) @db.Decimal(15, 2)
+  entrega_nome_destinatario String?                     @db.VarChar(150)
+  entrega_telefone          String?                     @db.VarChar(30)
+  entrega_endereco          String?                     @db.VarChar(255)
+  entrega_numero            String?                     @db.VarChar(20)
+  entrega_complemento       String?                     @db.VarChar(100)
+  entrega_bairro            String?                     @db.VarChar(100)
+  entrega_cidade            String?                     @db.VarChar(100)
+  entrega_estado            String?                     @db.Char(2)
+  entrega_cep               String?                     @db.VarChar(10)
+  observacao_interna        String?                     @db.Text
+  id_condicao_pagamento     Int?
+  id_endereco_entrega       Int?
+  canal_venda               venda_canal_venda           @default(BALCAO)
+  status_financeiro         venda_status_financeiro     @default(NAO_FATURADA)
+  valor_subtotal            Decimal                     @default(0) @db.Decimal(15, 2)
+  valor_desconto            Decimal                     @default(0) @db.Decimal(15, 2)
+  valor_frete               Decimal                     @default(0) @db.Decimal(15, 2)
+  valor_acrescimo           Decimal                     @default(0) @db.Decimal(15, 2)
+  observacao                String?                     @db.Text
+  data_atualizacao          DateTime                    @updatedAt
+  item_venda                item_venda[]
+  parcelas                  venda_parcelas[]
+  historico_status          venda_status_historico[]
+  reserva_estoque           reserva_estoque[]
+  clientes                  clientes                    @relation("venda_cliente_empresa", fields: [id_empresa, id_cliente], references: [id_empresa, id], map: "fk_venda_cliente_empresa")
+  empresas                  empresas                    @relation(fields: [id_empresa], references: [id], map: "fk_venda_empresa")
+  usuario_empresa           usuario_empresa             @relation("venda_usuario_empresa", fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], map: "fk_venda_usuario_empresa")
+  condicoes_pagamento       condicoes_pagamento?        @relation(fields: [id_condicao_pagamento], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cliente_endereco          cliente_endereco?           @relation("VendaEnderecoEntrega", fields: [id_endereco_entrega], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  contas_receber            contas_receber[]
+  pedido_cliente            pedido_cliente?             @relation(fields: [id_pedido_cliente], references: [id], onDelete: Restrict, map: "fk_venda_pedido_cliente")
+  pedido_cliente_fechamento pedido_cliente_fechamento[]
 
   @@unique([id_empresa, numero], map: "uk_venda_empresa_numero")
   @@unique([id_empresa, id], map: "uk_venda_empresa_id")
+  @@unique([id, id_empresa, id_cliente, id_pedido_cliente], map: "uk_venda_id_empresa_cliente_pedido")
   @@index([id_empresa, id_cliente], map: "idx_venda_empresa_cliente")
   @@index([id_empresa, id_usuario], map: "idx_venda_empresa_usuario")
+  @@index([id_cliente], map: "fk_venda_cliente")
   @@index([id_usuario], map: "fk_venda_usuario")
   @@index([id_condicao_pagamento])
   @@index([id_endereco_entrega])
@@ -1554,6 +1612,8 @@ enum permissoes_usuario_recurso {
   MODELOS
   CATEGORIAS
   CLIENTES
+  PEDIDOS
+  FINANCEIRO
 }
 
 enum tipos_setor_status {
@@ -1632,6 +1692,11 @@ enum setores_status {
 }
 
 enum tamanhos_status {
+  ATIVO
+  INATIVO
+}
+
+enum tipos_produto_status {
   ATIVO
   INATIVO
 }
