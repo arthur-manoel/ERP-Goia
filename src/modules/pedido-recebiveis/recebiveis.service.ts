@@ -265,6 +265,8 @@ export function fecharPedido(
           create: pedido.pedido_cliente_item.map((i) => ({
             id_pedido_cliente_item: i.id,
             id_produto: i.id_produto,
+            id_cor: i.id_cor,
+            id_tamanho: i.id_tamanho,
             quantidade: i.quantidade,
             valor_unitario: i.valor_unitario,
             valor_total: i.valor_total,

@@ -79,8 +79,7 @@ ALTER TABLE item_venda
   ADD COLUMN id_produto_sem_pedido INT GENERATED ALWAYS AS
     (CASE WHEN id_pedido_cliente_item IS NULL THEN id_produto ELSE NULL END) STORED,
   ADD UNIQUE INDEX uk_item_venda_produto_avulso (id_venda, id_produto_sem_pedido),
-  ADD UNIQUE INDEX uk_item_venda_pedido_item (id_venda, id_pedido_cliente_item),
-  DROP INDEX uk_item_venda_produto;
+  ADD UNIQUE INDEX uk_item_venda_pedido_item (id_venda, id_pedido_cliente_item);
 -- Vendas avulsas conservam uma linha por produto; vendas de pedido podem ter
 -- duas variações do mesmo produto, identificadas por suas linhas reais do pedido.
 -- As duas FKs das colunas-base usam ON UPDATE RESTRICT, pois MySQL não permite
