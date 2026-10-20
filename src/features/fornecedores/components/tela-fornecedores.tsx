@@ -26,14 +26,6 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -49,7 +41,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -65,117 +56,14 @@ import {
   useAutenticacao,
 } from "@/features/autenticacao/provedor-autenticacao"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
-
-type Fornecedor = {
-  id: number
-  id_empresa: number | null
-  razao_social: string
-  nome_fantasia: string | null
-  cnpj: string | null
-  inscricao_estadual: string | null
-  endereco: string | null
-  numero: string | null
-  complemento: string | null
-  bairro: string | null
-  cidade: string | null
-  estado: string | null
-  cep: string | null
-  telefone: string | null
-  email: string | null
-  status: string
-}
-
-type Formulario = {
-  id?: number
-  razaoSocial: string
-  nomeFantasia: string
-  cnpj: string
-  inscricaoEstadual: string
-  email: string
-  telefone: string
-  cep: string
-  endereco: string
-  numero: string
-  complemento: string
-  bairro: string
-  cidade: string
-  estado: string
-  status: string
-}
-
-type RespostaPaginada = {
-  rows: Fornecedor[]
-  count: number
-  totalPages: number
-}
+import { filtrarFornecedores, formatarCnpj } from "../regras"
+import type { Fornecedor, RespostaPaginada } from "../tipos"
+import { FormularioFornecedor } from "./formulario-fornecedor"
 
 const endpoint = "/api/fornecedores"
 const limitePorPagina = 10
 // Máximo aceito pela API em uma única chamada.
 const limiteApi = 100
-
-// Mesmo formato aceito pela API: 12 caracteres + 2 dígitos, com ou sem máscara.
-const formatoCnpj =
-  /^(?:[A-Z0-9]{12}\d{2}|[A-Z0-9]{2}\.[A-Z0-9]{3}\.[A-Z0-9]{3}\/[A-Z0-9]{4}-\d{2})$/
-const formatoEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-const estados = [
-  ["AC", "Acre"],
-  ["AL", "Alagoas"],
-  ["AP", "Amapá"],
-  ["AM", "Amazonas"],
-  ["BA", "Bahia"],
-  ["CE", "Ceará"],
-  ["DF", "Distrito Federal"],
-  ["ES", "Espírito Santo"],
-  ["GO", "Goiás"],
-  ["MA", "Maranhão"],
-  ["MT", "Mato Grosso"],
-  ["MS", "Mato Grosso do Sul"],
-  ["MG", "Minas Gerais"],
-  ["PA", "Pará"],
-  ["PB", "Paraíba"],
-  ["PR", "Paraná"],
-  ["PE", "Pernambuco"],
-  ["PI", "Piauí"],
-  ["RJ", "Rio de Janeiro"],
-  ["RN", "Rio Grande do Norte"],
-  ["RS", "Rio Grande do Sul"],
-  ["RO", "Rondônia"],
-  ["RR", "Roraima"],
-  ["SC", "Santa Catarina"],
-  ["SP", "São Paulo"],
-  ["SE", "Sergipe"],
-  ["TO", "Tocantins"],
-].map(([sigla, nome]) => ({ value: sigla, label: `${sigla} — ${nome}` }))
-
-const formularioVazio: Formulario = {
-  razaoSocial: "",
-  nomeFantasia: "",
-  cnpj: "",
-  inscricaoEstadual: "",
-  email: "",
-  telefone: "",
-  cep: "",
-  endereco: "",
-  numero: "",
-  complemento: "",
-  bairro: "",
-  cidade: "",
-  estado: "",
-  status: "ATIVO",
-}
-
-// A API rejeita string vazia em CNPJ/email: para limpar um campo, envia null.
-const textoOuNulo = (valor: string) => valor.trim() || null
-
-function formatarCnpj(valor: string | null) {
-  if (!valor) return "—"
-  const limpo = valor.replace(/[./-]/g, "").toUpperCase()
-  return limpo.length === 14
-    ? limpo.replace(/^(.{2})(.{3})(.{3})(.{4})(.{2})$/, "$1.$2.$3/$4-$5")
-    : valor
-}
 
 function badgeStatus(status: string) {
   return (
@@ -199,9 +87,8 @@ export function TelaFornecedores() {
   const [busca, setBusca] = useState("")
   const [filtroStatus, setFiltroStatus] = useState("todos")
   const [pagina, setPagina] = useState(0)
-  const [formulario, setFormulario] = useState<Formulario | null>(null)
-  const [erroFormulario, setErroFormulario] = useState("")
-  const [salvando, setSalvando] = useState(false)
+  // "novo" abre o cadastro; um Fornecedor abre a edição dele; null fecha.
+  const [dialogo, setDialogo] = useState<"novo" | Fornecedor | null>(null)
   const [inativando, setInativando] = useState<Fornecedor | null>(null)
   const [inativandoRegistro, setInativandoRegistro] = useState(false)
   const versaoRequisicao = useRef(0)
@@ -251,18 +138,10 @@ export function TelaFornecedores() {
     void Promise.resolve().then(recarregar)
   }, [empresa, estadoAutenticacao, recarregar])
 
-  const filtrados = useMemo(() => {
-    const termo = busca.trim().toLowerCase()
-    if (!termo) return fornecedores
-    const termoCnpj = termo.replace(/[./-]/g, "")
-    return fornecedores.filter(
-      (item) =>
-        item.razao_social.toLowerCase().includes(termo) ||
-        (item.nome_fantasia ?? "").toLowerCase().includes(termo) ||
-        (item.email ?? "").toLowerCase().includes(termo) ||
-        (termoCnpj && (item.cnpj ?? "").toLowerCase().includes(termoCnpj)),
-    )
-  }, [busca, fornecedores])
+  const filtrados = useMemo(
+    () => filtrarFornecedores(fornecedores, busca),
+    [busca, fornecedores],
+  )
 
   const totalPaginas = Math.max(
     1,
@@ -275,99 +154,8 @@ export function TelaFornecedores() {
   )
   const possuiFiltros = busca || filtroStatus !== "todos"
 
-  function alterar(campo: keyof Formulario, valor: string) {
-    setFormulario((atual) => (atual ? { ...atual, [campo]: valor } : atual))
-  }
-
-  function abrirNovo() {
-    setErroFormulario("")
-    setFormulario(formularioVazio)
-  }
-
-  function abrirEdicao(item: Fornecedor) {
-    setErroFormulario("")
-    setFormulario({
-      id: item.id,
-      razaoSocial: item.razao_social,
-      nomeFantasia: item.nome_fantasia ?? "",
-      cnpj: formatarCnpj(item.cnpj) === "—" ? "" : formatarCnpj(item.cnpj),
-      inscricaoEstadual: item.inscricao_estadual ?? "",
-      email: item.email ?? "",
-      telefone: item.telefone ?? "",
-      cep: item.cep ?? "",
-      endereco: item.endereco ?? "",
-      numero: item.numero ?? "",
-      complemento: item.complemento ?? "",
-      bairro: item.bairro ?? "",
-      cidade: item.cidade ?? "",
-      estado: item.estado ?? "",
-      status: item.status,
-    })
-  }
-
-  async function salvar(evento: React.FormEvent<HTMLFormElement>) {
-    evento.preventDefault()
-    if (!formulario || !empresa) return
-
-    const razaoSocial = formulario.razaoSocial.trim()
-    const cnpj = formulario.cnpj.trim().toUpperCase()
-    const email = formulario.email.trim()
-    const estado = formulario.estado.trim().toUpperCase()
-
-    if (!razaoSocial) return setErroFormulario("Informe a razão social.")
-    if (cnpj && !formatoCnpj.test(cnpj))
-      return setErroFormulario(
-        "CNPJ deve ter 14 caracteres ou usar a máscara XX.XXX.XXX/XXXX-99.",
-      )
-    if (email && !formatoEmail.test(email))
-      return setErroFormulario("Informe um e-mail válido.")
-    if (estado && !/^[A-Z]{2}$/.test(estado))
-      return setErroFormulario("O estado deve ter duas letras (ex.: GO).")
-
-    const dados = {
-      // id_empresa só é enviado na criação; a troca de empresa não é feita aqui.
-      ...(formulario.id ? {} : { id_empresa: empresa.id }),
-      razao_social: razaoSocial,
-      nome_fantasia: textoOuNulo(formulario.nomeFantasia),
-      cnpj: cnpj || null,
-      inscricao_estadual: textoOuNulo(formulario.inscricaoEstadual),
-      email: email || null,
-      telefone: textoOuNulo(formulario.telefone),
-      cep: textoOuNulo(formulario.cep),
-      endereco: textoOuNulo(formulario.endereco),
-      numero: textoOuNulo(formulario.numero),
-      complemento: textoOuNulo(formulario.complemento),
-      bairro: textoOuNulo(formulario.bairro),
-      cidade: textoOuNulo(formulario.cidade),
-      estado: estado || null,
-      status: formulario.status,
-    }
-
-    setSalvando(true)
-    setErroFormulario("")
-    try {
-      const resposta = await requisitar(
-        formulario.id ? `${endpoint}/${formulario.id}` : endpoint,
-        {
-          method: formulario.id ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(dados),
-        },
-      )
-      if (!resposta.ok) throw new Error(await mensagemErro(resposta))
-      toast.success(
-        formulario.id ? "Fornecedor atualizado." : "Fornecedor cadastrado.",
-      )
-      setFormulario(null)
-      await recarregar()
-    } catch (causa) {
-      setErroFormulario(
-        causa instanceof Error ? causa.message : "Não foi possível salvar.",
-      )
-    } finally {
-      setSalvando(false)
-    }
-  }
+  const abrirNovo = () => setDialogo("novo")
+  const abrirEdicao = (item: Fornecedor) => setDialogo(item)
 
   async function inativar() {
     if (!inativando) return
@@ -657,211 +445,13 @@ export function TelaFornecedores() {
         </>
       )}
 
-      {formulario && (
-        <Dialog
-          open
-          onOpenChange={(aberto) => {
-            if (!aberto && !salvando) setFormulario(null)
-          }}
-        >
-          <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>
-                {formulario.id ? "Editar fornecedor" : "Novo fornecedor"}
-              </DialogTitle>
-              <DialogDescription>
-                {formulario.id
-                  ? `Atualize os dados de ${formulario.razaoSocial}.`
-                  : "Informe os dados para cadastrar um novo fornecedor."}
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={salvar} className="space-y-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field className="sm:col-span-2">
-                  <FieldLabel htmlFor="forn-razao">Razão social *</FieldLabel>
-                  <Input
-                    id="forn-razao"
-                    placeholder="Ex.: Empresa Exemplo Ltda"
-                    value={formulario.razaoSocial}
-                    onChange={(e) => alterar("razaoSocial", e.target.value)}
-                    maxLength={150}
-                    autoFocus
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-fantasia">Nome fantasia</FieldLabel>
-                  <Input
-                    id="forn-fantasia"
-                    placeholder="Ex.: Exemplo"
-                    value={formulario.nomeFantasia}
-                    onChange={(e) => alterar("nomeFantasia", e.target.value)}
-                    maxLength={150}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-cnpj">CNPJ</FieldLabel>
-                  <Input
-                    id="forn-cnpj"
-                    placeholder="Ex.: 00.000.000/0001-00"
-                    className="font-mono"
-                    value={formulario.cnpj}
-                    onChange={(e) => alterar("cnpj", e.target.value)}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-ie">Inscrição estadual</FieldLabel>
-                  <Input
-                    id="forn-ie"
-                    placeholder="Ex.: 000000000"
-                    value={formulario.inscricaoEstadual}
-                    onChange={(e) =>
-                      alterar("inscricaoEstadual", e.target.value)
-                    }
-                    maxLength={30}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-status">Situação</FieldLabel>
-                  <SearchSelect
-                    id="forn-status"
-                    value={formulario.status}
-                    onValueChange={(valor) => alterar("status", valor)}
-                    label="Situação"
-                    disabled={salvando}
-                    options={[
-                      { value: "ATIVO", label: "Ativo" },
-                      { value: "INATIVO", label: "Inativo" },
-                    ]}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-email">E-mail</FieldLabel>
-                  <Input
-                    id="forn-email"
-                    placeholder="Ex.: contato@exemplo.com.br"
-                    type="email"
-                    value={formulario.email}
-                    onChange={(e) => alterar("email", e.target.value)}
-                    maxLength={150}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-telefone">Telefone</FieldLabel>
-                  <Input
-                    id="forn-telefone"
-                    placeholder="Ex.: (00) 0000-0000"
-                    value={formulario.telefone}
-                    onChange={(e) => alterar("telefone", e.target.value)}
-                    maxLength={30}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-cep">CEP</FieldLabel>
-                  <Input
-                    id="forn-cep"
-                    placeholder="Ex.: 00000-000"
-                    value={formulario.cep}
-                    onChange={(e) => alterar("cep", e.target.value)}
-                    maxLength={10}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field className="sm:col-span-2">
-                  <FieldLabel htmlFor="forn-endereco">Endereço</FieldLabel>
-                  <Input
-                    id="forn-endereco"
-                    placeholder="Ex.: Nome da rua ou avenida"
-                    value={formulario.endereco}
-                    onChange={(e) => alterar("endereco", e.target.value)}
-                    maxLength={255}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-numero">Número</FieldLabel>
-                  <Input
-                    id="forn-numero"
-                    placeholder="Ex.: 123"
-                    value={formulario.numero}
-                    onChange={(e) => alterar("numero", e.target.value)}
-                    maxLength={20}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-complemento">
-                    Complemento
-                  </FieldLabel>
-                  <Input
-                    id="forn-complemento"
-                    placeholder="Ex.: Sala, galpão, bloco"
-                    value={formulario.complemento}
-                    onChange={(e) => alterar("complemento", e.target.value)}
-                    maxLength={100}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-bairro">Bairro</FieldLabel>
-                  <Input
-                    id="forn-bairro"
-                    placeholder="Ex.: Nome do bairro"
-                    value={formulario.bairro}
-                    onChange={(e) => alterar("bairro", e.target.value)}
-                    maxLength={100}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-cidade">Cidade</FieldLabel>
-                  <Input
-                    id="forn-cidade"
-                    placeholder="Ex.: Nome da cidade"
-                    value={formulario.cidade}
-                    onChange={(e) => alterar("cidade", e.target.value)}
-                    maxLength={100}
-                    disabled={salvando}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="forn-estado">Estado (UF)</FieldLabel>
-                  <SearchSelect
-                    id="forn-estado"
-                    value={formulario.estado}
-                    onValueChange={(valor) => alterar("estado", valor)}
-                    label="Estado (UF)"
-                    placeholder="Digite ou escolha a UF"
-                    disabled={salvando}
-                    options={estados}
-                  />
-                </Field>
-              </div>
-
-              {erroFormulario && (
-                <FieldError role="alert">{erroFormulario}</FieldError>
-              )}
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setFormulario(null)}
-                  disabled={salvando}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={salvando}>
-                  {salvando ? "Salvando…" : "Salvar"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+      {dialogo && empresa && (
+        <FormularioFornecedor
+          fornecedor={dialogo === "novo" ? null : dialogo}
+          idEmpresa={empresa.id}
+          onClose={() => setDialogo(null)}
+          onSaved={recarregar}
+        />
       )}
 
       <AlertDialog
