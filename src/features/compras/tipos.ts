@@ -96,6 +96,8 @@ export type Compra = {
   observacao: string | null
   totalItens: number
   valorTotal: string
+  /** Opcional: só vem em APIs que já distinguem recebimento parcial. */
+  recebimento?: "PENDENTE" | "PARCIAL" | "TOTAL"
   notasFiscais: number
 }
 export type CompraDetalhe = Compra & {

@@ -233,7 +233,10 @@ export function DialogoCompra({
   )
 }
 
-/** Registro de recebimento. Com pedido vinculado, aceita quantidade menor (fica pendente). */
+/**
+ * Registro de recebimento (total ou parcial). Informe o que chegou AGORA: a quantidade se soma ao
+ * que já foi recebido e o restante continua pendente, podendo ser recebido em novo registro.
+ */
 export function DialogoReceber({
   api,
   compra,
@@ -245,10 +248,17 @@ export function DialogoReceber({
   onFechar: () => void
   onSalvo: () => void
 }) {
-  const parcialPermitido = compra.pedido !== null
+  // Pendente de cada item: usa o que a API informa; sem isso, comprada − já recebida.
+  const pendenteDe = (i: CompraDetalhe["itens"][number]) =>
+    i.quantidadePendente ??
+    quantidadePendente(i.quantidade, i.quantidadeRecebida)
+  // Sugere o pendente de cada item (recebimento integral do que falta); só itens com pendência.
+  const pendentes = compra.itens.filter(
+    (i) => (paraEscala(pendenteDe(i), 3) ?? BigInt(0)) > BigInt(0),
+  )
   const [qtds, setQtds] = useState<Record<number, string>>(
     Object.fromEntries(
-      compra.itens.map((i) => [i.idProduto, String(Number(i.quantidade))]),
+      pendentes.map((i) => [i.idProduto, String(Number(pendenteDe(i)))]),
     ),
   )
   const [obs, setObs] = useState(compra.observacao ?? "")
@@ -256,17 +266,17 @@ export function DialogoReceber({
 
   async function salvar() {
     const itens: Array<{ idProduto: number; quantidade: string }> = []
-    for (const i of compra.itens) {
+    for (const i of pendentes) {
       const q = numero(qtds[i.idProduto] ?? "")
-      if (q === "" || paraEscala(q, 3) === BigInt(0)) continue // zero = nada recebido (fica pendente)
+      if (q === "" || paraEscala(q, 3) === BigInt(0)) continue // zero = nada recebido agora
       if (!quantidadeValida(q))
         return setErro(`${i.nome}: quantidade inválida.`)
       if (
         (paraEscala(q, 3) ?? BigInt(0)) >
-        (paraEscala(i.quantidadePedida ?? i.quantidade, 3) ?? BigInt(0))
+        (paraEscala(pendenteDe(i), 3) ?? BigInt(0))
       )
         return setErro(
-          `${i.nome}: a quantidade recebida não pode exceder o pedido (${quantidade(i.quantidadePedida ?? i.quantidade)}).`,
+          `${i.nome}: a quantidade recebida não pode exceder o pendente (${quantidade(pendenteDe(i))}).`,
         )
       itens.push({ idProduto: i.idProduto, quantidade: q })
     }
@@ -292,9 +302,8 @@ export function DialogoReceber({
         <DialogHeader>
           <DialogTitle>Registrar recebimento — {compra.codigo}</DialogTitle>
           <DialogDescription>
-            {parcialPermitido
-              ? "Informe o que foi efetivamente recebido; o restante permanece como pendente no pedido."
-              : "Compra sem pedido: o recebimento deve ser integral."}
+            Informe o que foi efetivamente recebido; o restante permanece como
+            pendente.
           </DialogDescription>
         </DialogHeader>
         <div className="overflow-x-auto rounded-lg border">
@@ -302,18 +311,18 @@ export function DialogoReceber({
             <TableHeader>
               <TableRow>
                 <TableHead>Insumo</TableHead>
-                <TableHead className="text-right">Pedida</TableHead>
-                <TableHead className="w-36">Recebida</TableHead>
-                <TableHead className="text-right">Pendente</TableHead>
+                <TableHead className="text-right">Comprada</TableHead>
+                <TableHead className="text-right">Já recebida</TableHead>
+                <TableHead className="w-36">Receber agora</TableHead>
+                <TableHead className="text-right">Pendente após</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {compra.itens.map((i) => {
-                const pedida = i.quantidadePedida ?? i.quantidade
+              {pendentes.map((i) => {
                 const q = numero(qtds[i.idProduto] ?? "")
                 const pend = quantidadeValida(q)
-                  ? quantidadePendente(pedida, q)
-                  : pedida
+                  ? quantidadePendente(pendenteDe(i), q)
+                  : pendenteDe(i)
                 return (
                   <TableRow key={i.id}>
                     <TableCell>
@@ -323,13 +332,15 @@ export function DialogoReceber({
                       </div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {quantidade(pedida)} {i.unidade}
+                      {quantidade(i.quantidade)} {i.unidade}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {quantidade(i.quantidadeRecebida)}
                     </TableCell>
                     <TableCell>
                       <Input
-                        aria-label={`Quantidade recebida de ${i.nome}`}
+                        aria-label={`Quantidade recebida agora de ${i.nome}`}
                         inputMode="decimal"
-                        disabled={!parcialPermitido}
                         value={qtds[i.idProduto] ?? ""}
                         onChange={(e) =>
                           setQtds({ ...qtds, [i.idProduto]: e.target.value })

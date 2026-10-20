@@ -104,10 +104,15 @@ export function rotulosStatus(tipo: keyof typeof mapas) {
 export function BadgeStatus({
   tipo,
   status,
+  recebimento,
 }: {
   tipo: keyof typeof mapas
   status: string
+  /** Só para compras: uma compra EMITIDA com recebimento PARCIAL ainda aguarda o restante. */
+  recebimento?: string
 }) {
+  if (tipo === "compra" && status === "EMITIDA" && recebimento === "PARCIAL")
+    return <Badge variant="secondary">Recebida parcialmente</Badge>
   const [rotulo, variante] = (
     mapas[tipo] as Record<string, readonly [string, Variante]>
   )[status] ?? [status, "outline"]

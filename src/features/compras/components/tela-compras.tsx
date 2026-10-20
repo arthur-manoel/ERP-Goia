@@ -151,7 +151,11 @@ function Conteudo({ api }: { api: ComprasApi }) {
                         {c.notasFiscais}
                       </TableCell>
                       <TableCell>
-                        <BadgeStatus tipo="compra" status={c.status} />
+                        <BadgeStatus
+                          tipo="compra"
+                          status={c.status}
+                          recebimento={c.recebimento}
+                        />
                       </TableCell>
                       <TableCell>
                         <Button
@@ -307,7 +311,11 @@ function Detalhe({
               <div>
                 <dt className="text-muted-foreground">Status</dt>
                 <dd>
-                  <BadgeStatus tipo="compra" status={c.status} />
+                  <BadgeStatus
+                    tipo="compra"
+                    status={c.status}
+                    recebimento={c.recebimento}
+                  />
                 </dd>
               </div>
               <div>
@@ -400,15 +408,18 @@ function Detalhe({
               </Alert>
             )}
             <DialogFooter>
-              {podeEditar && ["RASCUNHO", "EMITIDA"].includes(c.status) && (
-                <Button
-                  variant="outline"
-                  disabled={ocupado}
-                  onClick={() => setCancelando(true)}
-                >
-                  Cancelar compra
-                </Button>
-              )}
+              {/* Compra com itens já recebidos não pode mais ser cancelada. */}
+              {podeEditar &&
+                ["RASCUNHO", "EMITIDA"].includes(c.status) &&
+                (!c.recebimento || c.recebimento === "PENDENTE") && (
+                  <Button
+                    variant="outline"
+                    disabled={ocupado}
+                    onClick={() => setCancelando(true)}
+                  >
+                    Cancelar compra
+                  </Button>
+                )}
               {podeCriar && c.status !== "CANCELADA" && (
                 <Button
                   variant="secondary"
