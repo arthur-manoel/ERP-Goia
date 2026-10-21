@@ -3,7 +3,6 @@
 import { ThemeProvider } from "next-themes"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { ProvedorAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -14,7 +13,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
     >
       <TooltipProvider>
-        <ProvedorAutenticacao>{children}</ProvedorAutenticacao>
+        {children}
         <Toaster richColors closeButton />
       </TooltipProvider>
     </ThemeProvider>

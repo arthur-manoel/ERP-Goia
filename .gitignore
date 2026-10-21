@@ -13,9 +13,6 @@
 # testing
 /coverage
 
-# banco e ferramentas locais isolados
-/.local/
-
 # next.js
 /.next/
 /out/
