@@ -156,7 +156,7 @@ docs: atualizar status do módulo de compras
 
 - O banco de desenvolvimento é **compartilhado** por todo o time. Não apague nem altere dados de outras pessoas.
 - **Não altere a estrutura** (tabelas, colunas, índices) por conta própria. Abra uma issue com a label `decisão`. Depois de aprovada e aplicada no MySQL, rode `npm run db:pull` e inclua o `prisma/schema.prisma` atualizado no PR.
-- `prisma migrate` e `prisma db push` são bloqueados de propósito (veja o README).
+- `prisma migrate` (exceto `migrate diff`) é bloqueado contra o banco remoto compartilhado; migrations locais são permitidas. `prisma db push` continua bloqueado. Uma migration versionada não aplica a alteração ao ser enviada ou incorporada na PR: seu SQL pode ser aplicado pelo responsável no compartilhado, após aprovação DB-first. Não altere as proteções para contornar esse fluxo (veja o README).
 - Para explorar os dados: `npm run db:studio`.
 
 ## 8. Problemas comuns
