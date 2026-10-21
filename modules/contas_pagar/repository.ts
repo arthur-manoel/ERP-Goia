@@ -132,7 +132,14 @@ async function write(
 ): Promise<ContaPagar | null> {
   try {
     return await prisma.contas_pagar.update({
-      where: { id, id_empresa: { in: companies } },
+      // The state predicate makes the read/validate/write flow safe against a
+      // concurrent payment or cancellation. A P2025 is translated to null so
+      // the service can distinguish a lost race from a missing account.
+      where: {
+        id,
+        id_empresa: { in: companies },
+        situacao: { notIn: ["PAGO", "CANCELADO"] },
+      },
       data,
     })
   } catch (error) {

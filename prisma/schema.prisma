@@ -1495,6 +1495,7 @@ enum permissoes_usuario_recurso {
   CATEGORIAS
   CLIENTES
   PEDIDOS
+  FINANCEIRO
 }
 
 enum tipos_setor_status {

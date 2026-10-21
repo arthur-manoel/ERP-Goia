@@ -13,21 +13,23 @@ const writeLimit = { scope: "contas_pagar:write", limit: 30, windowMs: 60_000 }
 export async function GET(request: Request) {
   return catalogRequest(
     request,
-    null,
+    "FINANCEIRO",
     "pode_ler",
     (companies) => listContasPagar(readQuery(request), companies),
     200,
     readLimit,
+    ["ADMINISTRACAO", "FINANCEIRO"],
   )
 }
 
 export async function POST(request: Request) {
   return catalogRequest(
     request,
-    null,
+    "FINANCEIRO",
     "pode_criar",
     async (companies) => createContaPagar(await readJson(request), companies),
     201,
     writeLimit,
+    ["ADMINISTRACAO", "FINANCEIRO"],
   )
 }

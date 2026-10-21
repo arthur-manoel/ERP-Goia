@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest"
 import { Prisma } from "../../../src/generated/prisma/client"
 import * as collection from "../../../src/app/api/contas_pagar/route"
 import * as item from "../../../src/app/api/contas_pagar/[id]/route"
+import { allowedCompanies } from "../../../modules/catalogos/repository"
 import { db } from "../../helpers/prisma"
 import { context, origin, request } from "../../helpers/http"
 import { resetRateLimitsForTests } from "../../../src/lib/api/rate-limit"
@@ -108,7 +109,7 @@ it("pagina e filtra no banco", async () => {
   )
 })
 
-it("PATCH recalcula o valor final e bloqueia retorno de conta paga", async () => {
+it("PATCH recalcula o valor final e não altera uma conta paga", async () => {
   db.contas_pagar.findFirst.mockResolvedValue(row)
   existingRelations()
   db.contas_pagar.update.mockResolvedValue({
@@ -127,13 +128,14 @@ it("PATCH recalcula o valor final e bloqueia retorno de conta paga", async () =>
 
   db.contas_pagar.findFirst.mockResolvedValue({ ...row, situacao: "PAGO" })
   const forbidden = await item.PATCH(
-    await request("/api/contas_pagar/1", "PATCH", { situacao: "ABERTO" }),
+    await request("/api/contas_pagar/1", "PATCH", { valor_desconto: 10 }),
     context(),
   )
   expect(forbidden.status).toBe(409)
+  expect(db.contas_pagar.update).toHaveBeenCalledTimes(1)
 })
 
-it("cancela logicamente sem apagar o histórico", async () => {
+it("cancela logicamente sem apagar o histórico e não cancela uma conta paga", async () => {
   db.contas_pagar.findFirst.mockResolvedValue(row)
   db.contas_pagar.update.mockResolvedValue({ ...row, situacao: "CANCELADO" })
 
@@ -144,9 +146,90 @@ it("cancela logicamente sem apagar o histórico", async () => {
 
   expect(response.status).toBe(200)
   expect(db.contas_pagar.update).toHaveBeenCalledWith({
-    where: { id: 1, id_empresa: { in: [10] } },
+    where: {
+      id: 1,
+      id_empresa: { in: [10] },
+      situacao: { notIn: ["PAGO", "CANCELADO"] },
+    },
     data: { situacao: "CANCELADO" },
   })
+
+  db.contas_pagar.findFirst.mockResolvedValue({ ...row, situacao: "PAGO" })
+  const paid = await item.DELETE(
+    await request("/api/contas_pagar/1", "DELETE"),
+    context(),
+  )
+  expect(paid.status).toBe(409)
+  expect(db.contas_pagar.update).toHaveBeenCalledTimes(1)
+})
+
+it("retorna conflito se o estado mudar entre a leitura e a gravação", async () => {
+  db.contas_pagar.findFirst
+    .mockResolvedValueOnce(row)
+    .mockResolvedValueOnce({ ...row, situacao: "PAGO" })
+  existingRelations()
+  db.contas_pagar.update.mockRejectedValue(
+    new Prisma.PrismaClientKnownRequestError("registro mudou", {
+      code: "P2025",
+      clientVersion: "test",
+    }),
+  )
+
+  const response = await item.PATCH(
+    await request("/api/contas_pagar/1", "PATCH", { descricao: "Nova" }),
+    context(),
+  )
+
+  expect(response.status).toBe(409)
+  expect((await response.json()).error).toContain("situação")
+})
+
+it("exige papel financeiro e permissão financeira explícita por operação", async () => {
+  const deniedByRole = await collection.GET(
+    new Request(origin + "/api/contas_pagar", {
+      headers: { Authorization: "Bearer production-token" },
+    }),
+  )
+  expect(deniedByRole.status).toBe(403)
+  expect(db.usuario_empresa.findMany).not.toHaveBeenCalled()
+
+  db.contas_pagar.findMany.mockResolvedValue([])
+  db.contas_pagar.count.mockResolvedValue(0)
+  const permitted = await collection.GET(
+    new Request(origin + "/api/contas_pagar", {
+      headers: { Authorization: "Bearer finance-token" },
+    }),
+  )
+  expect(permitted.status).toBe(200)
+  expect(db.usuario_empresa.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({
+        OR: [
+          { usuarios: { nivel_acesso: "ADMIN" } },
+          {
+            permissoes_usuario: {
+              some: { recurso: "FINANCEIRO", pode_ler: true },
+            },
+          },
+        ],
+      }),
+    }),
+  )
+
+  await allowedCompanies(2, "FINANCEIRO", "pode_criar")
+  expect(db.usuario_empresa.findMany).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({
+        OR: expect.arrayContaining([
+          {
+            permissoes_usuario: {
+              some: { recurso: "FINANCEIRO", pode_criar: true },
+            },
+          },
+        ]),
+      }),
+    }),
+  )
 })
 
 it("rejeita campos imutáveis e oculta falhas inesperadas", async () => {

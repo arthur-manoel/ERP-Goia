@@ -16,18 +16,19 @@ const writeLimit = { scope: "despesas:write", limit: 30, windowMs: 60_000 }
 export async function GET(request: Request, context: Context) {
   return catalogRequest(
     request,
-    null,
+    "FINANCEIRO",
     "pode_ler",
     async (companies) => getDespesa((await context.params).id, companies),
     200,
     readLimit,
+    ["ADMINISTRACAO", "FINANCEIRO"],
   )
 }
 
 export async function PUT(request: Request, context: Context) {
   return catalogRequest(
     request,
-    null,
+    "FINANCEIRO",
     "pode_editar",
     async (companies) =>
       updateDespesa(
@@ -37,13 +38,14 @@ export async function PUT(request: Request, context: Context) {
       ),
     200,
     writeLimit,
+    ["ADMINISTRACAO", "FINANCEIRO"],
   )
 }
 
 export async function PATCH(request: Request, context: Context) {
   return catalogRequest(
     request,
-    null,
+    "FINANCEIRO",
     "pode_editar",
     async (companies) =>
       patchDespesa(
@@ -53,16 +55,18 @@ export async function PATCH(request: Request, context: Context) {
       ),
     200,
     writeLimit,
+    ["ADMINISTRACAO", "FINANCEIRO"],
   )
 }
 
 export async function DELETE(request: Request, context: Context) {
   return catalogRequest(
     request,
-    null,
+    "FINANCEIRO",
     "pode_excluir",
     async (companies) => deleteDespesa((await context.params).id, companies),
     200,
     writeLimit,
+    ["ADMINISTRACAO", "FINANCEIRO"],
   )
 }

@@ -110,18 +110,22 @@ function persist(
   }
 }
 
-function assertSituationTransition(
-  current: repository.ContaPagar,
-  requested: ContaPagarSituacao | undefined,
-) {
-  if (current.situacao === "CANCELADO" && requested !== "CANCELADO")
+function assertMutable(current: repository.ContaPagar) {
+  if (current.situacao === "CANCELADO")
     throw new ConflictError("Conta cancelada não pode ser alterada.")
-  if (
-    current.situacao === "PAGO" &&
-    requested !== undefined &&
-    requested !== "PAGO"
+  if (current.situacao === "PAGO")
+    throw new ConflictError("Conta paga não pode ser alterada.")
+}
+
+async function throwWriteConflict(
+  id: number,
+  companies: number[],
+): Promise<never> {
+  const latest = await repository.findById(id, companies)
+  if (!latest) throw new NotFoundError("Conta a pagar não encontrada.")
+  throw new ConflictError(
+    "A situação da conta foi alterada por outra operação. Atualize os dados e tente novamente.",
   )
-    throw new ConflictError("Conta paga não pode voltar para aberta.")
 }
 
 function toResponse(row: repository.ContaPagar) {
@@ -204,7 +208,7 @@ async function update(
   const data = validate(schema, input)
   const current = await repository.findById(id, companies)
   if (!current) throw new NotFoundError("Conta a pagar não encontrada.")
-  assertSituationTransition(current, data.situacao)
+  assertMutable(current)
   const idEmpresa = data.id_empresa ?? current.id_empresa
   const idCompra = data.id_compra ?? current.id_compra
   const idCategoria = data.id_categoria ?? current.id_categoria
@@ -216,8 +220,8 @@ async function update(
       companies,
     ),
   )
-  if (!row) throw new NotFoundError("Conta a pagar não encontrada.")
-  return toResponse(row)
+  if (!row) await throwWriteConflict(id, companies)
+  return toResponse(row!)
 }
 
 export function updateContaPagar(
@@ -252,7 +256,11 @@ export async function deleteContaPagar(idInput: unknown, companies: number[]) {
   const id = validate(contaPagarIdSchema, idInput)
   const current = await repository.findById(id, companies)
   if (!current) throw new NotFoundError("Conta a pagar não encontrada.")
+  if (current.situacao === "PAGO")
+    throw new ConflictError("Conta paga não pode ser cancelada.")
+  if (current.situacao === "CANCELADO")
+    return { message: "Conta a pagar já está cancelada." }
   if (!(await repository.cancel(id, companies)))
-    throw new NotFoundError("Conta a pagar não encontrada.")
+    await throwWriteConflict(id, companies)
   return { message: "Conta a pagar cancelada com sucesso." }
 }
