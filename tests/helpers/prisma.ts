@@ -38,6 +38,10 @@ export const db = {
   },
   tipos_produto: model(),
   fornecedores: model(),
+  contas_pagar: model(),
+  compras: model(),
+  categoria_financeira: model(),
+  empresas: model(),
   $queryRaw: vi.fn(),
   $transaction: vi.fn(),
 }
