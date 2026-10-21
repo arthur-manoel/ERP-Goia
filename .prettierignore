@@ -3,6 +3,7 @@
 src/generated/
 next-env.d.ts
 package-lock.json
+.local/
 
 # Markdown fica fora para as tabelas de acompanhamento continuarem fáceis de editar
 *.md

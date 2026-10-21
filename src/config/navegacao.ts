@@ -13,6 +13,7 @@ import {
   MapPin,
   Network,
   Package,
+  PackageSearch,
   Palette,
   Receipt,
   Route,
@@ -22,9 +23,12 @@ import {
   ShoppingCart,
   Tags,
   Truck,
+  TrendingUp,
   UserCog,
+  Wallet,
   Users,
   Warehouse,
+  Workflow,
   type LucideIcon,
 } from "lucide-react"
 
@@ -43,7 +47,7 @@ export type GrupoNavegacao = {
 export const navegacao: GrupoNavegacao[] = [
   {
     titulo: "Geral",
-    itens: [{ titulo: "Início", href: "/", icone: LayoutDashboard }],
+    itens: [{ titulo: "Dashboard", href: "/", icone: LayoutDashboard }],
   },
   {
     titulo: "Cadastros",
@@ -74,9 +78,10 @@ export const navegacao: GrupoNavegacao[] = [
   {
     titulo: "Estoque",
     itens: [
+      { titulo: "Insumos", href: "/estoque/insumos", icone: Package },
       { titulo: "Saldos", href: "/estoque", icone: Warehouse },
       {
-        titulo: "Movimentações",
+        titulo: "Movimentação",
         href: "/estoque/movimentacoes",
         icone: ArrowLeftRight,
       },
@@ -106,12 +111,17 @@ export const navegacao: GrupoNavegacao[] = [
     titulo: "Produção",
     itens: [
       {
+        titulo: "Fluxos de produção",
+        href: "/producao/fluxos",
+        icone: Workflow,
+      },
+      {
         titulo: "Ordens de produção",
         href: "/producao/ordens",
         icone: Factory,
       },
       {
-        titulo: "Movimentação entre setores",
+        titulo: "Apontamento de produção",
         href: "/producao/movimentacoes",
         icone: Route,
       },
@@ -119,7 +129,31 @@ export const navegacao: GrupoNavegacao[] = [
   },
   {
     titulo: "Vendas",
-    itens: [{ titulo: "Vendas", href: "/vendas", icone: BadgeDollarSign }],
+    itens: [
+      { titulo: "Pedidos de venda", href: "/vendas/pedidos", icone: FileText },
+      {
+        titulo: "Situação dos pedidos",
+        href: "/vendas/pedidos/situacao",
+        icone: PackageSearch,
+      },
+      { titulo: "Vendas", href: "/vendas", icone: BadgeDollarSign },
+    ],
+  },
+  {
+    titulo: "Financeiro",
+    itens: [
+      { titulo: "Lançamentos", href: "/financeiro", icone: BadgeDollarSign },
+      {
+        titulo: "Fluxo de caixa",
+        href: "/financeiro/fluxo-caixa",
+        icone: Wallet,
+      },
+      {
+        titulo: "Relatório de resultado",
+        href: "/financeiro/resultado",
+        icone: TrendingUp,
+      },
+    ],
   },
   {
     titulo: "Administração",

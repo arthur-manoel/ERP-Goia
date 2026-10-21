@@ -1,14 +1,19 @@
 "use client"
 
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Factory } from "lucide-react"
+import { ChevronDown, Factory } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -34,7 +39,10 @@ function hrefAtivo(pathname: string) {
 export function AppSidebar() {
   const ativo = hrefAtivo(usePathname())
   // No celular a sidebar é um painel sobreposto: fecha ao escolher uma tela.
-  const { setOpenMobile } = useSidebar()
+  const { setOpenMobile, state } = useSidebar()
+  const [gruposAbertos, setGruposAbertos] = useState<Record<string, boolean>>(
+    {},
+  )
   const fecharNoCelular = () => setOpenMobile(false)
 
   return (
@@ -62,26 +70,47 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         {navegacao.map((grupo) => (
-          <SidebarGroup key={grupo.titulo}>
-            <SidebarGroupLabel>{grupo.titulo}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {grupo.itens.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      isActive={item.href === ativo}
-                      tooltip={item.titulo}
-                      onClick={fecharNoCelular}
-                      render={<Link href={item.href} />}
-                    >
-                      <item.icone />
-                      <span>{item.titulo}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          <Collapsible
+            key={grupo.titulo}
+            open={
+              state === "collapsed" ||
+              (gruposAbertos[grupo.titulo] ??
+                (grupo.titulo === "Geral" ||
+                  grupo.itens.some((item) => item.href === ativo)))
+            }
+            onOpenChange={(open) =>
+              setGruposAbertos((previous) => ({
+                ...previous,
+                [grupo.titulo]: open,
+              }))
+            }
+          >
+            <SidebarGroup>
+              <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-md px-2 py-2 text-xs font-medium text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">
+                <span>{grupo.titulo}</span>
+                <ChevronDown className="size-4 transition-transform group-aria-expanded:rotate-180" />
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {grupo.itens.map((item) => (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          isActive={item.href === ativo}
+                          tooltip={item.titulo}
+                          onClick={fecharNoCelular}
+                          render={<Link href={item.href} />}
+                        >
+                          <item.icone />
+                          <span>{item.titulo}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </SidebarGroup>
+          </Collapsible>
         ))}
       </SidebarContent>
       <SidebarRail />

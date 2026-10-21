@@ -1,17 +1,6 @@
 import type { Metadata } from "next"
-import { EmConstrucao } from "@/components/layout/em-construcao"
-import { PageHeader } from "@/components/layout/page-header"
-
+import { TelaFornecedores } from "@/features/clientes/components/tela-clientes"
 export const metadata: Metadata = { title: "Fornecedores" }
-
 export default function Page() {
-  return (
-    <>
-      <PageHeader
-        titulo="Fornecedores"
-        descricao="Fornecedores e condições por empresa."
-      />
-      <EmConstrucao tabelas={["fornecedores", "empresa_fornecedor"]} />
-    </>
-  )
+  return <TelaFornecedores />
 }

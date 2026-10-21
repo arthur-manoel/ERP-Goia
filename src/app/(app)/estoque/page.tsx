@@ -1,17 +1,13 @@
 import type { Metadata } from "next"
-import { EmConstrucao } from "@/components/layout/em-construcao"
-import { PageHeader } from "@/components/layout/page-header"
+import { TelaPosicoesEstoque } from "@/features/estoque-minimo/components/tela-posicoes-estoque"
 
 export const metadata: Metadata = { title: "Saldos de estoque" }
 
 export default function Page() {
   return (
-    <>
-      <PageHeader
-        titulo="Saldos de estoque"
-        descricao="Saldo por produto, local e setor."
-      />
-      <EmConstrucao tabelas={["estoque"]} />
-    </>
+    <TelaPosicoesEstoque
+      titulo="Saldos de estoque"
+      descricao="Estoque físico e mínimo configurado por depósito ou localização."
+    />
   )
 }

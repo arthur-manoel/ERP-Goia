@@ -1,0 +1,129 @@
+"use client"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { Eye, EyeOff, LoaderCircle, LockKeyhole, UserRound } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAutenticacao } from "../provedor-autenticacao"
+import { retornoSeguro } from "../retorno"
+import { loginSchema, type DadosLogin } from "../schemas"
+
+export function FormularioLogin({ retorno = "/" }: { retorno?: string }) {
+  const router = useRouter()
+  const { entrar } = useAutenticacao()
+  const [mostrarSenha, setMostrarSenha] = useState(false)
+  const [erro, setErro] = useState("")
+  const form = useForm<DadosLogin>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { usuario: "", senha: "" },
+  })
+
+  return (
+    <form
+      noValidate
+      onSubmit={form.handleSubmit(async ({ usuario, senha }) => {
+        setErro("")
+        try {
+          await entrar(usuario, senha)
+          router.replace(retornoSeguro(retorno))
+        } catch {
+          setErro("Usuário ou senha incorretos.")
+          form.resetField("senha")
+          setMostrarSenha(false)
+        }
+      })}
+      className="space-y-6"
+    >
+      <FieldGroup>
+        <Field data-invalid={!!form.formState.errors.usuario}>
+          <FieldLabel htmlFor="usuario">Usuário</FieldLabel>
+          <InputGroup className="h-11">
+            <InputGroupAddon>
+              <UserRound />
+            </InputGroupAddon>
+            <InputGroupInput
+              id="usuario"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder="E-mail ou nome de usuário"
+              {...form.register("usuario")}
+              aria-invalid={!!form.formState.errors.usuario}
+              aria-describedby={
+                form.formState.errors.usuario ? "usuario-erro" : undefined
+              }
+            />
+          </InputGroup>
+          {form.formState.errors.usuario && (
+            <FieldError id="usuario-erro">
+              {form.formState.errors.usuario.message}
+            </FieldError>
+          )}
+        </Field>
+        <Field data-invalid={!!form.formState.errors.senha}>
+          <FieldLabel htmlFor="senha">Senha</FieldLabel>
+          <InputGroup className="h-11">
+            <InputGroupAddon>
+              <LockKeyhole />
+            </InputGroupAddon>
+            <InputGroupInput
+              id="senha"
+              autoComplete="current-password"
+              type={mostrarSenha ? "text" : "password"}
+              placeholder="Digite sua senha"
+              {...form.register("senha")}
+              aria-invalid={!!form.formState.errors.senha}
+              aria-describedby={
+                form.formState.errors.senha ? "senha-erro" : undefined
+              }
+            />
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+                aria-pressed={mostrarSenha}
+                size="icon-sm"
+                onClick={() => setMostrarSenha((value) => !value)}
+              >
+                {mostrarSenha ? <EyeOff /> : <Eye />}
+              </InputGroupButton>
+            </InputGroupAddon>
+          </InputGroup>
+          {form.formState.errors.senha && (
+            <FieldError id="senha-erro">
+              {form.formState.errors.senha.message}
+            </FieldError>
+          )}
+        </Field>
+      </FieldGroup>
+      {erro && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{erro}</AlertDescription>
+        </Alert>
+      )}
+      <Button
+        type="submit"
+        className="h-11 w-full"
+        disabled={form.formState.isSubmitting}
+      >
+        {form.formState.isSubmitting ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : null}
+        {form.formState.isSubmitting ? "Entrando…" : "Entrar"}
+      </Button>
+    </form>
+  )
+}
