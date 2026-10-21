@@ -4,6 +4,7 @@ import * as collection from "../../../src/app/api/contas_pagar/route"
 import * as item from "../../../src/app/api/contas_pagar/[id]/route"
 import { db } from "../../helpers/prisma"
 import { context, origin, request } from "../../helpers/http"
+import { resetRateLimitsForTests } from "../../../src/lib/api/rate-limit"
 
 const row = {
   id: 1,
@@ -168,4 +169,21 @@ it("rejeita campos imutáveis e oculta falhas inesperadas", async () => {
     success: false,
     error: "Erro interno do servidor.",
   })
+})
+
+it("aplica o limite de leitura durante uma rajada concorrente", async () => {
+  resetRateLimitsForTests()
+  db.contas_pagar.findMany.mockResolvedValue([])
+  db.contas_pagar.count.mockResolvedValue(0)
+
+  const responses = await Promise.all(
+    Array.from({ length: 125 }, () =>
+      request("/api/contas_pagar").then((req) => collection.GET(req)),
+    ),
+  )
+  const statuses = responses.map((response) => response.status)
+
+  expect(statuses.filter((status) => status === 200)).toHaveLength(120)
+  expect(statuses.filter((status) => status === 429)).toHaveLength(5)
+  resetRateLimitsForTests()
 })
