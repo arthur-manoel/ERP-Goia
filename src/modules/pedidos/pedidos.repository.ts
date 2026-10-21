@@ -23,7 +23,12 @@ const include = {
     },
   },
   _count: {
-    select: { venda: true, ordem_producao: true, pedido_cliente_entrega: true },
+    select: {
+      venda: true,
+      ordem_producao: true,
+      pedido_cliente_entrega: true,
+      pedido_cliente_fechamento: true,
+    },
   },
 } satisfies Prisma.pedido_clienteInclude
 export type Pedido = Prisma.pedido_clienteGetPayload<{
@@ -132,26 +137,35 @@ export async function bloquearEmpresa(tx: Transaction, idEmpresa: number) {
   >`SELECT id FROM empresas WHERE id = ${idEmpresa} AND status = 'ATIVA' FOR UPDATE`
   if (!empresas.length) throw new PedidoError(403, "Acesso negado à empresa.")
 }
-export async function proximoNumero(tx: Transaction, idEmpresa: number) {
+export async function proximoNumero(
+  tx: Transaction,
+  idEmpresa: number,
+  entidade: "pedido_cliente" | "venda" = "pedido_cliente",
+) {
   // Criação já mantém o lock da empresa, inclusive antes de ler a idempotência.
   const sequencia = await tx.sequencias_automaticas.upsert({
     where: {
       id_empresa_entidade: {
         id_empresa: idEmpresa,
-        entidade: "pedido_cliente",
+        entidade,
       },
     },
     create: {
       id_empresa: idEmpresa,
-      entidade: "pedido_cliente",
+      entidade,
       ultimo_numero: BigInt(0),
     },
     update: {},
   })
-  const legados = await tx.$queryRaw<Array<{ maior: string | null }>>`
-    SELECT CAST(MAX(CAST(numero AS UNSIGNED)) AS CHAR) AS maior FROM pedido_cliente
+  // Identificadores SQL vêm apenas desta enumeração interna, nunca do HTTP.
+  const tabela =
+    entidade === "venda" ? Prisma.sql`venda` : Prisma.sql`pedido_cliente`
+  const legados = await tx.$queryRaw<
+    Array<{ maior: string | null }>
+  >(Prisma.sql`
+    SELECT CAST(MAX(CAST(numero AS UNSIGNED)) AS CHAR) AS maior FROM ${tabela}
     WHERE id_empresa = ${idEmpresa} AND numero REGEXP '^[1-9][0-9]{0,19}$'
-  `
+  `)
   const maior = BigInt(legados[0]?.maior ?? "0")
   const ultimo =
     sequencia.ultimo_numero > maior ? sequencia.ultimo_numero : maior
@@ -162,7 +176,7 @@ export async function proximoNumero(tx: Transaction, idEmpresa: number) {
     where: {
       id_empresa_entidade: {
         id_empresa: idEmpresa,
-        entidade: "pedido_cliente",
+        entidade,
       },
     },
     data: { ultimo_numero: numero },
