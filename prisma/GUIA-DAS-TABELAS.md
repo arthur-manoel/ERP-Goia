@@ -1,6 +1,6 @@
 # Guia das tabelas do banco Goia
 
-Documento baseado no `schema.prisma` desta pasta, após a integração do módulo financeiro e dos pedidos de clientes. Abrange os **64 modelos de tabela**, em ordem alfabética, conforme a organização do schema.
+Documento de referência baseado no `schema.prisma` desta pasta, após a integração do módulo financeiro e dos pedidos de clientes, com complemento da migration de fechamento. A lista abaixo não substitui a estrutura completa do schema nem confirma a aplicação da migration no banco compartilhado.
 
 As finalidades abaixo são descritas a partir dos campos e relacionamentos definidos no schema. Os exemplos ilustram possibilidades de uso; a criação automática de registros, os cálculos e as mudanças de status dependem da implementação da aplicação. Este documento não confirma quais rotinas já estão implementadas nem se o banco em execução já recebeu todas as alterações.
 
@@ -103,7 +103,7 @@ As finalidades abaixo são descritas a partir dos campos e relacionamentos defin
 
 **Utilidade:** registrar valores a receber de vendas, com identificação de parcela, vencimento, valores e situação financeira.
 
-**Relações e uso:** exige vínculos com `empresas`, `venda` e `categoria_financeira`, e pode ter vários `pagamentos_receber`. O cliente é identificado por meio da venda. Exemplo: uma parcela de R$ 500 que será quitada em dois recebimentos.
+**Relações e uso:** exige vínculos com `empresas`, `venda` e `categoria_financeira`, e pode ter vários `pagamentos_receber`. O cliente é identificado por meio da venda. A migration de fechamento acrescenta `id_fechamento` e `saldo` opcionais para preservar registros anteriores; novos títulos desse fluxo exigem saldo válido e número de parcela único no fechamento. Exemplo: uma parcela de R$ 500 que será quitada em dois recebimentos. Criar o título não registra recebimento.
 
 ### 16. `cores`
 
@@ -173,9 +173,9 @@ As finalidades abaixo são descritas a partir dos campos e relacionamentos defin
 
 ### 27. `item_venda`
 
-**Utilidade:** armazenar os produtos vendidos, suas quantidades e seus valores unitários e totais.
+**Utilidade:** armazenar os produtos e as variações de cor e tamanho vendidos, além da quantidade, descrição e valores unitário e total.
 
-**Relações e uso:** liga `venda` a `produtos`. Há uma restrição de unicidade por venda e produto. Exemplo: uma venda contendo uma linha de camisetas e outra de calças. O modelo atual não possui cor e tamanho próprios no item.
+**Relações e uso:** liga `venda` a `produtos` e pode apontar para `cores`, `tamanhos` e para a linha real de `pedido_cliente_item`. Para itens de pedido, a aplicação copia cor e tamanho acordados para o item vendido. Na migration de fechamento, linhas avulsas conservam unicidade por venda/produto por meio da coluna gerada `id_produto_sem_pedido`; linhas de pedido usam unicidade por venda/item do pedido. Assim, uma venda pode conter duas variações do mesmo produto sem duplicar a mesma linha encomendada.
 
 ### 28. `kardex`
 
@@ -399,7 +399,71 @@ As finalidades abaixo são descritas a partir dos campos e relacionamentos defin
 
 **Relações e uso:** reúne `item_venda`, `reserva_estoque` e `contas_receber`; pode ter condição de pagamento e endereço de entrega. Exemplo: registrar uma venda pelo WhatsApp, com entrega e pagamento parcelado.
 
+### 65. `estoque_minimo_local`
+
+**Utilidade:** definir a quantidade mínima desejada de um produto em cada local de estoque de uma empresa.
+
+**Relações e uso:** associa empresa, local e produto, com um único limite mínimo por combinação. Pode apoiar alertas e reposição, mas o schema não dispara alertas nem cria compras automaticamente.
+
+### 66. `fluxos_producao`
+
+**Utilidade:** cadastrar fluxos reutilizáveis de produção por empresa, com nome, descrição e status.
+
+**Relações e uso:** reúne a sequência de setores em `fluxo_producao_setor`, pode ser associado a produtos por `produto_fluxo` e pode ser registrado como snapshot de uma ordem. O cadastro do fluxo não significa que uma ordem já o executou.
+
+### 67. `fluxo_producao_setor`
+
+**Utilidade:** ordenar os setores que compõem um fluxo de produção.
+
+**Relações e uso:** liga `fluxos_producao` a `setores`, com uma posição única dentro do fluxo. Exemplo: definir corte, costura e acabamento como etapas sucessivas.
+
+### 68. `ordem_producao_snapshot`
+
+**Utilidade:** preservar uma cópia JSON do fluxo usado por uma ordem de produção, para manter o registro do processo mesmo que o fluxo cadastrado seja alterado depois.
+
+**Relações e uso:** há no máximo um snapshot por ordem; o vínculo ao fluxo original é opcional. O conteúdo JSON é gravado e interpretado pela aplicação.
+
+### 69. `pedido_cliente_fechamento`
+
+**Utilidade:** registrar o fechamento comercial explícito de um pedido, incluindo venda gerada, total, categoria financeira, responsável, plano de pagamento e snapshots com hashes.
+
+**Relações e uso:** vincula pedido, cliente, empresa, venda, categoria e usuário. Guarda um fechamento por pedido/empresa e uma venda por fechamento; as parcelas ficam em `contas_receber`. O registro não substitui o andamento operacional do pedido nem os recebimentos efetivamente realizados.
+
+### 70. `produto_fluxo`
+
+**Utilidade:** indicar qual fluxo de produção padrão está associado a cada produto dentro de uma empresa.
+
+**Relações e uso:** associa `produto_empresa` a `fluxos_producao`, com no máximo um fluxo padrão por produto/empresa. A criação da ordem e a captura do snapshot dependem da aplicação.
+
+### 71. `venda_parcelas`
+
+**Utilidade:** controlar parcelas de venda, com número, valor, vencimento, valor e data de pagamento, forma, referência, observação e status.
+
+**Relações e uso:** cada parcela pertence à venda e à empresa. O schema garante número de parcela único por venda/empresa; baixa, atualização de status e movimentação financeira dependem da aplicação.
+
+### 72. `venda_status_historico`
+
+**Utilidade:** preservar as mudanças de status de uma venda, com estado anterior e novo, observação, data e usuário opcional.
+
+**Relações e uso:** vincula o evento à venda e à empresa, e pode apontar para o vínculo do usuário com a empresa. Deve ser gravado pela aplicação junto com a alteração do status para manter o histórico consistente.
+
 ## Diferenças entre tabelas próximas
+
+### Complemento da migration: `pedido_cliente_fechamento`
+
+Registra o evento comercial explícito e seu instante, separados do andamento
+operacional do pedido. Preserva o plano de pagamento, o snapshot comercial e
+seus hashes canônicos. Há um fechamento por empresa/pedido e uma venda por
+fechamento; chaves compostas protegem empresa, cliente, pedido, venda e categoria.
+As parcelas continuam em `contas_receber`, com vínculos RESTRICT para preservar
+o histórico. Não substitui venda, cliente nem registros de recebimento.
+Artefato único: `migrations/20261017000000_pedido_contas_receber/migration.sql`.
+Pode ser executado pelo Prisma localmente ou ter seu SQL aplicado pelo responsável
+no compartilhado, preservando a política DB-first. A PR não o aplica automaticamente;
+aprovação técnica/aplicação compartilhada pendentes na
+[decisão #91](https://github.com/arthur-manoel/ERP-Goia/issues/91).
+
+### Comparação
 
 | Conjunto | Papel de cada tabela |
 | --- | --- |
@@ -451,7 +515,8 @@ Esses fluxos explicam como as tabelas podem trabalhar juntas. O schema define on
 - `ordem_producao.id_pedido_cliente` identifica a encomenda atendida pela ordem; `ordem_producao_item.id_pedido_cliente_item` identifica a linha produzida. Cada ordem atende, neste desenho, no máximo um pedido, e um pedido pode ter várias ordens.
 - O financeiro continua ligado a `venda`: pedido → vendas → contas a receber → recebimentos. Criar o pedido não gera cobrança automaticamente.
 - As relações opcionais preservam operações existentes sem pedido. Para operações de pedido, a aplicação deve verificar que cabeçalho e itens apontam para o mesmo pedido, produto, empresa e cliente. Também deve validar a empresa dos cadastros e das variações utilizados.
-- O schema existente de `item_venda` mantém sua unicidade por venda/produto. Assim, duas linhas de pedido com o mesmo produto não podem ser lançadas separadamente na mesma venda, mesmo que tenham cores ou tamanhos diferentes. Esse caso exige vendas separadas no desenho atual; não houve alteração dessa regra preexistente.
+- A migration `migrations/20261017000000_pedido_contas_receber/migration.sql` substitui a unicidade simples venda/produto por duas regras: venda/produto para linhas avulsas, via coluna STORED gerada, e venda/item do pedido para linhas vinculadas. Duas variações do mesmo produto podem compor a mesma venda, desde que venham de linhas distintas do pedido. O banco compartilhado só terá essa regra depois da aprovação e aplicação do SQL; não remover índices por conta própria.
+- No fechamento explícito aprovado, o pedido precisa estar ENTREGUE ou CONCLUIDO e ter todas as quantidades com recebimento confirmado pelo cliente. A transação registra uma data própria, preserva o status operacional e cria uma venda com títulos abertos. FATURADA indica títulos emitidos nesse fluxo, não nota fiscal nem pagamento. A criação de pedido e as consultas não geram cobranças.
 
 ### Valores do pedido
 
