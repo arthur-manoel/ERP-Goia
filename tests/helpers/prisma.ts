@@ -1,4 +1,5 @@
 import { vi } from "vitest"
+
 function model() {
   return {
     findUnique: vi.fn(),
@@ -11,6 +12,7 @@ function model() {
     updateMany: vi.fn(),
   }
 }
+
 export const db = {
   usuario_empresa: model(),
   tamanhos: model(),
@@ -22,13 +24,27 @@ export const db = {
   produto_empresa: model(),
   auditoria: model(),
   pedido_cliente: model(),
-  pedido_cliente_item: { ...model(), createMany: vi.fn(), delete: vi.fn() },
+  pedido_cliente_item: {
+    ...model(),
+    createMany: vi.fn(),
+    delete: vi.fn(),
+  },
   pedido_cliente_historico: model(),
   produto_variacoes: model(),
   clientes: model(),
-  sequencias_automaticas: { ...model(), upsert: vi.fn() },
+  sequencias_automaticas: {
+    ...model(),
+    upsert: vi.fn(),
+  },
   tipos_produto: model(),
-  $queryRaw: vi.fn(),
   fornecedores: model(),
+  contas_pagar: model(),
+  contas_receber: model(),
+  despesas: model(),
+  compras: model(),
+  venda: model(),
+  categoria_financeira: model(),
+  empresas: model(),
+  $queryRaw: vi.fn(),
   $transaction: vi.fn(),
 }
