@@ -435,7 +435,7 @@ Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
 | Todos usam o mesmo usuário do banco, com acesso público na porta 3306 | [#7](https://github.com/arthur-manoel/ERP-Goia/issues/7) |
 | Banco de desenvolvimento vazio | Seed: [#8](https://github.com/arthur-manoel/ERP-Goia/issues/8) |
 | Sessão provisória (`src/lib/sessao.ts`) lê ids do `.env.local` e é bloqueada em produção | Substituída por [#11](https://github.com/arthur-manoel/ERP-Goia/issues/11) e [#12](https://github.com/arthur-manoel/ERP-Goia/issues/12) |
-| Enum de recursos de `permissoes_usuario` não cobre compras, vendas, fornecedores... | Decisão em [#13](https://github.com/arthur-manoel/ERP-Goia/issues/13) |
+| Recursos e checagens das APIs de `permissoes_usuario` ampliados; DDL do banco compartilhado depende de aplicação pelo responsável | [Matriz e implantação](docs/PERMISSOES-API.md); páginas, menu e botões continuam em [#13](https://github.com/arthur-manoel/ERP-Goia/issues/13) |
 | `compras.id_pedido_compra_legado` sugere que `compras` substitui `pedido_compra` | Decisão em [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Check constraint `chk_ordem_producao_status_quantidade`: `quantidade_planejada > 0`, exceto nos status PLANEJADA e CANCELADA | O Prisma não a representa. Validar no zod e tratar o erro ([#37](https://github.com/arthur-manoel/ERP-Goia/issues/37)) |
 | Nomes em `snake_case` no Prisma Client | Decisão: manter os nomes do banco para que `db pull` seja reprodutível |

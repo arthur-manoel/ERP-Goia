@@ -5,13 +5,16 @@ import * as tamanhos from "../../../src/app/api/tamanhos/route"
 import * as tamanho from "../../../src/app/api/tamanhos/[id]/route"
 import * as produtos from "../../../src/app/api/produtos/route"
 import * as produto from "../../../src/app/api/produtos/[id]/route"
+import * as fornecedores from "../../../src/app/api/fornecedores/route"
+import * as fornecedor from "../../../src/app/api/fornecedores/[id]/route"
 import { db } from "../../helpers/prisma"
 import { request, context } from "../../helpers/http"
 
 for (const [name, collection, item, resource] of [
   ["cores", cores, core, "CORES"],
-  ["tamanhos", tamanhos, tamanho, "PRODUTOS"],
+  ["tamanhos", tamanhos, tamanho, "TAMANHOS"],
   ["produtos", produtos, produto, "PRODUTOS"],
+  ["fornecedores", fornecedores, fornecedor, "FORNECEDORES"],
 ] as const) {
   describe(name + ": autorização", () => {
     const operations = [
@@ -76,44 +79,49 @@ for (const [name, collection, item, resource] of [
       ).toBe(403)
       expect(db[name].findMany).not.toHaveBeenCalled()
     })
-    it("PATCH salva parcialmente dentro do escopo", async () => {
-      db[name].update.mockResolvedValue({ id: 1, nome: "Novo" })
-      expect(
-        (
-          await item.PATCH(
-            await request("/api/" + name + "/1", "PATCH", { nome: "Novo" }),
-            context(),
-          )
-        ).status,
-      ).toBe(200)
-      const where =
-        name === "produtos"
-          ? {
-              id: 1,
-              produto_empresa: {
-                some: { id_empresa: { in: [10] } },
-                every: { id_empresa: { in: [10] } },
-              },
-            }
-          : { id: 1, id_empresa: { in: [10] } }
-      expect(db[name].update).toHaveBeenCalledWith({
-        where,
-        data: { nome: "Novo" },
-      })
-    })
-    it("consulta ID dentro do escopo e retorna 404 para inacessível", async () => {
-      db[name].findFirst.mockResolvedValue(null)
-      expect(
-        (await item.GET(await request("/api/" + name + "/1"), context()))
-          .status,
-      ).toBe(404)
-      expect(db[name].findFirst).toHaveBeenCalledWith({
-        where:
+    if (name !== "fornecedores")
+      it("PATCH salva parcialmente dentro do escopo", async () => {
+        db[name].update.mockResolvedValue({ id: 1, nome: "Novo" })
+        expect(
+          (
+            await item.PATCH(
+              await request("/api/" + name + "/1", "PATCH", { nome: "Novo" }),
+              context(),
+            )
+          ).status,
+        ).toBe(200)
+        const where =
           name === "produtos"
-            ? { id: 1, produto_empresa: { some: { id_empresa: { in: [10] } } } }
-            : { id: 1, id_empresa: { in: [10] } },
+            ? {
+                id: 1,
+                produto_empresa: {
+                  some: { id_empresa: { in: [10] } },
+                  every: { id_empresa: { in: [10] } },
+                },
+              }
+            : { id: 1, id_empresa: { in: [10] } }
+        expect(db[name].update).toHaveBeenCalledWith({
+          where,
+          data: { nome: "Novo" },
+        })
       })
-    })
+    if (name !== "fornecedores")
+      it("consulta ID dentro do escopo e retorna 404 para inacessível", async () => {
+        db[name].findFirst.mockResolvedValue(null)
+        expect(
+          (await item.GET(await request("/api/" + name + "/1"), context()))
+            .status,
+        ).toBe(404)
+        expect(db[name].findFirst).toHaveBeenCalledWith({
+          where:
+            name === "produtos"
+              ? {
+                  id: 1,
+                  produto_empresa: { some: { id_empresa: { in: [10] } } },
+                }
+              : { id: 1, id_empresa: { in: [10] } },
+        })
+      })
   })
 }
 for (const [name, collection, item, field, status] of [

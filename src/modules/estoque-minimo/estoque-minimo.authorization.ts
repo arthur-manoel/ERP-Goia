@@ -1,6 +1,7 @@
 import "server-only"
 import { requireRole } from "@/lib/authorize"
 import { prisma } from "@/lib/prisma"
+import { temPermissao, type Recurso } from "@/lib/permissoes"
 import { EstoqueMinimoError } from "./estoque-minimo.error"
 
 type Acao = "ler" | "criar" | "editar"
@@ -16,7 +17,7 @@ async function usuarioAutenticado(request: Request) {
   return idUsuario
 }
 
-function vinculosAtivos(idUsuario: number) {
+function vinculosAtivos(idUsuario: number, recursos: Recurso[] = ["ESTOQUE"]) {
   return prisma.usuario_empresa.findMany({
     where: {
       id_usuario: idUsuario,
@@ -27,7 +28,7 @@ function vinculosAtivos(idUsuario: number) {
     include: {
       empresas: { select: { razao_social: true } },
       usuarios: { select: { nome: true, email: true, nivel_acesso: true } },
-      permissoes_usuario: { where: { recurso: "ESTOQUE" } },
+      permissoes_usuario: { where: { recurso: { in: recursos } } },
     },
   })
 }
@@ -35,14 +36,10 @@ function vinculosAtivos(idUsuario: number) {
 function permissoes(
   vinculo: Awaited<ReturnType<typeof vinculosAtivos>>[number],
 ) {
-  const admin =
-    vinculo.nivel_acesso === "EMPRESA" ||
-    vinculo.usuarios.nivel_acesso === "ADMIN"
-  const permissao = vinculo.permissoes_usuario[0]
   return {
-    podeLer: admin || permissao?.pode_ler === true,
-    podeCriar: admin || permissao?.pode_criar === true,
-    podeEditar: admin || permissao?.pode_editar === true,
+    podeLer: temPermissao(vinculo, "ESTOQUE", "ler"),
+    podeCriar: temPermissao(vinculo, "ESTOQUE", "criar"),
+    podeEditar: temPermissao(vinculo, "ESTOQUE", "editar"),
   }
 }
 
@@ -63,10 +60,17 @@ export async function empresasParaEstoque(request: Request) {
   }
 }
 
-export async function autorizarEstoque(request: Request, acao: Acao) {
+export async function autorizarEstoque(
+  request: Request,
+  acao: Acao,
+  recursosAdicionais: Recurso[] = [],
+) {
   const idUsuario = await usuarioAutenticado(request)
   if (idUsuario instanceof Response) return idUsuario
-  const vinculos = await vinculosAtivos(idUsuario)
+  const vinculos = await vinculosAtivos(idUsuario, [
+    "ESTOQUE",
+    ...recursosAdicionais,
+  ])
   const header = request.headers.get("X-Empresa-Id")
   const vinculo =
     header !== null
@@ -90,5 +94,9 @@ export async function autorizarEstoque(request: Request, acao: Acao) {
   const permitido = { ler: podeLer, criar: podeCriar, editar: podeEditar }
   if (!Object.hasOwn(permitido, acao) || permitido[acao] !== true)
     throw new EstoqueMinimoError(403, "Acesso negado ao estoque.")
+  if (
+    !recursosAdicionais.every((recurso) => temPermissao(vinculo, recurso, acao))
+  )
+    throw new EstoqueMinimoError(403, "Acesso negado.")
   return { idUsuario, idEmpresa: vinculo.id_empresa, podeEditar }
 }

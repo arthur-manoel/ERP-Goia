@@ -1,6 +1,8 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
+import { administrador } from "@/lib/permissoes"
+export { administrador } from "@/lib/permissoes"
 import { conflitoPersistencia } from "../producao/producao.errors"
 import type { CriarUsuarioInput } from "./usuarios.schema"
 
@@ -27,15 +29,6 @@ export function vinculosAtivos(idUsuario: number) {
     },
     include: includeVinculo,
   })
-}
-export function administrador(vinculo: {
-  nivel_acesso: string
-  usuarios: { nivel_acesso: string }
-}) {
-  return (
-    vinculo.nivel_acesso === "EMPRESA" ||
-    vinculo.usuarios.nivel_acesso === "ADMIN"
-  )
 }
 export async function gravacao<T>(
   ctx: Contexto,

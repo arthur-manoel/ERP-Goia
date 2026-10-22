@@ -55,7 +55,11 @@ export function handler(tipo: Entidade, operacao: Operacao) {
       const ctx = await autorizar(
         request,
         acao,
-        associacao ? "PRODUTOS" : "ORDENS_PRODUCAO",
+        associacao
+          ? "PRODUTOS"
+          : tipo === "setor"
+            ? "SETORES"
+            : "FLUXOS_PRODUCAO",
       )
       if (ctx instanceof Response) {
         ctx.headers.set("Cache-Control", "no-store")

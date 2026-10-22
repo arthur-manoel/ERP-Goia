@@ -1,5 +1,6 @@
 import "server-only"
 import { requireRole } from "@/lib/authorize"
+import { temPermissao } from "@/lib/permissoes"
 import { prisma } from "@/lib/prisma"
 import {
   autorizar,
@@ -55,12 +56,7 @@ export async function autorizarConsulta(
       )
     throw new PedidoError(403, "Acesso negado à empresa.")
   }
-  const admin =
-    vinculo.usuarios.nivel_acesso === "ADMIN" ||
-    vinculo.nivel_acesso === "EMPRESA"
-  const podeLer = vinculo.permissoes_usuario.some(
-    (p) => p.recurso === "FINANCEIRO" && p.pode_ler,
-  )
-  if (!admin && !podeLer) throw new PedidoError(403, "Acesso negado.")
+  if (!temPermissao(vinculo, "FINANCEIRO", "ler"))
+    throw new PedidoError(403, "Acesso negado.")
   return { idEmpresa: vinculo.id_empresa, idUsuario }
 }

@@ -9,7 +9,7 @@ export function assertCompany(id: number | undefined, companies: number[]) {
 }
 export function catalogRequest<T>(
   request: Request,
-  resource: Resource | null,
+  resource: Resource,
   action: Action,
   operation: (companies: number[]) => Promise<T>,
   status = 200,
