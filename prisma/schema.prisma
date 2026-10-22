@@ -1614,6 +1614,14 @@ enum permissoes_usuario_recurso {
   CLIENTES
   PEDIDOS
   FINANCEIRO
+  COMPRAS
+  FORNECEDORES
+  SETORES
+  VENDAS
+  RELATORIOS
+  FLUXOS_PRODUCAO
+  TAMANHOS
+  TIPOS_PRODUTO
 }
 
 enum tipos_setor_status {
