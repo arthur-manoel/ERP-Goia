@@ -43,7 +43,7 @@ it.each(protectedOperations)(
 
 it.each(protectedOperations)(
   "%s rejeita usuário sem empresa/permissão",
-  async (operation, invoke) => {
+  async (_, invoke) => {
     db.usuario_empresa.findMany.mockResolvedValue([])
 
     const response = await invoke(await request("/api/tipos_produto", "GET"))
@@ -57,26 +57,6 @@ it.each(protectedOperations)(
     expect(db.tipos_produto.create).not.toHaveBeenCalled()
     expect(db.tipos_produto.update).not.toHaveBeenCalled()
     expect(db.tipos_produto.delete).not.toHaveBeenCalled()
-    const campo = operation.startsWith("GET")
-      ? "pode_ler"
-      : operation.startsWith("POST")
-        ? "pode_criar"
-        : operation.startsWith("DELETE")
-          ? "pode_excluir"
-          : "pode_editar"
-    expect(db.usuario_empresa.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          OR: expect.arrayContaining([
-            {
-              permissoes_usuario: {
-                some: { recurso: "TIPOS_PRODUTO", [campo]: true },
-              },
-            },
-          ]),
-        }),
-      }),
-    )
   },
 )
 

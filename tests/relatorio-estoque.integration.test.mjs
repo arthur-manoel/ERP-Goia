@@ -176,13 +176,6 @@ test("Relatório: MariaDB/MySQL isolado e HTTP de produção", async (t) => {
           pode_ler: true,
         },
       })
-      await prisma.permissoes_usuario.create({
-        data: {
-          id_usuario_empresa: vinculo.id,
-          recurso: "RELATORIOS",
-          pode_ler: true,
-        },
-      })
       for (let j = 0; j < (i === 0 ? 2 : 1); j++) {
         locais.push(
           await prisma.locais_estoque.create({

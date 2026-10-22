@@ -16,7 +16,7 @@ const writeLimit = { scope: "tipos_produto:write", limit: 30, windowMs: 60_000 }
 export async function GET(request: Request, context: Context) {
   return catalogRequest(
     request,
-    "TIPOS_PRODUTO",
+    "PRODUTOS",
     "pode_ler",
     async () => getTipoProduto((await context.params).id),
     200,
@@ -27,7 +27,7 @@ export async function GET(request: Request, context: Context) {
 export async function PUT(request: Request, context: Context) {
   return catalogRequest(
     request,
-    "TIPOS_PRODUTO",
+    "PRODUTOS",
     "pode_editar",
     async () =>
       updateTipoProduto((await context.params).id, await readJson(request)),
@@ -39,7 +39,7 @@ export async function PUT(request: Request, context: Context) {
 export async function PATCH(request: Request, context: Context) {
   return catalogRequest(
     request,
-    "TIPOS_PRODUTO",
+    "PRODUTOS",
     "pode_editar",
     async () =>
       patchTipoProduto((await context.params).id, await readJson(request)),
@@ -51,7 +51,7 @@ export async function PATCH(request: Request, context: Context) {
 export async function DELETE(request: Request, context: Context) {
   return catalogRequest(
     request,
-    "TIPOS_PRODUTO",
+    "PRODUTOS",
     "pode_excluir",
     async () => deleteTipoProduto((await context.params).id),
     200,

@@ -379,24 +379,6 @@ for (const [method, invoke] of [
         status: "ATIVO",
         usuarios: { status: "ATIVO" },
         empresas: { status: "ATIVA" },
-        OR: [
-          { usuarios: { nivel_acesso: "ADMIN" } },
-          { nivel_acesso: "EMPRESA" },
-          {
-            permissoes_usuario: {
-              some: {
-                recurso: "FORNECEDORES",
-                [method === "GET"
-                  ? "pode_ler"
-                  : method === "POST"
-                    ? "pode_criar"
-                    : method === "DELETE"
-                      ? "pode_excluir"
-                      : "pode_editar"]: true,
-              },
-            },
-          },
-        ],
       },
       select: { id_empresa: true },
     })

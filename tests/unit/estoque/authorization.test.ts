@@ -16,13 +16,7 @@ const vinculo = (flags = {}, nivel = "USUARIO", global = "USUARIO") => ({
     nivel_acesso: global,
   },
   permissoes_usuario: [
-    {
-      recurso: "ESTOQUE",
-      pode_ler: false,
-      pode_criar: false,
-      pode_editar: false,
-      ...flags,
-    },
+    { pode_ler: false, pode_criar: false, pode_editar: false, ...flags },
   ],
 })
 const request = (empresa = "10") =>

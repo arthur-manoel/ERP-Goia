@@ -6,14 +6,14 @@ import {
 } from "../../../../modules/tamanhos/service"
 export const runtime = "nodejs"
 export async function GET(request: Request) {
-  return catalogRequest(request, "TAMANHOS", "pode_ler", (companies) =>
+  return catalogRequest(request, "PRODUTOS", "pode_ler", (companies) =>
     listTamanhos(readQuery(request), companies),
   )
 }
 export async function POST(request: Request) {
   return catalogRequest(
     request,
-    "TAMANHOS",
+    "PRODUTOS",
     "pode_criar",
     async (companies) => createTamanho(await readJson(request), companies),
     201,

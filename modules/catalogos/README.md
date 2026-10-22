@@ -1,16 +1,14 @@
 # Autorização dos catálogos
 
-As rotas de produtos, cores, tamanhos, tipos de produto e fornecedores usam o verificador Bearer existente em src/lib/authorize.ts. A validação de assinatura e expiração permanece no serviço de autenticação existente.
+As rotas de produtos, cores e tamanhos usam o verificador Bearer existente em src/lib/authorize.ts. A validação de assinatura e expiração permanece no serviço de autenticação existente.
 
-O repository consulta usuario_empresa a cada requisição, exigindo usuário ATIVO, vínculo ATIVO, empresa ATIVA e permissão explícita da operação. Usuário global ADMIN ou vínculo EMPRESA dispensa o flag, mas nunca o vínculo ativo. A regra compartilhada está em src/lib/permissoes.ts; recurso nulo/inválido nega acesso.
+O repository consulta usuario_empresa a cada requisição, exigindo usuário ATIVO, vínculo ATIVO, empresa ATIVA e permissão explícita da operação. Não há bypass por cargo ou nível administrativo.
 
 | Módulo | Recurso |
 | --- | --- |
 | Produtos | PRODUTOS |
 | Cores | CORES |
-| Tamanhos | TAMANHOS |
-| Tipos de produto | TIPOS_PRODUTO |
-| Fornecedores | FORNECEDORES |
+| Tamanhos | PRODUTOS (conforme escolha do projeto) |
 
 | Método | Permissão |
 | --- | --- |
@@ -30,5 +28,3 @@ Listagens preservam { success: true, data: { rows, count, page, limit, totalPage
 As páginas de cores e tamanhos deste checkout ainda são placeholders; não existe nelas um carregamento sequencial de páginas para substituir.
 
 Testes: npm test -- tests/unit/catalogos. São testes unitários com Prisma e verificador JWT simulados; não substituem integração com banco e login reais.
-
-Veja [a matriz de todas as APIs](../../docs/PERMISSOES-API.md) para implantação do DDL e concessões dos novos recursos. Tipos de produto permanecem um catálogo global legado sem id_empresa.

@@ -1,6 +1,5 @@
 import "server-only"
 import { requireRole } from "@/lib/authorize"
-import { temPermissao } from "@/lib/permissoes"
 import { prisma } from "@/lib/prisma"
 import { PedidoError } from "./pedidos.error"
 
@@ -51,11 +50,17 @@ export async function autorizar(
       )
     throw new PedidoError(403, "Acesso negado à empresa.")
   }
-  // Exclusão de itens também edita o pedido: preservar a regra composta.
-  if (
-    !temPermissao(vinculo, "PEDIDOS", acao) ||
-    (acao === "excluir" && !temPermissao(vinculo, "PEDIDOS", "editar"))
-  )
+  const admin =
+    vinculo.usuarios.nivel_acesso === "ADMIN" ||
+    vinculo.nivel_acesso === "EMPRESA"
+  const p = vinculo.permissoes_usuario.find((v) => v.recurso === "PEDIDOS")
+  const regras = {
+    ler: Boolean(p?.pode_ler),
+    criar: Boolean(p?.pode_criar),
+    editar: Boolean(p?.pode_editar),
+    excluir: Boolean(p?.pode_editar && p.pode_excluir),
+  }
+  if (!Object.hasOwn(regras, acao) || (!admin && !regras[acao]))
     throw new PedidoError(403, "Acesso negado.")
   return { idEmpresa: vinculo.id_empresa, idUsuario }
 }

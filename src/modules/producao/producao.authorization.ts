@@ -1,6 +1,5 @@
 import "server-only"
 import { requireRole } from "@/lib/authorize"
-import { temPermissao, type Recurso } from "@/lib/permissoes"
 import {
   ProducaoError,
   vinculosAtivos,
@@ -10,7 +9,7 @@ import {
 export async function autorizar(
   request: Request,
   acao: "ler" | "criar" | "editar" | "excluir",
-  recurso: Recurso = "ORDENS_PRODUCAO",
+  recurso: "ORDENS_PRODUCAO" | "PRODUTOS" = "ORDENS_PRODUCAO",
 ): Promise<Contexto | Response> {
   const auth = await requireRole(request, ["ADMINISTRACAO", "PRODUCAO"])
   if (auth.error) return auth.error
@@ -37,7 +36,13 @@ export async function autorizar(
       )
     throw new ProducaoError(403, "Acesso negado à empresa.")
   }
-  if (!temPermissao(vinculo, recurso, acao))
+  const admin =
+    vinculo.nivel_acesso === "EMPRESA" ||
+    vinculo.usuarios.nivel_acesso === "ADMIN"
+  const permissao = vinculo.permissoes_usuario.find(
+    (item) => item.recurso === recurso,
+  )
+  if (!admin && !permissao?.[`pode_${acao}`])
     throw new ProducaoError(403, "Acesso negado.")
   return { idUsuario, idEmpresa: vinculo.id_empresa }
 }

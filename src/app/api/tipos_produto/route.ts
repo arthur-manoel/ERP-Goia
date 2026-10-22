@@ -13,7 +13,7 @@ const writeLimit = { scope: "tipos_produto:write", limit: 30, windowMs: 60_000 }
 export async function GET(request: Request) {
   return catalogRequest(
     request,
-    "TIPOS_PRODUTO",
+    "PRODUTOS",
     "pode_ler",
     () => listTiposProduto(readQuery(request)),
     200,
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return catalogRequest(
     request,
-    "TIPOS_PRODUTO",
+    "PRODUTOS",
     "pode_criar",
     async () => createTipoProduto(await readJson(request)),
     201,

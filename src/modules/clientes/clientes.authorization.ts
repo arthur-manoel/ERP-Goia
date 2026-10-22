@@ -1,6 +1,5 @@
 import "server-only"
 import { requireRole } from "@/lib/authorize"
-import { temPermissao } from "@/lib/permissoes"
 import {
   ClienteError,
   vinculosAtivos,
@@ -36,11 +35,17 @@ export async function autorizar(
       )
     throw new ClienteError(403, "Acesso negado à empresa.")
   }
-  if (!temPermissao(vinculo, "CLIENTES", acao))
+  const admin =
+    vinculo.nivel_acesso === "EMPRESA" ||
+    vinculo.usuarios.nivel_acesso === "ADMIN"
+  const permissao = vinculo.permissoes_usuario.find(
+    (item) => item.recurso === "CLIENTES",
+  )
+  if (!admin && !permissao?.[`pode_${acao}`])
     throw new ClienteError(403, "Acesso negado.")
   return {
     idUsuario,
     idEmpresa: vinculo.id_empresa,
-    podeExcluir: temPermissao(vinculo, "CLIENTES", "excluir"),
+    podeExcluir: admin || Boolean(permissao?.pode_excluir),
   }
 }

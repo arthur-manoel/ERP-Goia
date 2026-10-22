@@ -8,7 +8,7 @@ const headers = { "Cache-Control": "private, no-store" }
 
 export async function relatorioEstoqueHandler(request: Request) {
   try {
-    const contexto = await autorizarEstoque(request, "ler", ["RELATORIOS"])
+    const contexto = await autorizarEstoque(request, "ler")
     if (contexto instanceof Response) {
       contexto.headers.set("Cache-Control", headers["Cache-Control"])
       return contexto
