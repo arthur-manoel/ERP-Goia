@@ -1,10 +1,10 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import Link from "next/link"
 import { PackageOpen, Plus, Search } from "lucide-react"
-
+import { useCallback, useEffect, useRef, useState } from "react"
+import { toast } from "sonner"
 import { PageHeader } from "@/components/layout/page-header"
-import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertDialog,
@@ -18,13 +18,6 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -33,307 +26,386 @@ import {
 } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { toast } from "sonner"
 import {
-  calcularPrecoVenda,
-  coresDisponiveis,
-  opcoesCategoria,
-  situacaoProduto,
-  tamanhosDisponiveis,
-  totalSaldo,
-  type ProdutoPronto,
-  type ProdutoProntoFormulario,
-} from "../schemas"
+  mensagemErro,
+  useAutenticacao,
+} from "@/features/autenticacao/provedor-autenticacao"
+import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
+import type { Produto, RespostaPaginada, TipoProduto } from "../tipos"
+import { DialogoFluxoProduto } from "./dialogo-fluxo-produto"
 import { FormularioProdutoPronto } from "./formulario-produto-pronto"
-import { MatrizGradeSaldo } from "./matriz-grade-saldo"
 import { TabelaProdutosProntos } from "./tabela-produtos-prontos"
 
-const ITENS_POR_PAGINA = 10
-
-const produtosIniciais: ProdutoPronto[] = [
-  {
-    id: "cam-001",
-    sku: "CAM-001",
-    nome: "Camiseta básica",
-    categoria: "Camisetas",
-    unidade: "pc",
-    precoCusto: 32,
-    margemLucro: 45,
-    precoVenda: calcularPrecoVenda(32, 45),
-    variacoes: [
-      { corId: "azul", tamanhoId: "p", saldo: 12 },
-      { corId: "azul", tamanhoId: "m", saldo: 8 },
-      { corId: "preto", tamanhoId: "p", saldo: 3 },
-      { corId: "preto", tamanhoId: "m", saldo: 0 },
-    ],
-  },
-  {
-    id: "cal-015",
-    sku: "CAL-015",
-    nome: "Calça social slim",
-    categoria: "Calças",
-    unidade: "pc",
-    precoCusto: 78.5,
-    margemLucro: 55,
-    precoVenda: calcularPrecoVenda(78.5, 55),
-    variacoes: [
-      { corId: "preto", tamanhoId: "m", saldo: 6 },
-      { corId: "preto", tamanhoId: "g", saldo: 7 },
-      { corId: "azul", tamanhoId: "m", saldo: 5 },
-      { corId: "azul", tamanhoId: "g", saldo: 4 },
-    ],
-  },
-  {
-    id: "uni-008",
-    sku: "UNI-008",
-    nome: "Polo uniforme Goia",
-    categoria: "Uniformes",
-    unidade: "pc",
-    precoCusto: 42,
-    margemLucro: 50,
-    precoVenda: calcularPrecoVenda(42, 50),
-    variacoes: [
-      { corId: "branco", tamanhoId: "pp", saldo: 0 },
-      { corId: "branco", tamanhoId: "p", saldo: 0 },
-      { corId: "branco", tamanhoId: "m", saldo: 0 },
-    ],
-  },
-]
-
-const opcoesSituacao = [
-  { value: "Disponível", label: "Disponível" },
-  { value: "Estoque baixo", label: "Estoque baixo" },
-  { value: "Sem estoque", label: "Sem estoque" },
-]
-
-function normalizar(valor: string) {
-  return valor
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("pt-BR")
-}
-
-function opcoesDaGrade(produto: ProdutoPronto) {
-  const cores = produto.variacoes
-    .map((variacao) =>
-      coresDisponiveis.find((cor) => cor.id === variacao.corId),
-    )
-    .filter((cor): cor is (typeof coresDisponiveis)[number] => Boolean(cor))
-  const tamanhos = produto.variacoes
-    .map((variacao) =>
-      tamanhosDisponiveis.find((tamanho) => tamanho.id === variacao.tamanhoId),
-    )
-    .filter((tamanho): tamanho is (typeof tamanhosDisponiveis)[number] =>
-      Boolean(tamanho),
-    )
-
-  return {
-    cores: [...new Map(cores.map((cor) => [cor.id, cor])).values()],
-    tamanhos: [
-      ...new Map(tamanhos.map((tamanho) => [tamanho.id, tamanho])).values(),
-    ],
-  }
-}
+const limitePorPagina = 10
+const limiteTipos = 100
 
 export function ProdutosProntosView() {
-  const referenciaNovoProduto = useRef<HTMLButtonElement>(null)
-  const [produtos, setProdutos] = useState(produtosIniciais)
+  const {
+    estado: estadoAutenticacao,
+    empresa,
+    empresas,
+    selecionarEmpresa,
+    requisitar,
+  } = useAutenticacao()
+  const [produtos, setProdutos] = useState<Produto[]>([])
+  const [tipos, setTipos] = useState<TipoProduto[]>([])
   const [busca, setBusca] = useState("")
-  const [categoria, setCategoria] = useState("")
-  const [situacao, setSituacao] = useState("")
+  const [buscaAplicada, setBuscaAplicada] = useState("")
+  const [status, setStatus] = useState("")
   const [pagina, setPagina] = useState(1)
-  const [ordemCrescente, setOrdemCrescente] = useState(true)
+  const [total, setTotal] = useState(0)
+  const [totalPaginas, setTotalPaginas] = useState(1)
+  const [empresaCarregada, setEmpresaCarregada] = useState<number | null>(null)
   const [carregando, setCarregando] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
-  const [formularioAberto, setFormularioAberto] = useState(false)
-  const [produtoEmEdicao, setProdutoEmEdicao] = useState<
-    ProdutoPronto | undefined
-  >()
-  const [produtoDaMatriz, setProdutoDaMatriz] = useState<
-    ProdutoPronto | undefined
-  >()
-  const [produtoParaExcluir, setProdutoParaExcluir] = useState<
-    ProdutoPronto | undefined
-  >()
+  const [erro, setErro] = useState("")
+  const [erroTipos, setErroTipos] = useState("")
+  const [carregandoTipos, setCarregandoTipos] = useState(false)
+  const [empresaTiposCarregados, setEmpresaTiposCarregados] = useState<
+    number | null
+  >(null)
+  const [dialogo, setDialogo] = useState<"novo" | Produto | null>(null)
+  const [produtoDoFluxo, setProdutoDoFluxo] = useState<Produto | null>(null)
+  const [produtoParaInativar, setProdutoParaInativar] =
+    useState<Produto | null>(null)
+  const [inativando, setInativando] = useState(false)
+  const versaoRequisicao = useRef(0)
+  const versaoTipos = useRef(0)
 
-  const filtrados = useMemo(() => {
-    const termo = normalizar(busca)
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setBuscaAplicada(busca.trim())
+      setPagina(1)
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [busca])
 
-    return produtos
-      .filter(
-        (produto) =>
-          !termo ||
-          normalizar(`${produto.sku} ${produto.nome}`).includes(termo),
-      )
-      .filter((produto) => !categoria || produto.categoria === categoria)
-      .filter((produto) => !situacao || situacaoProduto(produto) === situacao)
-      .sort((primeiro, segundo) => {
-        const comparacao = primeiro.sku.localeCompare(segundo.sku, "pt-BR", {
-          numeric: true,
-        })
-        return ordemCrescente ? comparacao : -comparacao
-      })
-  }, [busca, categoria, ordemCrescente, produtos, situacao])
-
-  const totalPaginas = Math.max(
-    1,
-    Math.ceil(filtrados.length / ITENS_POR_PAGINA),
-  )
-  const paginaAtual = Math.min(pagina, totalPaginas)
-  const produtosDaPagina = filtrados.slice(
-    (paginaAtual - 1) * ITENS_POR_PAGINA,
-    paginaAtual * ITENS_POR_PAGINA,
-  )
-
-  function abrirNovoProduto() {
-    setProdutoEmEdicao(undefined)
-    setFormularioAberto(true)
-  }
-
-  function abrirEdicao(produto: ProdutoPronto) {
-    setProdutoEmEdicao(produto)
-    setFormularioAberto(true)
-  }
-
-  function fecharFormulario() {
-    setFormularioAberto(false)
-    setProdutoEmEdicao(undefined)
-    window.setTimeout(() => referenciaNovoProduto.current?.focus(), 0)
-  }
-
-  function salvarProduto(dados: ProdutoProntoFormulario) {
-    const produto: ProdutoPronto = {
-      id: produtoEmEdicao?.id ?? crypto.randomUUID(),
-      nome: dados.nome.trim(),
-      sku: dados.sku.trim(),
-      categoria: dados.categoria,
-      unidade: dados.unidade,
-      precoCusto: dados.precoCusto,
-      margemLucro: dados.margemLucro,
-      precoVenda: calcularPrecoVenda(dados.precoCusto, dados.margemLucro),
-      variacoes: dados.grade,
-    }
-
-    setProdutos((atuais) =>
-      produtoEmEdicao
-        ? atuais.map((item) => (item.id === produto.id ? produto : item))
-        : [produto, ...atuais],
-    )
-    toast.success(
-      produtoEmEdicao ? "Produto atualizado." : "Produto cadastrado.",
-    )
-    fecharFormulario()
-  }
-
-  function excluirProduto() {
-    if (!produtoParaExcluir) return
-
-    setProdutos((atuais) =>
-      atuais.filter((produto) => produto.id !== produtoParaExcluir.id),
-    )
-    toast.success("Produto excluído.")
-    setProdutoParaExcluir(undefined)
-  }
-
-  async function tentarNovamente() {
+  const recarregar = useCallback(async () => {
+    if (!empresa) return
+    const versao = ++versaoRequisicao.current
     setCarregando(true)
-    setErro(null)
     try {
-      await Promise.resolve()
-    } catch {
-      setErro("Não foi possível carregar os produtos prontos.")
+      const parametros = new URLSearchParams({
+        id_empresa: String(empresa.id),
+        page: String(pagina),
+        limit: String(limitePorPagina),
+      })
+      if (buscaAplicada) parametros.set("busca", buscaAplicada)
+      if (status) parametros.set("status", status)
+
+      const respostaProdutos = await requisitar(`/api/produtos?${parametros}`)
+      if (!respostaProdutos.ok)
+        throw new Error(await mensagemErro(respostaProdutos))
+      const corpoProdutos = (await respostaProdutos.json()) as {
+        data: RespostaPaginada<Produto>
+      }
+
+      if (versao !== versaoRequisicao.current) return
+      setProdutos(corpoProdutos.data.rows)
+      setEmpresaCarregada(empresa.id)
+      setTotal(corpoProdutos.data.count)
+      setTotalPaginas(Math.max(1, corpoProdutos.data.totalPages))
+      setErro("")
+      if (
+        corpoProdutos.data.count > 0 &&
+        pagina > corpoProdutos.data.totalPages
+      ) {
+        setPagina(Math.max(1, corpoProdutos.data.totalPages))
+      }
+    } catch (causa) {
+      if (versao !== versaoRequisicao.current) return
+      setProdutos([])
+      setEmpresaCarregada(null)
+      setErro(
+        causa instanceof Error
+          ? causa.message
+          : "Não foi possível carregar os produtos.",
+      )
     } finally {
-      setCarregando(false)
+      if (versao === versaoRequisicao.current) setCarregando(false)
+    }
+  }, [buscaAplicada, empresa, pagina, requisitar, status])
+
+  const recarregarTipos = useCallback(async () => {
+    if (!empresa) return
+    const versao = ++versaoTipos.current
+    setCarregandoTipos(true)
+    try {
+      const todos: TipoProduto[] = []
+      let paginaAtual = 1
+      let totalPaginasDisponiveis = 1
+      do {
+        const resposta = await requisitar(
+          `/api/tipos_produto?page=${paginaAtual}&limit=${limiteTipos}`,
+        )
+        if (!resposta.ok) throw new Error(await mensagemErro(resposta))
+        const corpo = (await resposta.json()) as {
+          data: RespostaPaginada<TipoProduto>
+        }
+        todos.push(...corpo.data.rows)
+        totalPaginasDisponiveis = corpo.data.totalPages
+        paginaAtual += 1
+      } while (paginaAtual <= totalPaginasDisponiveis)
+      if (versao !== versaoTipos.current) return
+      setTipos(todos)
+      setEmpresaTiposCarregados(empresa.id)
+      setErroTipos("")
+    } catch (causa) {
+      if (versao !== versaoTipos.current) return
+      setTipos([])
+      setEmpresaTiposCarregados(null)
+      setErroTipos(
+        causa instanceof Error
+          ? causa.message
+          : "Não foi possível carregar os tipos de produto.",
+      )
+    } finally {
+      if (versao === versaoTipos.current) setCarregandoTipos(false)
+    }
+  }, [empresa, requisitar])
+
+  useEffect(() => {
+    if (estadoAutenticacao !== "autenticado" || !empresa) return
+    void Promise.resolve().then(recarregar)
+    return () => {
+      versaoRequisicao.current += 1
+    }
+  }, [empresa, estadoAutenticacao, recarregar])
+
+  useEffect(() => {
+    if (estadoAutenticacao !== "autenticado" || !empresa) return
+    void Promise.resolve().then(recarregarTipos)
+    return () => {
+      versaoTipos.current += 1
+    }
+  }, [empresa, estadoAutenticacao, recarregarTipos])
+
+  async function inativar() {
+    if (!produtoParaInativar) return
+    setInativando(true)
+    try {
+      const resposta = await requisitar(
+        `/api/produtos/${produtoParaInativar.id}`,
+        {
+          method: "DELETE",
+        },
+      )
+      if (!resposta.ok) throw new Error(await mensagemErro(resposta))
+      toast.success("Produto inativado.")
+      setProdutoParaInativar(null)
+      await recarregar()
+    } catch (causa) {
+      toast.error(
+        causa instanceof Error
+          ? causa.message
+          : "Não foi possível inativar o produto.",
+      )
+    } finally {
+      setInativando(false)
     }
   }
 
-  function limparFiltros() {
-    setBusca("")
-    setCategoria("")
-    setSituacao("")
-    setPagina(1)
+  async function abrirEdicao(produto: Produto) {
+    const versao = versaoRequisicao.current
+    try {
+      const resposta = await requisitar(`/api/produtos/${produto.id}`)
+      if (!resposta.ok) throw new Error(await mensagemErro(resposta))
+      const corpo = (await resposta.json()) as { data: Produto }
+      if (versao === versaoRequisicao.current) setDialogo(corpo.data)
+    } catch (causa) {
+      if (versao === versaoRequisicao.current) {
+        toast.error(
+          causa instanceof Error
+            ? causa.message
+            : "Não foi possível consultar o produto.",
+        )
+      }
+    }
   }
 
-  const gradeDoProdutoAberto = produtoDaMatriz
-    ? opcoesDaGrade(produtoDaMatriz)
-    : undefined
+  const cabecalho = (
+    <PageHeader
+      titulo="Produtos"
+      descricao="Cadastre e consulte os produtos do catálogo da empresa."
+      acoes={
+        <Button
+          onClick={() => setDialogo("novo")}
+          disabled={
+            !empresa ||
+            empresaCarregada !== empresa.id ||
+            empresaTiposCarregados !== empresa.id ||
+            carregandoTipos ||
+            Boolean(erroTipos) ||
+            !tipos.some((tipo) => tipo.status === "ATIVO")
+          }
+        >
+          <Plus className="size-4" /> Novo produto
+        </Button>
+      }
+    />
+  )
+
+  if (estadoAutenticacao === "carregando")
+    return (
+      <main className="space-y-6 p-4 md:p-6">
+        {cabecalho}
+        <Skeleton className="h-80 w-full" aria-label="Carregando produtos" />
+      </main>
+    )
+  if (estadoAutenticacao === "anonimo")
+    return (
+      <main className="space-y-6 p-4 md:p-6">
+        {cabecalho}
+        <Alert>
+          <AlertDescription>
+            Entre na sua conta para gerenciar produtos.{" "}
+            <Link href="/login" className="underline">
+              Ir para o login
+            </Link>
+          </AlertDescription>
+        </Alert>
+      </main>
+    )
+  if (!empresa)
+    return (
+      <main className="space-y-6 p-4 md:p-6">
+        {cabecalho}
+        <Alert>
+          <AlertDescription>
+            Selecione uma empresa para consultar os produtos.
+          </AlertDescription>
+        </Alert>
+        <SearchSelect
+          label="Empresa ativa"
+          value=""
+          onValueChange={(valor) => {
+            setPagina(1)
+            setDialogo(null)
+            setProdutoDoFluxo(null)
+            setProdutoParaInativar(null)
+            selecionarEmpresa(Number(valor))
+          }}
+          options={empresas.map((item) => ({
+            value: String(item.id),
+            label: item.nome,
+          }))}
+        />
+      </main>
+    )
 
   return (
     <main className="space-y-6 p-4 md:p-6">
-      <PageHeader
-        titulo="Produtos Prontos"
-        descricao="Gestão de produtos com grade de tamanho e cor e controle de saldo."
-        acoes={
-          <Button ref={referenciaNovoProduto} onClick={abrirNovoProduto}>
-            <Plus className="size-4" /> Novo produto
-          </Button>
-        }
-      />
-
+      {cabecalho}
+      {empresas.length > 1 && (
+        <SearchSelect
+          label="Empresa ativa"
+          value={String(empresa.id)}
+          onValueChange={(valor) => {
+            setPagina(1)
+            setDialogo(null)
+            setProdutoDoFluxo(null)
+            setProdutoParaInativar(null)
+            selecionarEmpresa(Number(valor))
+          }}
+          options={empresas.map((item) => ({
+            value: String(item.id),
+            label: item.nome,
+          }))}
+          className="w-full sm:w-80"
+        />
+      )}
       <section
-        className="grid gap-3 rounded-xl border bg-card p-4 md:grid-cols-[minmax(0,1fr)_12rem_12rem_auto]"
-        aria-label="Filtros de produtos prontos"
+        className="flex flex-wrap gap-3 rounded-xl border bg-card p-4"
+        aria-label="Filtros de produtos"
       >
-        <div className="relative">
+        <div className="relative min-w-64 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             aria-label="Buscar produto"
             className="pl-9"
-            placeholder="Buscar por código ou produto"
+            placeholder="Buscar por código ou nome"
             value={busca}
-            onChange={(evento) => {
-              setBusca(evento.target.value)
-              setPagina(1)
-            }}
+            onChange={(evento) => setBusca(evento.target.value)}
           />
         </div>
-        <SearchSelect
-          id="filtro-categoria-produto"
-          options={opcoesCategoria}
-          placeholder="Todas as categorias"
-          value={categoria}
-          onValueChange={(valor) => {
-            setCategoria(valor)
+        <select
+          className="h-9 rounded-md border bg-background px-3 text-sm"
+          aria-label="Filtrar por status"
+          value={status}
+          onChange={(evento) => {
+            setStatus(evento.target.value)
             setPagina(1)
           }}
-        />
-        <SearchSelect
-          id="filtro-situacao-produto"
-          options={opcoesSituacao}
-          placeholder="Todas as situações"
-          value={situacao}
-          onValueChange={(valor) => {
-            setSituacao(valor)
+        >
+          <option value="">Todos os status</option>
+          <option value="ATIVO">Ativos</option>
+          <option value="INATIVO">Inativos</option>
+        </select>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setBusca("")
+            setBuscaAplicada("")
+            setStatus("")
             setPagina(1)
           }}
-        />
-        <Button type="button" variant="outline" onClick={limparFiltros}>
+        >
           Limpar filtros
         </Button>
       </section>
-
-      {erro ? (
+      {erro && (
         <Alert variant="destructive">
           <AlertTitle>Não foi possível carregar os produtos</AlertTitle>
-          <AlertDescription className="flex items-center justify-between gap-3">
-            <span>{erro}</span>
-            <Button size="sm" variant="outline" onClick={tentarNovamente}>
+          <AlertDescription>
+            {erro}{" "}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void recarregar()}
+            >
               Tentar novamente
             </Button>
           </AlertDescription>
         </Alert>
-      ) : carregando ? (
-        <div
-          className="space-y-3 rounded-xl border p-4"
+      )}
+      {erroTipos && !erro && (
+        <Alert>
+          <AlertTitle>Tipos de produto indisponíveis</AlertTitle>
+          <AlertDescription>
+            A listagem de produtos continua disponível. Para cadastrar um
+            produto, a API de tipos precisa funcionar: {erroTipos}{" "}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void recarregarTipos()}
+            >
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {empresaTiposCarregados === empresa.id &&
+        !carregandoTipos &&
+        !erroTipos &&
+        tipos.length === 0 &&
+        !erro && (
+          <Alert>
+            <AlertTitle>Nenhum tipo de produto ativo</AlertTitle>
+            <AlertDescription>
+              Cadastre um tipo de produto antes de criar produtos.{" "}
+              <Link href="/cadastros/tipos-produto" className="underline">
+                Ir para tipos de produto
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+      {carregando || (empresaCarregada !== empresa.id && !erro) ? (
+        <Skeleton
+          className="h-72 w-full"
           role="status"
-          aria-label="Carregando produtos prontos"
-        >
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-12 w-full" />
-        </div>
-      ) : filtrados.length === 0 ? (
+          aria-label="Carregando produtos"
+        />
+      ) : !erro && produtos.length === 0 ? (
         <Empty className="border">
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -341,106 +413,108 @@ export function ProdutosProntosView() {
             </EmptyMedia>
             <EmptyTitle>Nenhum produto encontrado</EmptyTitle>
             <EmptyDescription>
-              Ajuste os filtros ou cadastre um produto pronto com sua grade.
+              Ajuste os filtros ou cadastre um produto.
             </EmptyDescription>
           </EmptyHeader>
-          <Button onClick={abrirNovoProduto}>
-            <Plus className="size-4" /> Novo produto
-          </Button>
         </Empty>
       ) : (
-        <>
-          <TabelaProdutosProntos
-            produtos={produtosDaPagina}
-            crescente={ordemCrescente}
-            onAlternarOrdem={() => setOrdemCrescente((atual) => !atual)}
-            onEditar={abrirEdicao}
-            onVisualizarGrade={setProdutoDaMatriz}
-            onExcluir={setProdutoParaExcluir}
-          />
-          <nav
-            className="flex flex-col items-center justify-between gap-3 sm:flex-row"
-            aria-label="Paginação de produtos prontos"
-          >
-            <p className="text-sm text-muted-foreground">
-              {filtrados.length} produto{filtrados.length === 1 ? "" : "s"}{" "}
-              encontrado{filtrados.length === 1 ? "" : "s"}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={paginaAtual <= 1}
-                onClick={() => setPagina((atual) => Math.max(1, atual - 1))}
-              >
-                Anterior
-              </Button>
-              <span className="text-sm tabular-nums" aria-current="page">
-                Página {paginaAtual} de {totalPaginas}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={paginaAtual >= totalPaginas}
-                onClick={() =>
-                  setPagina((atual) => Math.min(totalPaginas, atual + 1))
-                }
-              >
-                Próxima
-              </Button>
-            </div>
-          </nav>
-        </>
-      )}
-
-      <FormularioProdutoPronto
-        produto={produtoEmEdicao}
-        aberto={formularioAberto}
-        aoFechar={fecharFormulario}
-        aoSalvar={salvarProduto}
-      />
-
-      <Dialog
-        open={Boolean(produtoDaMatriz)}
-        onOpenChange={(aberto) => !aberto && setProdutoDaMatriz(undefined)}
-      >
-        <DialogContent className="sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Grade de saldo — {produtoDaMatriz?.nome}</DialogTitle>
-            <DialogDescription>
-              Saldo atual por cor e tamanho. Total:{" "}
-              <span className="tabular-nums">
-                {produtoDaMatriz ? totalSaldo(produtoDaMatriz) : 0}
-              </span>{" "}
-              peças.
-            </DialogDescription>
-          </DialogHeader>
-          {produtoDaMatriz && gradeDoProdutoAberto && (
-            <MatrizGradeSaldo
-              cores={gradeDoProdutoAberto.cores}
-              tamanhos={gradeDoProdutoAberto.tamanhos}
-              variacoes={produtoDaMatriz.variacoes}
+        !erro && (
+          <>
+            <TabelaProdutosProntos
+              produtos={produtos}
+              tipos={tipos}
+              onEditar={(produto) => void abrirEdicao(produto)}
+              onFluxo={setProdutoDoFluxo}
+              onInativar={setProdutoParaInativar}
             />
-          )}
-        </DialogContent>
-      </Dialog>
-
+            <nav
+              className="flex items-center justify-between gap-3"
+              aria-label="Paginação de produtos"
+            >
+              <p className="text-sm text-muted-foreground">
+                {total} produto{total === 1 ? "" : "s"}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={pagina <= 1}
+                  onClick={() => setPagina((atual) => atual - 1)}
+                >
+                  Anterior
+                </Button>
+                <span className="text-sm tabular-nums">
+                  Página {pagina} de {totalPaginas}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={pagina >= totalPaginas}
+                  onClick={() => setPagina((atual) => atual + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </nav>
+          </>
+        )
+      )}
+      {dialogo && empresaCarregada === empresa.id && (
+        <FormularioProdutoPronto
+          key={dialogo === "novo" ? "novo" : dialogo.id}
+          produto={dialogo === "novo" ? null : dialogo}
+          idEmpresa={empresa.id}
+          tipos={
+            dialogo === "novo" ||
+            tipos.some((tipo) => tipo.id === dialogo.id_tipo_produto)
+              ? tipos
+              : [
+                  ...tipos,
+                  {
+                    id: dialogo.id_tipo_produto,
+                    nome: `Tipo #${dialogo.id_tipo_produto} (indisponível)`,
+                    status: "INATIVO",
+                  },
+                ]
+          }
+          aoFechar={() => setDialogo(null)}
+          aoSalvar={recarregar}
+        />
+      )}
+      {produtoDoFluxo && empresaCarregada === empresa.id && (
+        <DialogoFluxoProduto
+          key={`${empresa.id}:${produtoDoFluxo.id}`}
+          produto={produtoDoFluxo}
+          aoFechar={() => setProdutoDoFluxo(null)}
+        />
+      )}
       <AlertDialog
-        open={Boolean(produtoParaExcluir)}
-        onOpenChange={(aberto) => !aberto && setProdutoParaExcluir(undefined)}
+        open={Boolean(produtoParaInativar) && empresaCarregada === empresa.id}
+        onOpenChange={(aberto) =>
+          !aberto && !inativando && setProdutoParaInativar(null)
+        }
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir produto pronto?</AlertDialogTitle>
+            <AlertDialogTitle>Inativar produto?</AlertDialogTitle>
             <AlertDialogDescription>
-              O produto {produtoParaExcluir?.nome} e toda a sua grade serão
-              removidos desta listagem.
+              O produto {produtoParaInativar?.nome} ficará inativo no catálogo.
+              Esta ação não apaga o registro.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={excluirProduto}>
-              Excluir produto
+            <AlertDialogCancel disabled={inativando}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={inativando}
+              onClick={(evento) => {
+                evento.preventDefault()
+                void inativar()
+              }}
+            >
+              Inativar produto
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
