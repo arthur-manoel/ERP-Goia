@@ -11,10 +11,15 @@ import type {
 } from "./schema"
 
 export type { Produto }
+type Database = Prisma.TransactionClient
+export { withCompaniesLock } from "../catalogos/transactions"
 
-export async function create(data: CreateProdutoData): Promise<Produto> {
+export async function create(
+  data: CreateProdutoData,
+  database: Database = prisma,
+): Promise<Produto> {
   const { id_empresa, ...fields } = data
-  return prisma.produtos.create({
+  return database.produtos.create({
     data: {
       ...fields,
       produto_empresa: {
@@ -63,11 +68,36 @@ export async function findById(
   return prisma.produtos.findFirst({ where: { ...scope(companies), id } })
 }
 
-export async function findByCodigo(codigo: string): Promise<Produto | null> {
+export async function findByCodigo(
+  codigo: string,
+  database: Database = prisma,
+): Promise<Produto | null> {
   // O schema atual define codigo como índice comum, não como @unique.
-  return prisma.produtos.findFirst({
+  return database.produtos.findFirst({
     where: { codigo },
     orderBy: { id: "asc" },
+  })
+}
+
+export function findWritableById(
+  id: number,
+  companies: number[],
+  database: Database,
+) {
+  return database.produtos.findFirst({
+    where: { ...scope(companies, true), id },
+    include: { produto_empresa: { select: { id_empresa: true } } },
+  })
+}
+
+export function findActiveCategory(
+  id: number,
+  idEmpresa: number,
+  database: Database,
+) {
+  return database.categorias.findFirst({
+    where: { id, id_empresa: idEmpresa, status: "ATIVA" },
+    select: { id: true },
   })
 }
 
@@ -75,9 +105,10 @@ export async function update(
   id: number,
   data: UpdateProdutoData,
   companies: number[],
+  database: Database = prisma,
 ): Promise<Produto | null> {
   try {
-    return await prisma.produtos.update({
+    return await database.produtos.update({
       where: { ...scope(companies, true), id },
       data,
     })

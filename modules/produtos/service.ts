@@ -41,6 +41,11 @@ async function write<T>(operation: () => Promise<T>): Promise<T> {
           "Um dos campos excede o tamanho permitido no banco de dados.",
         )
       }
+      if (error.code === "P2034") {
+        throw new ConflictError(
+          "O produto ou a categoria foi alterado por outra operação. Tente novamente.",
+        )
+      }
     }
     throw error
   }
@@ -49,8 +54,34 @@ async function write<T>(operation: () => Promise<T>): Promise<T> {
 export async function createProduto(input: unknown, companies: number[]) {
   const data = validate(createProdutoSchema, input)
   assertCompany(data.id_empresa, companies)
-  if (await repository.findByCodigo(data.codigo)) throw new ConflictError()
-  return write(() => repository.create(data))
+  return write(() =>
+    repository.withCompaniesLock([data.id_empresa], async (database) => {
+      if (await repository.findByCodigo(data.codigo, database))
+        throw new ConflictError()
+      if (data.id_categoria != null) {
+        await validateCategory(data.id_categoria, [data.id_empresa], database)
+      }
+      return repository.create(data, database)
+    }),
+  )
+}
+
+async function validateCategory(
+  id: number,
+  owningCompanies: number[],
+  database: Prisma.TransactionClient,
+) {
+  const uniqueCompanies = [...new Set(owningCompanies)]
+  // id_categoria é global no produto. Uma categoria empresarial não pode
+  // representar um produto compartilhado por empresas diferentes.
+  if (
+    uniqueCompanies.length !== 1 ||
+    !(await repository.findActiveCategory(id, uniqueCompanies[0], database))
+  ) {
+    throw new ValidationError(
+      "Categoria deve estar ativa e pertencer à mesma empresa de todos os vínculos do produto.",
+    )
+  }
 }
 
 export async function listProdutos(input: unknown, companies: number[]) {
@@ -78,9 +109,26 @@ export async function updateProduto(
 ) {
   const id = validate(produtoIdSchema, idInput)
   const data = validate(updateProdutoSchema, input)
-  const produto = await write(() => repository.update(id, data, companies))
-  if (!produto) throw new NotFoundError()
-  return produto
+  return write(() =>
+    repository.withCompaniesLock(companies, async (database) => {
+      if (data.id_categoria != null) {
+        const current = await repository.findWritableById(
+          id,
+          companies,
+          database,
+        )
+        if (!current) throw new NotFoundError()
+        await validateCategory(
+          data.id_categoria,
+          current.produto_empresa.map((link) => link.id_empresa),
+          database,
+        )
+      }
+      const produto = await repository.update(id, data, companies, database)
+      if (!produto) throw new NotFoundError()
+      return produto
+    }),
+  )
 }
 
 export async function deleteProduto(idInput: unknown, companies: number[]) {

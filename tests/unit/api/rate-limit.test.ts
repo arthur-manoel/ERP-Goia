@@ -24,6 +24,25 @@ it("conta Bearer e bearer como o mesmo token", () => {
   ).toThrow(HttpError)
 })
 
+it("usa a identidade autenticada, não o token ou X-Forwarded-For", () => {
+  const first = new Request("http://localhost/api/contas_pagar", {
+    headers: {
+      Authorization: "Bearer token-antigo",
+      "X-Forwarded-For": "198.51.100.10",
+    },
+  })
+  const second = new Request("http://localhost/api/contas_pagar", {
+    headers: {
+      Authorization: "bearer token-renovado",
+      "X-Forwarded-For": "203.0.113.25",
+    },
+  })
+
+  enforceRateLimit(first, config, "42")
+  enforceRateLimit(second, config, "42")
+  expect(() => enforceRateLimit(first, config, "42")).toThrow(HttpError)
+})
+
 it("não descarta contadores ativos ao atingir a capacidade", () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date("2026-10-13T12:00:00Z"))

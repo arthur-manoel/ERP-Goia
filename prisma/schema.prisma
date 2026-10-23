@@ -74,7 +74,7 @@ model categorias {
   empresas   empresas?         @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_categorias_empresa")
   produtos   produtos[]
 
-  @@unique([id_empresa, nome], map: "uk_categoria_empresa_nome")
+  @@index([id_empresa, nome], map: "idx_categoria_empresa_nome")
 }
 
 model cliente_contato {
