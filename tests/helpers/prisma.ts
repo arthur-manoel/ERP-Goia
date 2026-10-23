@@ -17,6 +17,7 @@ export const db = {
   usuario_empresa: model(),
   tamanhos: model(),
   cores: model(),
+  categorias: model(),
   produtos: model(),
   estoque: model(),
   locais_estoque: model(),

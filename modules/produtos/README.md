@@ -42,6 +42,20 @@ Todas as rotas exigem `Authorization: Bearer <access_token>`, usuário, empresa 
 
 Produtos usa a permissão `PRODUTOS`. Como o cadastro é global, o escopo usa `produto_empresa`: leituras exigem vínculo com alguma empresa autorizada; alterações e inativação exigem permissão em todas as empresas vinculadas ao produto. Produtos sem vínculo ficam inacessíveis. A criação agora exige `id_empresa` e cria o vínculo atomicamente, com `codigo_interno` igual a `codigo`.
 
+Ao informar `id_categoria` na criação ou edição, a categoria deve estar `ATIVA`
+e pertencer à empresa de todos os vínculos persistidos do produto. Como
+`id_categoria` é global, produtos compartilhados entre empresas diferentes não
+podem receber uma categoria empresarial (retorna 400). Ter permissão em ambas
+as empresas não permite cruzar referências. Limpar a categoria com `null` é
+permitido; omiti-la preserva vínculos históricos, mesmo após a inativação da categoria.
+
+A validação e gravação ocorrem na mesma transação, após os bloqueios compartilhados
+de `modules/catalogos/transactions.ts`. Transferências e inativações de categorias
+usam o mesmo protocolo: se um produto for vinculado antes da transferência, esta
+retorna 409; se a categoria for transferida primeiro, a associação ao produto da
+empresa anterior retorna 400. Os testes simulam ambas as ordens usando Prisma
+mockado; não foi executado teste concorrente contra MySQL real.
+
 A listagem também aceita `id_empresa` e `busca` (nome OU código), executados no banco.
 
 Exemplo de criação:

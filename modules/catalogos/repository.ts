@@ -1,6 +1,6 @@
 import { prisma } from "../../src/lib/prisma"
 
-export type Resource = "PRODUTOS" | "CORES" | "FINANCEIRO"
+export type Resource = "PRODUTOS" | "CORES" | "FINANCEIRO" | "CATEGORIAS"
 export type Action = "pode_ler" | "pode_criar" | "pode_editar" | "pode_excluir"
 
 export async function allowedCompanies(
