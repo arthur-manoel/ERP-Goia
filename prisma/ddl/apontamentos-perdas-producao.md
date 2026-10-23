@@ -28,7 +28,7 @@ Os CHECKs não são representados integralmente pelo Prisma; preservar o SQL com
 Com `PERDAS_TEST_DATABASE_URL` definido para um MySQL local já preparado, executar:
 
 ```bash
-node prisma/tests/perdas-producao.cjs
+node prisma/tests/perdas-producao.mjs
 ```
 
 O teste cria fixtures em uma transação e faz rollback ao terminar. Verifica produção sem perda, perda integral, motivos obrigatórios, valores negativos/zerados, precisão decimal, vínculo de item/etapa à ordem, usuário existente, proteção do histórico e totais separados por etapa. Não executa DDL nem altera o acumulador de produção dos itens.
