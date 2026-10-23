@@ -1,15 +1,6 @@
-import { ArrowUpDown, Eye, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { GitBranch, Pencil, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   Table,
   TableBody,
@@ -18,142 +9,99 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatarMoeda, formatarQuantidade } from "@/lib/formatacao"
-import {
-  situacaoProduto,
-  totalSaldo,
-  type ProdutoPronto,
-  type SituacaoProduto,
-} from "../schemas"
-
-type Props = {
-  produtos: ProdutoPronto[]
-  crescente: boolean
-  onAlternarOrdem: () => void
-  onEditar: (produto: ProdutoPronto) => void
-  onVisualizarGrade: (produto: ProdutoPronto) => void
-  onExcluir: (produto: ProdutoPronto) => void
-}
-
-function BadgeSituacao({ situacao }: { situacao: SituacaoProduto }) {
-  if (situacao === "Sem estoque") {
-    return <Badge variant="destructive">Sem estoque</Badge>
-  }
-
-  if (situacao === "Estoque baixo") {
-    return <Badge variant="secondary">Estoque baixo</Badge>
-  }
-
-  return <Badge variant="outline">Disponível</Badge>
-}
+import type { Produto, TipoProduto } from "../tipos"
 
 export function TabelaProdutosProntos({
   produtos,
-  crescente,
-  onAlternarOrdem,
+  tipos,
   onEditar,
-  onVisualizarGrade,
-  onExcluir,
-}: Props) {
+  onFluxo,
+  onInativar,
+}: {
+  produtos: Produto[]
+  tipos: TipoProduto[]
+  onEditar: (produto: Produto) => void
+  onFluxo: (produto: Produto) => void
+  onInativar: (produto: Produto) => void
+}) {
+  const nomesTipos = new Map(tipos.map((tipo) => [tipo.id, tipo.nome]))
   return (
     <div className="overflow-x-auto rounded-lg border">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead aria-sort={crescente ? "ascending" : "descending"}>
-              <Button
-                variant="ghost"
-                className="-ml-3"
-                onClick={onAlternarOrdem}
-              >
-                Código <ArrowUpDown />
-              </Button>
-            </TableHead>
+            <TableHead>Código</TableHead>
             <TableHead>Produto</TableHead>
-            <TableHead>Categoria</TableHead>
-            <TableHead className="text-right">Variações</TableHead>
-            <TableHead className="text-right">Saldo total</TableHead>
-            <TableHead className="text-right">Preço de custo</TableHead>
-            <TableHead className="text-right">Margem</TableHead>
-            <TableHead className="text-right">Preço de venda</TableHead>
-            <TableHead>Situação</TableHead>
+            <TableHead>Tipo</TableHead>
+            <TableHead>Unidade</TableHead>
+            <TableHead>Operações</TableHead>
+            <TableHead>Status</TableHead>
             <TableHead>
               <span className="sr-only">Ações</span>
             </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {produtos.map((produto) => {
-            const situacao = situacaoProduto(produto)
-            return (
-              <TableRow key={produto.id}>
-                <TableCell className="font-mono text-xs font-medium tabular-nums">
-                  {produto.sku}
-                </TableCell>
-                <TableCell className="min-w-48 font-medium">
-                  {produto.nome}
-                </TableCell>
-                <TableCell>{produto.categoria}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {produto.variacoes.length}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatarQuantidade(totalSaldo(produto), 0)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatarMoeda(produto.precoCusto)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {produto.margemLucro.toLocaleString("pt-BR", {
-                    minimumFractionDigits: 1,
-                    maximumFractionDigits: 1,
-                  })}
-                  %
-                </TableCell>
-                <TableCell className="text-right font-medium tabular-nums">
-                  {formatarMoeda(produto.precoVenda)}
-                </TableCell>
-                <TableCell>
-                  <BadgeSituacao situacao={situacao} />
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label={`Ações de ${produto.nome}`}
-                        />
-                      }
+          {produtos.map((produto) => (
+            <TableRow key={produto.id}>
+              <TableCell className="font-mono text-xs">
+                {produto.codigo}
+              </TableCell>
+              <TableCell className="font-medium">{produto.nome}</TableCell>
+              <TableCell>
+                {nomesTipos.get(produto.id_tipo_produto) ??
+                  `Tipo #${produto.id_tipo_produto}`}
+              </TableCell>
+              <TableCell>{produto.unidade}</TableCell>
+              <TableCell className="text-sm">
+                {[
+                  produto.controla_estoque && "Estoque",
+                  produto.permite_compra && "Compra",
+                  produto.permite_producao && "Produção",
+                  produto.permite_venda && "Venda",
+                ]
+                  .filter(Boolean)
+                  .join(", ") || "Nenhuma"}
+              </TableCell>
+              <TableCell>
+                <Badge
+                  variant={produto.status === "ATIVO" ? "outline" : "secondary"}
+                >
+                  {produto.status === "ATIVO" ? "Ativo" : "Inativo"}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <div className="flex gap-1">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Fluxo de ${produto.nome}`}
+                    onClick={() => onFluxo(produto)}
+                  >
+                    <GitBranch className="size-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Editar ${produto.nome}`}
+                    onClick={() => onEditar(produto)}
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                  {produto.status === "ATIVO" && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label={`Inativar ${produto.nome}`}
+                      onClick={() => onInativar(produto)}
                     >
-                      <MoreHorizontal />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuGroup>
-                        <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                        <DropdownMenuItem onClick={() => onEditar(produto)}>
-                          <Pencil /> Editar
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => onVisualizarGrade(produto)}
-                        >
-                          <Eye /> Visualizar matriz de grade
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() => onExcluir(produto)}
-                        >
-                          <Trash2 /> Excluir
-                        </DropdownMenuItem>
-                      </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            )
-          })}
+                      <Trash2 className="size-4" />
+                    </Button>
+                  )}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
         </TableBody>
       </Table>
     </div>
