@@ -66,6 +66,8 @@ export async function gravacao<T>(
           409,
           "Conflito de cadastro ou operação concorrente. Atualize a tela e tente novamente.",
         )
+      if (["P2000", "P2020"].includes(error.code))
+        throw new ComprasError(400, "Há valores fora dos limites permitidos.")
       if (["P2003", "P2004", "P2025"].includes(error.code))
         throw new ComprasError(
           409,

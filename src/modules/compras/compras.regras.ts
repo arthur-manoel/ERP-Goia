@@ -8,6 +8,19 @@ const MAX_DIGITOS = 15
 
 const formato = /^\d+(\.\d+)?$/
 
+/** Maior valor escalado que cabe em DECIMAL(15,x): 15 dígitos, ou seja, 10^15 − 1 na escala. */
+export const MAX_ESCALADO = BigInt(10) ** BigInt(MAX_DIGITOS) - BigInt(1)
+
+/** Resultado de cálculo que não cabe na coluna do banco (tratado como 400, nunca 500). */
+export class ValorForaDoLimite extends Error {
+  constructor(
+    mensagem = "O valor calculado excede o limite permitido (13 dígitos inteiros).",
+  ) {
+    super(mensagem)
+    this.name = "ValorForaDoLimite"
+  }
+}
+
 /** Converte "12.5" ou 12.5 para o inteiro escalado (12500 com 3 casas). Retorna null se inválido. */
 export function paraEscala(
   valor: string | number,
@@ -41,6 +54,10 @@ export function totalItem(quantidade: string, valorUnitario: string): string {
   if (q === null || v === null) throw new Error("Valores numéricos inválidos.")
   const bruto = q * v // escala 10^-5
   const centavos = (bruto + BigInt(500)) / BigInt(1000)
+  if (centavos > MAX_ESCALADO)
+    throw new ValorForaDoLimite(
+      "O total do item excede o limite permitido (13 dígitos inteiros).",
+    )
   return deEscala(centavos, CASAS_VALOR)
 }
 
@@ -52,8 +69,22 @@ export function somarValores(
     const escala = paraEscala(valor.toString(), CASAS_VALOR)
     if (escala === null) throw new Error("Valor monetário inválido.")
     soma += escala
+    if (soma > MAX_ESCALADO)
+      throw new ValorForaDoLimite(
+        "A soma dos valores excede o limite permitido (13 dígitos inteiros).",
+      )
   }
   return deEscala(soma, CASAS_VALOR)
+}
+
+/** Soma de quantidades (3 casas) com checagem do limite de DECIMAL(15,3). */
+export function somarQuantidades(a: string, b: string): string {
+  const x = paraEscala(a, CASAS_QUANTIDADE)
+  const y = paraEscala(b, CASAS_QUANTIDADE)
+  if (x === null || y === null) throw new Error("Quantidade inválida.")
+  if (x + y > MAX_ESCALADO)
+    throw new ValorForaDoLimite("A quantidade total excede o limite permitido.")
+  return deEscala(x + y, CASAS_QUANTIDADE)
 }
 
 /** Pendente = pedida − recebida, nunca negativa. */
@@ -124,6 +155,36 @@ export function proximoStatus<S extends string>(
   atual: S,
 ): S | null {
   return tabela[acao]?.[atual] ?? null
+}
+
+export type SituacaoRecebimento = "PENDENTE" | "PARCIAL" | "TOTAL"
+
+/** Situação derivada das quantidades da compra (o enum do banco não tem "parcial"). */
+export function situacaoRecebimento(
+  itens: Array<{ pedida: string; recebida: string }>,
+): SituacaoRecebimento {
+  const zero = BigInt(0)
+  const recebido = itens.some((i) => (paraEscala(i.recebida, 3) ?? zero) > zero)
+  if (!recebido) return "PENDENTE"
+  const completo = itens.every(
+    (i) =>
+      (paraEscala(i.recebida, 3) ?? zero) >= (paraEscala(i.pedida, 3) ?? zero),
+  )
+  return completo ? "TOTAL" : "PARCIAL"
+}
+
+/** Datas AAAA-MM-DD: calendário real e ano entre 1900 e 2100 (evita RangeError e limites do banco). */
+export function diaValido(valor: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor)
+  if (!m) return false
+  const [ano, mes, diaMes] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  if (ano < 1900 || ano > 2100) return false
+  const d = new Date(Date.UTC(ano, mes - 1, diaMes))
+  return (
+    d.getUTCFullYear() === ano &&
+    d.getUTCMonth() === mes - 1 &&
+    d.getUTCDate() === diaMes
+  )
 }
 
 /** Pedido fica RECEBIDO só se nenhum item ficou pendente; caso contrário, PARCIAL. */

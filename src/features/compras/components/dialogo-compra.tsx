@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -26,13 +26,12 @@ import {
   quantidadePendente,
   quantidadeValida,
 } from "@/modules/compras/compras.regras"
-import { BASE, mensagem, type ComprasApi } from "../api"
+import { BASE, type ComprasApi } from "../api"
 import { useExecutar } from "../executar"
-import type { CompraDetalhe, Pedido } from "../tipos"
+import type { CompraDetalhe } from "../tipos"
 import {
   Campo,
   EditorItens,
-  moeda,
   numero,
   quantidade,
   SeletorUnico,
@@ -55,38 +54,12 @@ export function DialogoCompra({
   onSalvo: () => void
 }) {
   const [modo, setModo] = useState<"pedido" | "avulsa">("pedido")
-  const [idPedido, setIdPedido] = useState(pedido ? String(pedido.id) : "")
-  const [pedidos, setPedidos] = useState<{
-    carregado: boolean
-    lista: Pedido[]
-    erro: string
-  }>({ carregado: false, lista: [], erro: "" })
+  const [pedidoSel, setPedidoSel] = useState<Ref>(null)
   const [local, setLocal] = useState<Ref>(null)
   const [fornecedor, setFornecedor] = useState<Ref>(null)
   const [itens, setItens] = useState<ItemForm[]>([])
   const [obs, setObs] = useState("")
   const { ocupado, erro, setErro, executar } = useExecutar()
-
-  useEffect(() => {
-    if (pedido) return
-    let vivo = true
-    api
-      .get<{ pedidos: Pedido[] }>(`${BASE}/pedidos?status=EMITIDO&limite=100`)
-      .then(
-        (r) =>
-          vivo &&
-          setPedidos({
-            carregado: true,
-            lista: r.pedidos.filter((p) => !p.compra),
-            erro: "",
-          }),
-        (e: unknown) =>
-          vivo && setPedidos({ carregado: true, lista: [], erro: mensagem(e) }),
-      )
-    return () => {
-      vivo = false
-    }
-  }, [api, pedido])
 
   async function salvar() {
     if (!local) return setErro("Selecione o local de estoque de destino.")
@@ -95,8 +68,9 @@ export function DialogoCompra({
       observacao: obs.trim() || null,
     }
     if (modo === "pedido") {
-      if (!idPedido) return setErro("Selecione o pedido de compra.")
-      corpo = { ...corpo, idPedidoCompra: Number(idPedido) }
+      const idEscolhido = pedido ? pedido.id : pedidoSel?.id
+      if (!idEscolhido) return setErro("Selecione o pedido de compra.")
+      corpo = { ...corpo, idPedidoCompra: idEscolhido }
     } else {
       if (!fornecedor) return setErro("Selecione o fornecedor.")
       const problema = validarItens(itens, true)
@@ -152,30 +126,16 @@ export function DialogoCompra({
         {modo === "pedido" && !pedido && (
           <Campo
             rotulo="Pedido de compra"
-            ajuda={
-              pedidos.carregado && !pedidos.lista.length && !pedidos.erro
-                ? "Não há pedidos emitidos sem compra."
-                : undefined
-            }
+            ajuda="Pedidos emitidos sem compra ativa. Digite para buscar por número ou fornecedor."
           >
-            <NativeSelect
-              className="w-full"
-              value={idPedido}
-              onChange={(e) => setIdPedido(e.target.value)}
-              disabled={!pedidos.carregado}
-            >
-              <NativeSelectOption value="">
-                {pedidos.carregado ? "Selecione…" : "Carregando…"}
-              </NativeSelectOption>
-              {pedidos.lista.map((p) => (
-                <NativeSelectOption key={p.id} value={p.id}>
-                  {p.numero} — {p.fornecedor.nome} — {moeda(p.valorTotal)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-            {pedidos.erro && (
-              <p className="text-sm text-destructive">{pedidos.erro}</p>
-            )}
+            <SeletorUnico
+              api={api}
+              tipo="pedidos"
+              filtros={{ status: "EMITIDO", ativas: "false" }}
+              valor={pedidoSel}
+              onChange={setPedidoSel}
+              placeholder="Buscar pedido emitido"
+            />
           </Campo>
         )}
         {modo === "avulsa" && (
@@ -261,7 +221,10 @@ export function DialogoReceber({
       pendentes.map((i) => [i.idProduto, String(Number(pendenteDe(i)))]),
     ),
   )
-  const [obs, setObs] = useState(compra.observacao ?? "")
+  const [obs, setObs] = useState("")
+  const [setor, setSetor] = useState<Ref>(null)
+  // Mesma chave em toda tentativa deste diálogo: reenvio após falha de rede não duplica o recebimento/estoque.
+  const [chave] = useState(() => crypto.randomUUID())
   const { ocupado, erro, setErro, executar } = useExecutar()
 
   async function salvar() {
@@ -286,6 +249,8 @@ export function DialogoReceber({
       () =>
         api.enviar(`${BASE}/compras/${compra.id}/receber`, "POST", {
           itens,
+          idSetorDestino: setor?.id ?? null,
+          chaveIdempotencia: chave,
           observacao: obs.trim() || null,
         }),
       "Recebimento registrado.",
@@ -356,7 +321,19 @@ export function DialogoReceber({
             </TableBody>
           </Table>
         </div>
-        <Campo rotulo="Observações">
+        <Campo
+          rotulo="Setor de destino no estoque"
+          ajuda="Necessário apenas na primeira entrada de cada insumo neste local; depois o setor já fica definido."
+        >
+          <SeletorUnico
+            api={api}
+            tipo="setores"
+            valor={setor}
+            onChange={setSetor}
+            placeholder="Buscar setor"
+          />
+        </Campo>
+        <Campo rotulo="Observações deste recebimento">
           <Textarea
             maxLength={255}
             value={obs}

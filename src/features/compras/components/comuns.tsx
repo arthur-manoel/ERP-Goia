@@ -407,30 +407,73 @@ export function Fluxo({
 }
 
 // ----------------------------------------------------------- seletores remotos
-type Tipo = "insumos" | "fornecedores" | "locais" | "setores"
+type Tipo =
+  "insumos" | "fornecedores" | "locais" | "setores" | "pedidos" | "compras"
+type FiltrosOpcoes = Record<string, string>
+type RespostaOpcoes = { opcoes: Opcao[]; paginacao: { temMais: boolean } }
 
-function useOpcoes(api: ComprasApi, tipo: Tipo, busca: string, ativo: boolean) {
+/**
+ * Seletor paginado: acumula as páginas (sem duplicar ids), reinicia ao mudar busca/filtros
+ * e respeita a paginação da API (pagina/limite) em vez de depender dos primeiros registros.
+ */
+function useOpcoes(
+  api: ComprasApi,
+  tipo: Tipo,
+  busca: string,
+  ativo: boolean,
+  filtros?: FiltrosOpcoes,
+) {
   const termo = useAtraso(busca.trim())
+  const filtroChave = JSON.stringify(filtros ?? {})
+  const chave = `${tipo}|${termo}|${filtroChave}`
+  const [pedida, setPedida] = useState({ chave: "", n: 1 })
+  const n = pedida.chave === chave ? pedida.n : 1
   const [res, setRes] = useState<{
     chave: string
+    n: number
     opcoes: Opcao[]
+    temMais: boolean
     erro: string
-  }>({ chave: "", opcoes: [], erro: "" })
-  const chave = `${tipo}|${termo}`
+  }>({ chave: "", n: 0, opcoes: [], temMais: false, erro: "" })
   useEffect(() => {
     if (!ativo) return
     let vivo = true
-    const q = new URLSearchParams({ tipo, limite: "20" })
+    const q = new URLSearchParams({ tipo, limite: "20", pagina: String(n) })
     if (termo) q.set("busca", termo)
-    api.get<{ opcoes: Opcao[] }>(`${BASE}/opcoes?${q}`).then(
-      (r) => vivo && setRes({ chave, opcoes: r.opcoes, erro: "" }),
-      (e: unknown) => vivo && setRes({ chave, opcoes: [], erro: mensagem(e) }),
+    for (const [k, v] of Object.entries(
+      JSON.parse(filtroChave) as FiltrosOpcoes,
+    ))
+      q.set(k, v)
+    api.get<RespostaOpcoes>(`${BASE}/opcoes?${q}`).then(
+      (r) =>
+        vivo &&
+        setRes((atual) => {
+          const base = n === 1 || atual.chave !== chave ? [] : atual.opcoes
+          const vistos = new Set(base.map((o) => o.id))
+          return {
+            chave,
+            n,
+            opcoes: [...base, ...r.opcoes.filter((o) => !vistos.has(o.id))],
+            temMais: r.paginacao.temMais,
+            erro: "",
+          }
+        }),
+      (e: unknown) =>
+        vivo &&
+        setRes({ chave, n, opcoes: [], temMais: false, erro: mensagem(e) }),
     )
     return () => {
       vivo = false
     }
-  }, [api, tipo, termo, chave, ativo])
-  return { ...res, carregando: ativo && res.chave !== chave }
+  }, [api, tipo, termo, chave, filtroChave, n, ativo])
+  const atual = res.chave === chave
+  return {
+    opcoes: atual ? res.opcoes : [],
+    erro: atual ? res.erro : "",
+    temMais: atual && res.temMais,
+    carregando: ativo && (!atual || res.n !== n),
+    carregarMais: () => setPedida({ chave, n: n + 1 }),
+  }
 }
 
 /** Campo de busca com resultados do servidor. Chama `onEscolher` e mantém o foco para múltiplas inclusões. */
@@ -440,21 +483,24 @@ export function SeletorRemoto({
   onEscolher,
   placeholder,
   desabilitado,
+  filtros,
 }: {
   api: ComprasApi
   tipo: Tipo
   onEscolher: (o: Opcao) => void
   placeholder: string
   desabilitado?: boolean
+  filtros?: FiltrosOpcoes
 }) {
   const [busca, setBusca] = useState("")
   const [aberto, setAberto] = useState(false)
   const raiz = useRef<HTMLDivElement>(null)
-  const { opcoes, erro, carregando } = useOpcoes(
+  const { opcoes, erro, carregando, temMais, carregarMais } = useOpcoes(
     api,
     tipo,
     busca,
     aberto && !desabilitado,
+    filtros,
   )
   useEffect(() => {
     const fora = (e: MouseEvent) => {
@@ -512,6 +558,20 @@ export function SeletorRemoto({
               </li>
             ))
           )}
+          {!erro && temMais && (
+            <li className="p-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="w-full"
+                disabled={carregando}
+                onClick={carregarMais}
+              >
+                {carregando ? "Carregando…" : "Carregar mais"}
+              </Button>
+            </li>
+          )}
         </ul>
       )}
     </div>
@@ -526,11 +586,13 @@ export function SeletorUnico({
   placeholder,
   desabilitado,
   opcional,
+  filtros,
 }: {
   api: ComprasApi
   tipo: Tipo
+  filtros?: FiltrosOpcoes
   valor: { id: number; nome: string } | null
-  onChange: (o: { id: number; nome: string } | null) => void
+  onChange: (o: Opcao | null) => void
   placeholder: string
   desabilitado?: boolean
   opcional?: boolean
@@ -558,7 +620,8 @@ export function SeletorUnico({
       tipo={tipo}
       placeholder={placeholder}
       desabilitado={desabilitado}
-      onEscolher={(o) => onChange({ id: o.id, nome: o.nome })}
+      filtros={filtros}
+      onEscolher={(o) => onChange(o)}
     />
   )
 }

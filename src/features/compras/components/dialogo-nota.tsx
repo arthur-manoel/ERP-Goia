@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,7 +11,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
 import {
   chaveAcessoValida,
@@ -19,7 +18,7 @@ import {
 } from "@/modules/compras/compras.regras"
 import { BASE, type ComprasApi } from "../api"
 import { useExecutar } from "../executar"
-import type { Compra, Nota } from "../tipos"
+import type { Nota } from "../tipos"
 import { Campo, dinheiro2, moeda, SeletorUnico } from "./comuns"
 
 type Ref = { id: number; nome: string } | null
@@ -52,13 +51,15 @@ export function DialogoNota({
       ? { id: existente.fornecedor.id, nome: existente.fornecedor.nome }
       : (compra?.fornecedor ?? null),
   )
-  const [idCompra, setIdCompra] = useState(
-    String(existente?.compra?.id ?? compra?.id ?? ""),
+  const [compraSel, setCompraSel] = useState<{
+    id: number
+    nome: string
+    valorTotal?: string
+  } | null>(
+    existente?.compra
+      ? { id: existente.compra.id, nome: existente.compra.codigo }
+      : null,
   )
-  const [compras, setCompras] = useState<{
-    para: number | null
-    lista: Compra[]
-  }>({ para: null, lista: [] })
   const [emissao, setEmissao] = useState(dia(existente?.dataEmissao ?? null))
   const [entrada, setEntrada] = useState(
     dia(existente?.dataRecebimento ?? null),
@@ -68,33 +69,9 @@ export function DialogoNota({
   const { ocupado, erro, setErro, executar } = useExecutar()
   const fixo = Boolean(compra)
 
-  useEffect(() => {
-    if (fixo || !fornecedor) return
-    let vivo = true
-    api
-      .get<{ compras: Compra[] }>(
-        `${BASE}/compras?idFornecedor=${fornecedor.id}&limite=100`,
-      )
-      .then(
-        (r) =>
-          vivo &&
-          setCompras({
-            para: fornecedor.id,
-            lista: r.compras.filter((c) => c.status !== "CANCELADA"),
-          }),
-        () => vivo && setCompras({ para: fornecedor.id, lista: [] }),
-      )
-    return () => {
-      vivo = false
-    }
-  }, [api, fornecedor, fixo])
-
   const chaveNorm = normalizarChave(chave)
   const chaveOk = chaveNorm.length === 44 && chaveAcessoValida(chaveNorm)
-  const listaCompras =
-    fornecedor && compras.para === fornecedor.id ? compras.lista : []
-  const compraEscolhida = listaCompras.find((c) => String(c.id) === idCompra)
-  const totalCompra = compra?.valorTotal ?? compraEscolhida?.valorTotal
+  const totalCompra = compra?.valorTotal ?? compraSel?.valorTotal
 
   async function salvar() {
     if (!/^\d{1,30}$/.test(numeroNf.trim()))
@@ -113,7 +90,7 @@ export function DialogoNota({
       serie: serie.trim(),
       chaveAcesso: chaveNorm,
       idFornecedor: fornecedor.id,
-      idCompra: idCompra ? Number(idCompra) : null,
+      idCompra: compra ? compra.id : (compraSel?.id ?? null),
       dataEmissao: emissao || null,
       dataRecebimento: entrada || null,
       ...(v ? { valorTotal: v } : {}),
@@ -192,7 +169,7 @@ export function DialogoNota({
             desabilitado={fixo}
             onChange={(f) => {
               setFornecedor(f)
-              setIdCompra("")
+              setCompraSel(null)
             }}
             placeholder="fornecedor"
           />
@@ -211,22 +188,20 @@ export function DialogoNota({
             <div className="flex h-8 items-center rounded-lg border px-2.5 text-sm">
               {compra?.codigo}
             </div>
+          ) : fornecedor ? (
+            <SeletorUnico
+              key={fornecedor.id}
+              api={api}
+              tipo="compras"
+              filtros={{ idFornecedor: String(fornecedor.id), ativas: "true" }}
+              valor={compraSel}
+              onChange={setCompraSel}
+              placeholder="Buscar compra (opcional)"
+            />
           ) : (
-            <NativeSelect
-              className="w-full"
-              value={idCompra}
-              disabled={!fornecedor}
-              onChange={(e) => setIdCompra(e.target.value)}
-            >
-              <NativeSelectOption value="">Sem vínculo</NativeSelectOption>
-              {listaCompras.map((c) => (
-                <NativeSelectOption key={c.id} value={c.id}>
-                  {c.codigo}
-                  {c.pedido ? ` · ${c.pedido.numero}` : ""} —{" "}
-                  {moeda(c.valorTotal)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+            <div className="flex h-8 items-center rounded-lg border px-2.5 text-sm text-muted-foreground">
+              Sem vínculo
+            </div>
           )}
         </Campo>
         <div className="grid gap-4 sm:grid-cols-3">

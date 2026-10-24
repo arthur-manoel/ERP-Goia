@@ -1,6 +1,12 @@
 import "server-only"
 import type { z } from "zod"
-import { autorizar, type Area } from "./compras.authorization"
+import {
+  autorizar,
+  recursosDaOpcao,
+  type Area,
+  type Recurso,
+} from "./compras.authorization"
+import { ValorForaDoLimite } from "./compras.regras"
 import { ComprasError, type Acao, type Contexto } from "./compras.repository"
 import * as s from "./compras.schema"
 import * as svc from "./compras.service"
@@ -46,10 +52,11 @@ function rota(
   acao: Acao,
   executar: (entrada: Entrada) => Promise<unknown>,
   status = 200,
+  recursos?: (request: Request) => Recurso[],
 ) {
   return async (request: Request, context?: RouteContext) => {
     try {
-      const ctx = await autorizar(request, area, acao)
+      const ctx = await autorizar(request, area, acao, recursos?.(request))
       if (ctx instanceof Response) {
         ctx.headers.set("Cache-Control", "no-store")
         return ctx
@@ -64,6 +71,8 @@ function rota(
           { error: error.message },
           { status: error.status, headers },
         )
+      if (error instanceof ValorForaDoLimite)
+        return Response.json({ error: error.message }, { status: 400, headers })
       // Detalhes ficam exclusivamente no log do servidor.
       console.error("Falha na API de compras", error)
       return Response.json({ error: "Erro interno" }, { status: 500, headers })
@@ -73,8 +82,13 @@ function rota(
 
 // Ações de status (enviar, aprovar, emitir, receber, cancelar) exigem permissão de edição.
 export const opcoes = {
-  listar: rota("opcoes", "ler", ({ ctx, request }) =>
-    svc.listarOpcoes(ctx, validar(s.opcoesSchema, query(request))),
+  listar: rota(
+    "opcoes",
+    "ler",
+    ({ ctx, request }) =>
+      svc.listarOpcoes(ctx, validar(s.opcoesSchema, query(request))),
+    200,
+    (request) => recursosDaOpcao(new URL(request.url).searchParams.get("tipo")),
   ),
 }
 

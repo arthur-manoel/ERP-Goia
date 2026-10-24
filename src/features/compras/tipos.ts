@@ -16,6 +16,8 @@ export type Opcao = {
   nome: string
   codigo: string | null
   unidade: string | null
+  /** Só em seletores de compras: total da compra, usado como valor padrão da nota. */
+  valorTotal?: string
 }
 export type Pessoa = { id: number; nome: string }
 export type Entidade = { id: number; nome: string; razaoSocial: string }
@@ -96,8 +98,8 @@ export type Compra = {
   observacao: string | null
   totalItens: number
   valorTotal: string
-  /** Opcional: só vem em APIs que já distinguem recebimento parcial. */
-  recebimento?: "PENDENTE" | "PARCIAL" | "TOTAL"
+  /** Situação do recebimento derivada das quantidades (a compra segue EMITIDA enquanto houver saldo). */
+  recebimento: "PENDENTE" | "PARCIAL" | "TOTAL"
   notasFiscais: number
 }
 export type CompraDetalhe = Compra & {
@@ -119,6 +121,19 @@ export type CompraDetalhe = Compra & {
     numero: string
     serie: string
     status: StatusNota
+  }>
+  /** Histórico de recebimentos (etapas). */
+  recebimentos: Array<{
+    id: number
+    data: string
+    usuario: Pessoa
+    observacao: string | null
+    itens: Array<{
+      idProduto: number
+      codigo: string
+      nome: string
+      quantidade: string
+    }>
   }>
 }
 

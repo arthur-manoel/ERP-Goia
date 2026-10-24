@@ -1,6 +1,7 @@
 import { z } from "zod"
 import {
   chaveAcessoValida,
+  diaValido,
   idsDuplicados,
   normalizarChave,
   quantidadeValida,
@@ -23,7 +24,7 @@ export const valorSchema = numeroTexto.refine(
 const diaSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a data no formato AAAA-MM-DD.")
-  .refine((v) => new Date(v).toISOString().slice(0, 10) === v, "Data inválida.")
+  .refine(diaValido, "Data inválida (use uma data real entre 1900 e 2100).")
 
 function itensUnicos<T extends { idProduto: number }>(
   itens: T[],
@@ -87,9 +88,33 @@ export const listarNotasSchema = z
   .refine(periodoValido, msgPeriodo)
 export const opcoesSchema = z
   .object({
-    tipo: z.enum(["insumos", "fornecedores", "locais", "setores"]),
+    tipo: z.enum([
+      "insumos",
+      "fornecedores",
+      "locais",
+      "setores",
+      "pedidos",
+      "compras",
+    ]),
     busca: z.string().trim().max(100).optional(),
+    pagina: z.coerce.number().int().min(1).max(100000).default(1),
     limite: z.coerce.number().int().min(1).max(50).default(20),
+    /** Filtros usados por seletores de pedidos/compras. */
+    idFornecedor: z.coerce.number().int().positive().optional(),
+    status: z
+      .enum([
+        "RASCUNHO",
+        "EMITIDO",
+        "PARCIAL",
+        "RECEBIDO",
+        "CANCELADO",
+        "EMITIDA",
+        "ENTREGUE",
+        "CANCELADA",
+      ])
+      .optional(),
+    /** Compras: só as que ainda aceitam vínculo de nota (não canceladas). */
+    ativas: z.enum(["true", "false"]).optional(),
   })
   .strict()
 
@@ -188,8 +213,17 @@ export const receberCompraSchema = z
           .object({ idProduto: idSchema, quantidade: quantidadeSchema })
           .strict(),
       )
+      .min(1, "Informe ao menos um item recebido.")
       .max(200)
       .superRefine(itensUnicos)
+      .optional(),
+    /** Setor de destino no estoque; exigido só quando o produto ainda não tem saldo no local da compra. */
+    idSetorDestino: idSchema.nullable().optional(),
+    /** Gerada pelo formulário; reenvio com a mesma chave não duplica o recebimento nem o estoque. */
+    chaveIdempotencia: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_-]{8,64}$/, "Chave de idempotência inválida.")
       .optional(),
     observacao: texto(255),
   })

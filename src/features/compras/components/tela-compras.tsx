@@ -336,7 +336,9 @@ function Detalhe({
               </div>
               {c.status === "ENTREGUE" && (
                 <div>
-                  <dt className="text-muted-foreground">Recebida em</dt>
+                  <dt className="text-muted-foreground">
+                    Recebimento concluído em
+                  </dt>
                   <dd>{data(c.dataAtualizacao)}</dd>
                 </div>
               )}
@@ -363,9 +365,8 @@ function Detalhe({
                         </div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {i.quantidadePedida
-                          ? `${quantidade(i.quantidadePedida)} ${i.unidade}`
-                          : `${quantidade(i.quantidade)} ${i.unidade}`}
+                        {quantidade(i.quantidadePedida ?? i.quantidade)}{" "}
+                        {i.unidade}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {quantidade(i.quantidadeRecebida)}
@@ -390,6 +391,36 @@ function Detalhe({
               Total:{" "}
               <strong className="tabular-nums">{moeda(c.valorTotal)}</strong>
             </p>
+            {c.recebimentos.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">
+                  Histórico de recebimentos
+                </h4>
+                <ol className="space-y-2 text-sm">
+                  {c.recebimentos.map((r) => (
+                    <li key={r.id} className="rounded-lg border p-2.5">
+                      <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                        <span>{data(r.data)}</span>
+                        <span>{r.usuario.nome}</span>
+                      </div>
+                      <ul className="mt-1">
+                        {r.itens.map((x) => (
+                          <li key={x.idProduto} className="tabular-nums">
+                            {x.nome}:{" "}
+                            <strong>{quantidade(x.quantidade)}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                      {r.observacao && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {r.observacao}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
             {c.notas.length > 0 && (
               <p className="text-sm">
                 <span className="text-muted-foreground">Notas fiscais: </span>

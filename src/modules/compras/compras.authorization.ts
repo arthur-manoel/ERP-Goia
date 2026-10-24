@@ -15,18 +15,32 @@ import {
  * Administradores (usuarios.nivel_acesso = ADMIN ou vínculo EMPRESA) dispensam permissões individuais.
  */
 export type Area = "requisicoes" | "pedidos" | "compras" | "notas" | "opcoes"
-const recursoDaArea = {
+export type Recurso = "ESTOQUE" | "NOTAS_FISCAIS"
+const recursoDaArea: Record<Area, Recurso> = {
   requisicoes: "ESTOQUE",
   pedidos: "ESTOQUE",
   compras: "ESTOQUE",
   opcoes: "ESTOQUE",
   notas: "NOTAS_FISCAIS",
-} as const
+}
+
+/**
+ * Seletores (opcoes) servem telas de Compras (ESTOQUE) e de Notas Fiscais (NOTAS_FISCAIS).
+ * Fornecedores, pedidos e compras podem ser consultados por quem tem QUALQUER dos dois recursos,
+ * sem ampliar nada além de leitura e sempre dentro da empresa do vínculo.
+ * Insumos, locais e setores continuam exigindo ESTOQUE.
+ */
+export function recursosDaOpcao(tipo: string | null): Recurso[] {
+  return tipo === "fornecedores" || tipo === "pedidos" || tipo === "compras"
+    ? ["ESTOQUE", "NOTAS_FISCAIS"]
+    : ["ESTOQUE"]
+}
 
 export async function autorizar(
   request: Request,
   area: Area,
   acao: Acao,
+  recursos: Recurso[] = [recursoDaArea[area]],
 ): Promise<Contexto | Response> {
   const auth = await requireRole(request, [
     "ADMINISTRACAO",
@@ -60,14 +74,14 @@ export async function autorizar(
   const admin =
     vinculo.nivel_acesso === "EMPRESA" ||
     vinculo.usuarios.nivel_acesso === "ADMIN"
-  const permissao = vinculo.permissoes_usuario.find(
-    (item) => item.recurso === recursoDaArea[area],
+  const permissoes = vinculo.permissoes_usuario.filter((item) =>
+    recursos.includes(item.recurso as Recurso),
   )
   const pode: Contexto["pode"] = {
-    ler: admin || Boolean(permissao?.pode_ler),
-    criar: admin || Boolean(permissao?.pode_criar),
-    editar: admin || Boolean(permissao?.pode_editar),
-    excluir: admin || Boolean(permissao?.pode_excluir),
+    ler: admin || permissoes.some((item) => item.pode_ler),
+    criar: admin || permissoes.some((item) => item.pode_criar),
+    editar: admin || permissoes.some((item) => item.pode_editar),
+    excluir: admin || permissoes.some((item) => item.pode_excluir),
   }
   if (!pode[acao]) throw new ComprasError(403, "Acesso negado.")
   return { idUsuario, idEmpresa: vinculo.id_empresa, pode }
