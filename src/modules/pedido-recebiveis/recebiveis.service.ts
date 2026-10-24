@@ -1,5 +1,6 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
+import { auditFinancial } from "../../../modules/financeiro/auditoria"
 import type { Contexto } from "@/modules/pedidos/pedidos.authorization"
 import { dataCivil } from "@/modules/pedidos/pedidos.calculo"
 import { PedidoError } from "@/modules/pedidos/pedidos.error"
@@ -315,6 +316,8 @@ export function fecharPedido(
     const persistido = await repo.buscarFechamento(tx, ctx, id)
     if (!persistido) regularizacao()
     validarIntegridade(depois, persistido)
+    for (const conta of persistido.venda.contas_receber)
+      await auditFinancial(tx, ctx, "contas_receber", null, conta, "CRIACAO")
     await pedidos.auditar(tx, ctx, antes, depois)
     await tx.auditoria.create({
       data: {
