@@ -7,6 +7,7 @@ import {
 import { validate } from "../../src/lib/api/http"
 import { disputaPersistencia } from "../../src/lib/prisma-concorrencia"
 import { assertCompany } from "../catalogos/access"
+import { assertCanCancel } from "../financeiro/access"
 import type { FinancialActor } from "../financeiro/auditoria"
 import * as repository from "./repository"
 import {
@@ -94,6 +95,8 @@ export async function createDespesa(
   noDirectSettlement(data.situacao)
   return write(() =>
     repository.withWriteLock([data.id_empresa], async (database) => {
+      if (data.situacao === "CANCELADA")
+        await assertCanCancel(actor, [data.id_empresa], database)
       await validateRelations(data, companies, database)
       const after = await repository.create(data, database)
       await repository.auditFinancial(
@@ -155,6 +158,12 @@ async function update(
     repository.withWriteLock(companies, async (database) => {
       const current = await repository.findForUpdate(id, companies, database)
       if (!current) throw new NotFoundError("Despesa não encontrada.")
+      if (data.situacao === "CANCELADA" && current.situacao !== "CANCELADA")
+        await assertCanCancel(
+          actor,
+          [current.id_empresa, data.id_empresa ?? current.id_empresa],
+          database,
+        )
       noDirectSettlement(data.situacao, current)
       const changed = hasFinancialChanges(data, current)
       const movements = await repository.countMovements(id, database)
@@ -211,6 +220,7 @@ export async function deleteDespesa(
     repository.withWriteLock(companies, async (database) => {
       const current = await repository.findForUpdate(id, companies, database)
       if (!current) throw new NotFoundError("Despesa não encontrada.")
+      await assertCanCancel(actor, [current.id_empresa], database)
       if (
         current.situacao === "PAGA" ||
         (await repository.countMovements(id, database)) > 0

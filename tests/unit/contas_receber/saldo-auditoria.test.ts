@@ -51,7 +51,7 @@ it("inicializa saldo e audita criação com o usuário autenticado", async () =>
     acao: "INSERT",
   })
   expect(JSON.parse(audit.dados_novos)).toMatchObject({
-    saldo: "93",
+    saldo: "97",
     evento_financeiro: "CRIACAO",
   })
 })
@@ -60,18 +60,18 @@ it("reconcilia saldo nulo sem recebimentos e registra antes/depois", async () =>
   db.contas_receber.findFirst.mockResolvedValue({ ...row, saldo: null })
   expect((await patch({ observacao: "Reconciliado" })).status).toBe(200)
   const data = db.contas_receber.update.mock.calls[0][0].data
-  expect(data.saldo.toString()).toBe("93")
+  expect(data.saldo.toString()).toBe("97")
   const audit = db.auditoria.create.mock.calls[0][0].data
   expect(JSON.parse(audit.dados_anteriores)).toMatchObject({ saldo: null })
   expect(JSON.parse(audit.dados_novos)).toMatchObject({
-    saldo: "93",
+    saldo: "97",
     evento_financeiro: "RECONCILIACAO",
   })
 })
 
 it.each([
-  [30, "63", "PARCIAL"],
-  [93, "0", "PAGO"],
+  [30, "67", "PARCIAL"],
+  [97, "0", "PAGO"],
 ])(
   "reconcilia recebimento confirmado de %s com movimento existente",
   async (amount, balance, status) => {
@@ -106,7 +106,7 @@ it("bloqueia pagamento sem movimento correspondente", async () => {
 })
 
 it.each([
-  [94, 10],
+  [98, 10],
   [-1, 10],
   [30, 99],
 ])(
@@ -122,7 +122,7 @@ it.each([
 it("recalcula saldo junto dos valores e audita cancelamento por PATCH", async () => {
   expect((await patch({ valor_desconto: 10 })).status).toBe(200)
   expect(db.contas_receber.update.mock.calls[0][0].data.saldo.toString()).toBe(
-    "88",
+    "92",
   )
   expect((await patch({ situacao: "CANCELADO" })).status).toBe(200)
   expect(

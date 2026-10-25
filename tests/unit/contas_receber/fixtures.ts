@@ -27,8 +27,8 @@ export const row = {
   valor_original: new Prisma.Decimal(100),
   valor_desconto: new Prisma.Decimal(5),
   valor_acrescimo: new Prisma.Decimal(2),
-  valor_final: new Prisma.Decimal(93),
-  saldo: new Prisma.Decimal(93),
+  valor_final: new Prisma.Decimal(97),
+  saldo: new Prisma.Decimal(97),
   situacao: "ABERTO",
 } satisfies ContaReceber
 export const sale = {

@@ -7,6 +7,7 @@ import {
 import { disputaPersistencia } from "../../src/lib/prisma-concorrencia"
 import { validate } from "../../src/lib/api/http"
 import { assertCompany } from "../catalogos/access"
+import { assertCanCancel } from "../financeiro/access"
 import * as repository from "./repository"
 import type { FinancialActor, FinancialEvent } from "../financeiro/auditoria"
 import {
@@ -41,10 +42,9 @@ function calculate(
     "valor_original" | "valor_desconto" | "valor_acrescimo"
   >,
 ) {
-  // Fórmula expressamente solicitada neste contrato: ambos são subtraídos.
   const result = data.valor_original
     .minus(data.valor_desconto)
-    .minus(data.valor_acrescimo)
+    .plus(data.valor_acrescimo)
   if (result.lt(0))
     throw new ValidationError("Valor final não pode ser negativo.")
   if (result.gt("9999999999999.99"))
@@ -144,6 +144,8 @@ export async function createContaReceber(
   const final = calculate(data)
   return write(() =>
     repository.withWriteLock([data.id_empresa], async (database) => {
+      if (data.situacao === "CANCELADO")
+        await assertCanCancel(actor, [data.id_empresa], database)
       const venda = await validateRelations(data, companies, database)
       assertManualSale(venda)
       const row = await repository.create(
@@ -326,6 +328,12 @@ async function update(
     repository.withWriteLock(companies, async (database) => {
       const current = await repository.findForUpdate(id, companies, database)
       if (!current) throw new NotFoundError("Conta a receber não encontrada.")
+      if (data.situacao === "CANCELADO" && current.situacao !== "CANCELADO")
+        await assertCanCancel(
+          actor,
+          [current.id_empresa, data.id_empresa ?? current.id_empresa],
+          database,
+        )
       if (data.situacao) noDirectSettlement(data.situacao, current)
       const changed = hasFinancialChanges(data, current)
       const payments = await repository.countPayments(id, database)
@@ -368,12 +376,16 @@ async function update(
         throw new ValidationError(
           "Número da parcela não pode ser maior que o total de parcelas.",
         )
-      const final = calculate(effective)
+      // Metadados e valores monetários equivalentes não reprecificam títulos
+      // históricos. Recalcular somente quando um componente monetário mudar.
+      const monetaryChanged = (
+        ["valor_original", "valor_desconto", "valor_acrescimo"] as const
+      ).some((key) => data[key] !== undefined && !data[key].eq(current[key]))
+      const final = monetaryChanged ? calculate(effective) : current.valor_final
       const { situacao, ...fields } = data
       const payload: Prisma.contas_receberUncheckedUpdateInput = {
         ...fields,
-        valor_final: final,
-        saldo: final,
+        ...(monetaryChanged ? { valor_final: final } : {}),
         ...(situacao ? { situacao: toDatabaseSituation(situacao) } : {}),
       }
       return save(
@@ -413,6 +425,7 @@ export async function deleteContaReceber(
     repository.withWriteLock(companies, async (database) => {
       const current = await repository.findForUpdate(id, companies, database)
       if (!current) throw new NotFoundError("Conta a receber não encontrada.")
+      await assertCanCancel(actor, [current.id_empresa], database)
       if (
         current.id_fechamento !== null ||
         ["PAGO", "PARCIAL"].includes(current.situacao) ||

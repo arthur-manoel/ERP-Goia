@@ -61,14 +61,14 @@ it.each(operations)(
   },
 )
 
-it("cria calculando original - desconto - acréscimo e inicializando saldo", async () => {
+it("cria calculando original - desconto + acréscimo e inicializando saldo", async () => {
   const response = await collection.POST(
     await request("/api/contas_receber", "POST", input),
   )
   expect(response.status).toBe(201)
   const data = db.contas_receber.create.mock.calls[0][0].data
-  expect(data.valor_final.toString()).toBe("93")
-  expect(data.saldo.toString()).toBe("93")
+  expect(data.valor_final.toString()).toBe("97")
+  expect(data.saldo.toString()).toBe("97")
   expect(data).toMatchObject({
     numero_parcela: 1,
     total_parcelas: 1,
@@ -185,8 +185,8 @@ it("PATCH mescla valores atuais com os novos e recalcula o saldo sob lock", asyn
   )
   expect(response.status).toBe(200)
   const update = db.contas_receber.update.mock.calls[0][0]
-  expect(update.data.valor_final.toString()).toBe("88")
-  expect(update.data.saldo.toString()).toBe("88")
+  expect(update.data.valor_final.toString()).toBe("92")
+  expect(update.data.saldo.toString()).toBe("92")
   expect(update.data.data_atualizacao).toBeInstanceOf(Date)
   expect(db.$queryRaw.mock.invocationCallOrder[1]).toBeLessThan(
     db.contas_receber.findFirst.mock.invocationCallOrder[0],
@@ -223,7 +223,7 @@ it("rejeita saldo negativo e parcelas incompatíveis no PATCH mesclado", async (
     (
       await item.PATCH(
         await request("/api/contas_receber/1", "PATCH", {
-          valor_desconto: 100,
+          valor_desconto: 103,
         }),
         context(),
       )
@@ -336,7 +336,7 @@ it("permite apenas metadados de título fechado e não recalcula valores do plan
     observacao: "Conferido",
   })
   expect(data).not.toHaveProperty("valor_final")
-  expect(data.saldo.toString()).toBe("93")
+  expect(data.saldo.toString()).toBe("97")
   expect(
     (
       await item.DELETE(
@@ -437,7 +437,7 @@ it("reconcilia saldo legado divergente com os pagamentos confirmados", async () 
     ).status,
   ).toBe(200)
   expect(db.contas_receber.update.mock.calls[0][0].data.saldo.toString()).toBe(
-    "93",
+    "97",
   )
   db.contas_receber.update.mockClear()
   expect(
@@ -459,7 +459,7 @@ it("reconcilia saldo legado divergente com os pagamentos confirmados", async () 
     ).status,
   ).toBe(200)
   expect(db.contas_receber.update.mock.calls[0][0].data.saldo.toString()).toBe(
-    "103",
+    "107",
   )
 })
 

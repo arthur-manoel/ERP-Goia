@@ -79,6 +79,11 @@ DELETE altera a situação para CANCELADO; nunca apaga dados. Repetir o cancelam
 é idempotente. Títulos pagos/parciais/com pagamentos não podem ser cancelados por
 esta API. O mesmo bloqueio vale para contas com despesas pagas vinculadas.
 Despesas e registros de pagamentos históricos são preservados.
+PUT/PATCH que mudam a situação para CANCELADO exigem também `pode_excluir`,
+além de `pode_editar`, na empresa do registro e na empresa de destino caso haja
+transferência simultânea. Criar um registro já cancelado também exige exclusão.
+A checagem usa o autorizador existente dentro da transação, preservando as
+exceções de administrador/responsável com vínculo ativo.
 
 Criação, edição e cancelamento são auditados pelo helper financeiro na mesma
 transação, com autor do JWT e snapshots antes/depois. Falha na auditoria aborta

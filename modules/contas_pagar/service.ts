@@ -7,6 +7,7 @@ import {
 import { disputaPersistencia } from "../../src/lib/prisma-concorrencia"
 import { validate } from "../../src/lib/api/http"
 import { assertCompany } from "../catalogos/access"
+import { assertCanCancel } from "../financeiro/access"
 import * as repository from "./repository"
 import type { FinancialActor } from "../financeiro/auditoria"
 import {
@@ -120,6 +121,8 @@ export async function createContaPagar(
   const final = calculate(data)
   return write(() =>
     repository.withWriteLock([data.id_empresa], async (database) => {
+      if (data.situacao === "CANCELADO")
+        await assertCanCancel(actor, [data.id_empresa], database)
       await validateRelations(data, companies, database)
       const after = await repository.create(
         {
@@ -218,6 +221,12 @@ async function update(
       // Nenhum valor é lido/calculado antes de adquirir o lock da conta.
       const current = await repository.findForUpdate(id, companies, database)
       if (!current) throw new NotFoundError("Conta a pagar não encontrada.")
+      if (data.situacao === "CANCELADO" && current.situacao !== "CANCELADO")
+        await assertCanCancel(
+          actor,
+          [current.id_empresa, data.id_empresa ?? current.id_empresa],
+          database,
+        )
       if (data.situacao) noDirectSettlement(data.situacao, current)
       const changed = hasFinancialChanges(data, current)
       const payments = await repository.countPayments(id, database)
@@ -310,6 +319,7 @@ export async function deleteContaPagar(
     repository.withWriteLock(companies, async (database) => {
       const current = await repository.findForUpdate(id, companies, database)
       if (!current) throw new NotFoundError("Conta a pagar não encontrada.")
+      await assertCanCancel(actor, [current.id_empresa], database)
       if (
         ["PAGO", "PARCIAL"].includes(current.situacao) ||
         (await repository.countPayments(id, database)) > 0 ||

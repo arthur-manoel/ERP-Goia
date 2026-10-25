@@ -49,6 +49,10 @@ Despesas pagas, canceladas ou com movimentações permitem apenas metadados
 (`descricao`, `observacao`). Alterar valor, data, empresa, categoria, vínculo com
 conta ou situação retorna 409. DELETE nunca apaga: cancela despesas abertas sem
 movimentações e é idempotente para registros já cancelados.
+Mudar a situação para CANCELADA por PUT/PATCH exige também `pode_excluir`, além
+de `pode_editar`, na empresa de origem e no destino de uma transferência
+simultânea. Criar uma despesa já cancelada também exige exclusão. A checagem
+reutiliza o autorizador existente dentro da transação.
 
 **Este módulo não implementa pagamento nem estorno.** Marcar PAGA pelo cadastro
 retorna 409. Despesas pagas ou movimentadas não podem ser canceladas por esta API;

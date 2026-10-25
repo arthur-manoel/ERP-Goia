@@ -1,10 +1,12 @@
 import { prisma } from "../../src/lib/prisma"
+import type { Prisma } from "../../src/generated/prisma/client"
 export type Resource = "PRODUTOS" | "CORES" | "FINANCEIRO"
 export type Action = "pode_ler" | "pode_criar" | "pode_editar" | "pode_excluir"
 export async function allowedCompanies(
   id: number,
   recurso: Resource | null,
   action: Action,
+  database: Pick<Prisma.TransactionClient, "usuario_empresa"> = prisma,
 ) {
   const authorization = {
     OR: [
@@ -20,7 +22,7 @@ export async function allowedCompanies(
       },
     ],
   }
-  const rows = await prisma.usuario_empresa.findMany({
+  const rows = await database.usuario_empresa.findMany({
     where: {
       id_usuario: id,
       status: "ATIVO",

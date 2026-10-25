@@ -29,14 +29,13 @@ definida pelo servidor. `id`, `id_fechamento`, `saldo`, `valor_final` e datas de
 auditoria não são aceitos como entrada.
 
 Dinheiro aceita número JSON ou string decimal com ponto, até duas casas decimais,
-sem negativos e dentro de DECIMAL(15,2). O cálculo usa Prisma.Decimal e segue
-**a fórmula desta solicitação**, que subtrai também o campo `valor_acrescimo`:
+sem negativos e dentro de DECIMAL(15,2). O cálculo usa Prisma.Decimal:
 
 ```text
-valor_final = valor_original - valor_desconto - valor_acrescimo
+valor_final = valor_original - valor_desconto + valor_acrescimo
 ```
 
-Exemplo (valor final e saldo inicial de 93.00):
+Exemplo (valor final e saldo inicial de 97.00):
 
 ```json
 {
@@ -53,8 +52,15 @@ Exemplo (valor final e saldo inicial de 93.00):
 PUT exige os mesmos campos obrigatórios da criação e restaura opcionais omitidos
 aos padrões. PATCH aceita um objeto parcial não vazio e mescla campos no estado
 atual bloqueado. Parcelas e valor final são validados novamente após essa mesclagem.
+O valor final só é recalculado se um componente monetário realmente mudar;
+edições de descrição/observação e reenvio de valores equivalentes preservam o
+valor final histórico. O saldo continua sendo reconciliado com pagamentos confirmados.
 Venda e categoria devem pertencer à mesma empresa; categoria deve estar ativa e
 permitir RECEITA ou AMBOS. DELETE cancela logicamente; nenhum registro é apagado.
+Cancelamento por PUT/PATCH exige `pode_excluir` além de `pode_editar`, tanto na
+empresa atual quanto no destino de uma transferência simultânea. Criar um título
+já cancelado também exige exclusão. A verificação usa o mesmo autorizador, com
+vínculo ativo e suas exceções de administrador/responsável, dentro da transação.
 
 ## Pedidos fechados e recebimentos
 

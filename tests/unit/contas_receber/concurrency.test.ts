@@ -57,8 +57,8 @@ it("dois PATCH recalculam sobre o estado mais recente sem perder desconto ou acr
   expect(responses.map((response) => response.status)).toEqual([200, 200])
   expect(stored.valor_desconto.toString()).toBe("10")
   expect(stored.valor_acrescimo.toString()).toBe("8")
-  expect(stored.valor_final.toString()).toBe("82")
-  expect(stored.saldo?.toString()).toBe("82")
+  expect(stored.valor_final.toString()).toBe("98")
+  expect(stored.saldo?.toString()).toBe("98")
   const rawQueries = db.$queryRaw.mock.calls.map(([strings]) =>
     strings.join("?"),
   )
