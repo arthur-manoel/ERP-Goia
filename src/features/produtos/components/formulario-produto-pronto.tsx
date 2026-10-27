@@ -106,7 +106,7 @@ export function FormularioProdutoPronto({
         {
           method: produto ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(resultado.data),
+          body: JSON.stringify(payload),
         },
       )
       if (!resposta.ok) throw new Error(await mensagemErro(resposta))
