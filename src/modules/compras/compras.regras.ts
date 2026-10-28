@@ -6,6 +6,46 @@ export const CASAS_QUANTIDADE = 3
 export const CASAS_VALOR = 2
 const MAX_DIGITOS = 15
 
+const MAX_OBSERVACAO = 255
+const caracteres = (texto: string) => Array.from(texto).length
+
+export class ObservacaoForaDoLimite extends Error {}
+
+/** Reserva espaço para o código da compra e o token usado na idempotência. */
+export function limiteObservacaoRecebimento(codigo: string, chave: string) {
+  return Math.max(
+    0,
+    MAX_OBSERVACAO -
+      caracteres(`Recebimento da compra ${codigo}:  [rec:${chave}]`),
+  )
+}
+
+export function observacaoRecebimento(
+  codigo: string,
+  chave: string,
+  observacao?: string | null,
+) {
+  const texto = `Recebimento da compra ${codigo}${observacao ? `: ${observacao}` : ""} [rec:${chave}]`
+  if (caracteres(texto) > MAX_OBSERVACAO)
+    throw new ObservacaoForaDoLimite(
+      `Observação do recebimento: use até ${limiteObservacaoRecebimento(codigo, chave)} caracteres para manter o registro completo (limite total de 255).`,
+    )
+  return texto
+}
+
+export function observacaoPedidoOrigem(
+  numeroPedido: string,
+  observacao: string | null,
+) {
+  const prefixo = `Pedido de origem: ${numeroPedido}`
+  const texto = [prefixo, observacao].filter(Boolean).join(" | ")
+  if (caracteres(texto) > MAX_OBSERVACAO)
+    throw new ObservacaoForaDoLimite(
+      `Observação da compra: regularize a observação com o responsável antes desta operação; o vínculo com o pedido de origem permite até ${Math.max(0, MAX_OBSERVACAO - caracteres(prefixo + " | "))} caracteres de observação (limite total de 255).`,
+    )
+  return texto
+}
+
 const formato = /^\d+(\.\d+)?$/
 
 /** Maior valor escalado que cabe em DECIMAL(15,x): 15 dígitos, ou seja, 10^15 − 1 na escala. */

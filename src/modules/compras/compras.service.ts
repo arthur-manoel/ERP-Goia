@@ -21,7 +21,10 @@ import {
   type Transaction,
 } from "./compras.repository"
 import {
+  ObservacaoForaDoLimite,
   excedeQuantidade,
+  observacaoPedidoOrigem,
+  observacaoRecebimento,
   paraEscala,
   proximoStatus,
   quantidadePendente,
@@ -123,6 +126,16 @@ function recebidoEfetivo(
 
 const compraAtiva = <T extends { status: string }>(c: T | null) =>
   c && c.status !== "CANCELADA" ? c : null
+
+function validarObservacao(compor: () => string) {
+  try {
+    return compor()
+  } catch (erro) {
+    if (erro instanceof ObservacaoForaDoLimite)
+      throw new ComprasError(400, erro.message)
+    throw erro
+  }
+}
 /**
  * uk_compra_pedido_legado permite UMA compra por pedido no banco e o schema não pode ser alterado aqui.
  * Ao cancelar, a compra solta o vínculo (id_pedido_compra_legado = NULL) e guarda o pedido de origem na observação;
@@ -133,10 +146,9 @@ const dadosSoltarPedido = (
   observacao: string | null,
 ) => ({
   id_pedido_compra_legado: null,
-  observacao: [`Pedido de origem: ${numeroPedido}`, observacao]
-    .filter(Boolean)
-    .join(" | ")
-    .slice(0, 255),
+  observacao: validarObservacao(() =>
+    observacaoPedidoOrigem(numeroPedido, observacao),
+  ),
 })
 const conflito = (mensagem: string) => new ComprasError(409, mensagem)
 
@@ -1150,9 +1162,9 @@ export function receberCompra(
         )
     }
 
-    const marca = ` [rec:${chave}]`
-    const texto = `Recebimento da compra ${compra.codigo}${input.observacao ? `: ${input.observacao}` : ""}`
-    const observacao = texto.slice(0, 255 - marca.length) + marca
+    const observacao = validarObservacao(() =>
+      observacaoRecebimento(compra.codigo, chave, input.observacao),
+    )
     for (const s of solicitados)
       await entradaEstoque(
         tx,
@@ -1214,15 +1226,17 @@ export function acaoCompra(ctx: Contexto, id: number, acao: string) {
           "Cancele as notas fiscais vinculadas antes de cancelar a compra.",
         )
     }
+    const dadosVinculo =
+      novo === "CANCELADA" && antes.pedido
+        ? dadosSoltarPedido(antes.pedido.numero, antes.observacao)
+        : {}
     const r = await tx.compras.updateMany({
       where: { id, id_empresa: ctx.idEmpresa, status: antes.status },
       data: {
         status: novo,
         data_atualizacao: new Date(),
         // Cancelada libera o pedido para gerar outra compra (ver dadosSoltarPedido).
-        ...(novo === "CANCELADA" && antes.pedido
-          ? dadosSoltarPedido(antes.pedido.numero, antes.observacao)
-          : {}),
+        ...dadosVinculo,
       },
     })
     if (r.count !== 1)

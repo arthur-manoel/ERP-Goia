@@ -225,7 +225,14 @@ export const receberCompraSchema = z
       .trim()
       .regex(/^[A-Za-z0-9_-]{8,64}$/, "Chave de idempotência inválida.")
       .optional(),
-    observacao: texto(255),
+    observacao: z
+      .string()
+      .trim()
+      .refine((valor) => Array.from(valor).length <= 255, {
+        message: "Observação do recebimento: use até 255 caracteres.",
+      })
+      .nullable()
+      .optional(),
   })
   .strict()
 export const acaoCompraSchema = z
