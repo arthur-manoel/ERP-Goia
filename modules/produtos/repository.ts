@@ -12,9 +12,12 @@ import type {
 
 export type { Produto }
 
-export async function create(data: CreateProdutoData): Promise<Produto> {
+export async function create(
+  data: CreateProdutoData,
+  database: Prisma.TransactionClient = prisma,
+): Promise<Produto> {
   const { id_empresa, ...fields } = data
-  return prisma.produtos.create({
+  return database.produtos.create({
     data: {
       ...fields,
       produto_empresa: {
@@ -75,9 +78,10 @@ export async function update(
   id: number,
   data: UpdateProdutoData,
   companies: number[],
+  database: Prisma.TransactionClient = prisma,
 ): Promise<Produto | null> {
   try {
-    return await prisma.produtos.update({
+    return await database.produtos.update({
       where: { ...scope(companies, true), id },
       data,
     })
@@ -90,6 +94,17 @@ export async function update(
     }
     throw error
   }
+}
+
+export function findWritableWithCompanies(
+  id: number,
+  companies: number[],
+  database: Prisma.TransactionClient,
+) {
+  return database.produtos.findFirst({
+    where: { ...scope(companies, true), id },
+    include: { produto_empresa: { select: { id_empresa: true } } },
+  })
 }
 
 export async function inactivate(
