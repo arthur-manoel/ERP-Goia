@@ -63,12 +63,14 @@ export function ProvedorAutenticacao({
 
   const carregarAcesso = useCallback(
     async (accessToken: string, versaoEsperada: number) => {
-      const response = await fetch("/api/estoque-minimo/empresas", {
+      const response = await fetch("/api/auth/contexto", {
         headers: { Authorization: `Bearer ${accessToken}` },
         cache: "no-store",
       })
       if (!response.ok) throw new Error(await mensagemErro(response))
-      const body: { usuario: Usuario | null; empresas: Empresa[] } =
+      const {
+        data: body,
+      }: { data: { usuario: Usuario; empresas: Empresa[] } } =
         await response.json()
       if (versaoSessao.current !== versaoEsperada) return false
 
@@ -164,9 +166,10 @@ export function ProvedorAutenticacao({
   const requisitar = useCallback(
     async (url: string, init: RequestInit = {}) => {
       const versaoRequisicao = versaoSessao.current
-      if (!token.current) throw new Error("Entre para acessar o estoque.")
+      if (!token.current) throw new Error("Entre para acessar o ERP.")
       if (!empresaAtual.current)
-        throw new Error("Selecione uma empresa para consultar o estoque.")
+        throw new Error("Selecione uma empresa para continuar.")
+      const idEmpresa = empresaAtual.current.id
       const executar = (accessToken: string) =>
         fetch(url, {
           ...init,
@@ -174,7 +177,7 @@ export function ProvedorAutenticacao({
           headers: {
             ...Object.fromEntries(new Headers(init.headers)),
             Authorization: `Bearer ${accessToken}`,
-            "X-Empresa-Id": String(empresaAtual.current?.id),
+            "X-Empresa-Id": String(idEmpresa),
           },
         })
       let response = await executar(token.current)

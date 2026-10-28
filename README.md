@@ -57,6 +57,14 @@ As variações podem ser cadastradas nos produtos prontos do estoque (unidades o
 
 **Status: front-end com adaptador temporário em memória.** Não cria reservas, não persiste após recarregar e não está conectado ao banco. Cadastros separados de cores/tamanhos, numeração automática e integração com as tabelas reais continuam pendentes. Nenhum dado de demonstração é carregado na aplicação.
 
+### Interface de categorias
+
+A tela `/cadastros/categorias` está integrada a `/api/categorias`: consulta por empresa, busca e paginação no servidor, cadastro, edição parcial, inativação e reativação. As ações exigem a permissão `CATEGORIAS` correspondente no servidor. Trocar a empresa reinicia os filtros e formulários e cancela a consulta anterior.
+
+O contexto de autenticação em `/api/auth/contexto` lista os vínculos ativos, sem exigir permissão de estoque para escolher uma empresa. Cada API continua autorizando o acesso ao seu recurso.
+
+**Implantação:** o módulo de categorias traz do PR #104 a migration `20261023000000_categorias_active_names`, necessária para permitir nomes repetidos entre categorias inativas. Ela deve ser aplicada pelo responsável pelo banco antes da liberação; esta integração não a executa. Consulte `modules/categorias/README.md` para o contrato e o protocolo de concorrência compartilhado com produtos.
+
 ### Interface de insumos
 
 A tela `/estoque/insumos` reúne as posições físicas reais de produtos marcados para compra e não para venda, com busca e filtros por situação. A tela `/estoque` consolida insumos e produtos acabados. Ambas mostram depósito/localização, saldo físico, mínimo local, déficit e estados distintos para zerado, abaixo, exatamente no mínimo, regular e sem configuração.
