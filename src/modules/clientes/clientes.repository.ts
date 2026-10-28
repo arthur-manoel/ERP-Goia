@@ -2,6 +2,7 @@ import "server-only"
 import { Prisma, type clientes } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { disputaPersistencia } from "@/lib/prisma-concorrencia"
+import { serializarJsonTextMysql } from "@/lib/limites-texto"
 import type { ListarInput, PaginacaoInput } from "./clientes.schema"
 
 export class ClienteError extends Error {
@@ -206,8 +207,13 @@ export function auditar(
       tabela: "clientes",
       id_registro: depois.id,
       acao: antes ? "UPDATE" : "INSERT",
-      dados_anteriores: antes ? JSON.stringify(antes) : null,
-      dados_novos: JSON.stringify(depois),
+      dados_anteriores: antes
+        ? serializarJsonTextMysql(antes, (msg) => new ClienteError(400, msg))
+        : null,
+      dados_novos: serializarJsonTextMysql(
+        depois,
+        (msg) => new ClienteError(400, msg),
+      ),
     },
   })
 }

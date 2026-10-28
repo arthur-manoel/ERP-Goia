@@ -1,5 +1,6 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
+import { serializarJsonTextMysql } from "@/lib/limites-texto"
 import {
   ProducaoError,
   type Contexto,
@@ -247,8 +248,20 @@ export function auditarCadastro(
       tabela,
       id_registro: id,
       acao: antes === null ? "INSERT" : depois === null ? "DELETE" : "UPDATE",
-      dados_anteriores: antes === null ? null : JSON.stringify(antes),
-      dados_novos: depois === null ? null : JSON.stringify(depois),
+      dados_anteriores:
+        antes === null
+          ? null
+          : serializarJsonTextMysql(
+              antes,
+              (msg) => new ProducaoError(400, msg),
+            ),
+      dados_novos:
+        depois === null
+          ? null
+          : serializarJsonTextMysql(
+              depois,
+              (msg) => new ProducaoError(400, msg),
+            ),
     },
   })
 }

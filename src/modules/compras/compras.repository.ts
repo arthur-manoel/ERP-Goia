@@ -1,6 +1,7 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
+import { serializarJsonTextMysql } from "@/lib/limites-texto"
 
 export class ComprasError extends Error {
   constructor(
@@ -114,8 +115,16 @@ export function auditar(
       tabela,
       id_registro: idRegistro,
       acao: antes ? "UPDATE" : "INSERT",
-      dados_anteriores: antes ? JSON.stringify(antes) : null,
-      dados_novos: JSON.stringify(depois),
+      dados_anteriores: antes
+        ? serializarJsonTextMysql(
+            antes,
+            (mensagem) => new ComprasError(400, mensagem),
+          )
+        : null,
+      dados_novos: serializarJsonTextMysql(
+        depois,
+        (mensagem) => new ComprasError(400, mensagem),
+      ),
     },
   })
 }
