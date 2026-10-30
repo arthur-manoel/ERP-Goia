@@ -431,6 +431,25 @@ export async function testarApi(
           where: { id: movement.id },
           data: { status: "ENTREGUE" },
         })
+        const item = await prisma.ordem_producao_item.findFirstOrThrow({
+          where: { id_ordem_producao: id },
+        })
+        const recorded = await fetch(
+          `http://127.0.0.1:${port}/api/ordem_producao/${id}/itens/${item.id}/producao`,
+          {
+            method: "PUT",
+            headers: {
+              authorization,
+              "X-Empresa-Id": String(empresas[0]),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              quantidade_produzida: "3.750",
+              quantidade_esperada: "0",
+            }),
+          },
+        )
+        assert.equal(recorded.status, 200, await recorded.text())
         const closed = await call(
           "POST",
           `/${id}/etapas/concluir`,
@@ -441,7 +460,7 @@ export async function testarApi(
         assert.ok(closed.ordem.data_conclusao)
         assert.equal(
           closed.ordem.ordem_producao_item[0].quantidade_produzida,
-          "4",
+          "3.75",
         )
         assert.equal(closed.baixaEstoque, "pendente")
         assert.equal(closed.perdaAplicada, false)

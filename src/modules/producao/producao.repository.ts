@@ -2,13 +2,14 @@ import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { conflitoPersistencia } from "./producao.errors"
+import { HttpError } from "@/lib/api/errors"
 
-export class ProducaoError extends Error {
+export class ProducaoError extends HttpError {
   constructor(
     public status: number,
     message: string,
   ) {
-    super(message)
+    super(status, message)
   }
 }
 export type Contexto = { idUsuario: number; idEmpresa: number }
@@ -52,6 +53,8 @@ export async function transacao<T>(operation: (tx: Transaction) => Promise<T>) {
   }
 }
 export async function buscarOrdem(tx: Transaction, ctx: Contexto, id: number) {
+  // Compartilhado pelos endpoints novos e legados: releitura após lock da ordem.
+  await tx.$queryRaw`SELECT id FROM ordem_producao WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa} FOR UPDATE`
   const ordem = await tx.ordem_producao.findFirst({
     where: { id, id_empresa: ctx.idEmpresa },
     include,
@@ -98,8 +101,8 @@ export async function proximoNumero(tx: Transaction, idEmpresa: number) {
 export async function auditar(
   tx: Transaction,
   ctx: Contexto,
-  antes: Ordem | null,
-  depois: Ordem,
+  antes: object | null,
+  depois: { id: number } & object,
 ) {
   await tx.auditoria.create({
     data: {
@@ -184,12 +187,4 @@ export function registrarInicioSetor(
       data_recebimento: new Date(),
     },
   })
-}
-export async function confirmarQuantidades(tx: Transaction, ordem: Ordem) {
-  for (const item of ordem.ordem_producao_item) {
-    await tx.ordem_producao_item.update({
-      where: { id: item.id },
-      data: { quantidade_produzida: item.quantidade },
-    })
-  }
 }
