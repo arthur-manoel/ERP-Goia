@@ -1,7 +1,8 @@
 import { TelaModulo } from "@/features/erp/components/tela-modulo"
+import { ClientesApiView } from "./clientes-api-view"
 
 export function TelaClientes() {
-  return <TelaModulo module="comercial" initialTab="clients" />
+  return <ClientesApiView />
 }
 
 export function TelaFornecedores() {
