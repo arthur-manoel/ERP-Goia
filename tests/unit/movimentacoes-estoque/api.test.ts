@@ -36,7 +36,7 @@ const payload = {
 const request = (body: unknown = payload, empresa = "10") =>
   new Request("http://localhost/api/estoque/entradas", {
     method: "POST",
-    headers: { "X-Empresa-Id": empresa },
+    headers: { "X-Empresa-Id": empresa, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
 const vinculo = (id_empresa = 10, admin = false) => ({

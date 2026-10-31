@@ -44,7 +44,9 @@ export async function autorizar(
   const admin =
     vinculo.nivel_acesso === "EMPRESA" ||
     vinculo.usuarios.nivel_acesso === "ADMIN"
-  if (!admin && !vinculo.permissoes_usuario[0]?.[`pode_${acao}`])
+  const permissao = vinculo.permissoes_usuario[0]
+  // As escritas devolvem saldos: criar/editar nunca concede leitura por si só.
+  if (!admin && (!permissao?.[`pode_${acao}`] || !permissao.pode_ler))
     throw new HttpError(403, "Acesso negado ao estoque.")
   return { idEmpresa: vinculo.id_empresa, idUsuario }
 }

@@ -5,9 +5,9 @@ em `src/modules/movimentacoes-estoque`. Usa o schema existente, sem DDL ou migra
 
 | Método | Rota | Permissão ESTOQUE |
 | --- | --- | --- |
-| POST | `/api/estoque/entradas` | `pode_criar` |
-| POST | `/api/estoque/saidas` | `pode_criar` |
-| POST | `/api/estoque/ajustes` | `pode_editar` |
+| POST | `/api/estoque/entradas` | `pode_criar` e `pode_ler` |
+| POST | `/api/estoque/saidas` | `pode_criar` e `pode_ler` |
+| POST | `/api/estoque/ajustes` | `pode_editar` e `pode_ler` |
 | GET | `/api/estoque/saldo?idProduto=1&idLocalEstoque=2` | `pode_ler` |
 
 Todas exigem `Authorization: Bearer <JWT>`. `X-Empresa-Id` seleciona um vínculo
@@ -16,6 +16,11 @@ vínculo e permissão são consultados no banco. ADMIN e nível EMPRESA dispensa
 a permissão específica, mas nunca o vínculo ativo. Os quatro perfis existentes
 são aceitos, respeitando essas permissões. Campos de empresa, usuário, origem,
 data e tipo de movimento não podem ser enviados no corpo.
+
+As escritas também exigem leitura porque retornam `saldoAnterior` e `saldoAtual`.
+Permissão de criar ou editar, isoladamente, não permite consultar essas quantidades.
+POSTs exigem `Content-Type: application/json` e leem no máximo 64 KiB, mesmo sem
+`Content-Length`. Mensagens de validação são apresentadas em português.
 
 ## Entrada e saída
 
@@ -95,12 +100,24 @@ primeira escrita registra uma abertura `SALDO_INICIAL` com o saldo antigo,
 kardex e auditoria, antes do movimento solicitado. A resposta identifica essa
 abertura em `idMovimentacaoAbertura`. Para ajustar um legado, use seu
 `saldoArmazenado` como `saldoEsperado`. Se a operação falhar, a abertura também
-é revertida. Saldo legado negativo é bloqueado. Se já há histórico e ele diverge
-da projeção, a escrita retorna 409; não tenta corrigir a divergência silenciosamente.
+é revertida. Saldo legado negativo é bloqueado.
+
+O recebimento de compras e esta API compartilham `estoque/estoque.livro.ts`: usam
+o mesmo lock de produto e registram a abertura antes de somar novas entradas.
+Para posições afetadas pelo recebimento antigo, a abertura só é recuperada quando
+**todos** os movimentos existentes são recebimentos de compras e cada kardex
+comprova empresa, local, setor, quantidade, saldo anterior/atual e continuidade.
+O último saldo precisa coincidir com a posição armazenada. O saldo inicial vem
+do primeiro kardex, nunca de uma diferença presumida. A abertura fica datada um
+segundo antes do primeiro recebimento; sua auditoria, criada no momento da operação,
+registra `fundamento: KARDEX_COMPRAS` e os IDs da cadeia usada como prova. A resposta
+identifica a abertura em `idMovimentacaoAbertura`. Sem prova completa ou havendo
+movimentos de outra origem, retorna 409 e não altera nada. Não é uma reconciliação
+genérica de históricos divergentes.
 
 Reservas não alteram o saldo físico e não são consumidas por esta API. A saída
 verifica o físico total, preservando `quantidade_reservada`. Liberação de reservas,
-transferência entre locais, integração de compras/vendas/OP e custeio ficam fora
+transferência entre locais, criação de compras/vendas/OP e custeio ficam fora
 deste contrato. `valor_total` permanece no default existente, sem recalcular custos.
 
 ## Concorrência e erros
@@ -112,6 +129,9 @@ atualizada com condição sobre o saldo anterior. Movimento, projeção, kardex,
 abertura e auditoria são atômicos. Não há repetição automática nem idempotência
 de POST: se houver dúvida sobre a resposta, confira o histórico antes de reenviar.
 Outros módulos que escreverem estoque devem manter esse mesmo protocolo e histórico.
+Disputas do driver MariaDB também são classificadas pelo helper compartilhado
+`prisma-concorrencia.ts`, incluindo P2010/1213, P2010/1205 e DriverAdapterError.
+Falhas inesperadas retornam 500 genérico e os logs não recebem a exceção bruta.
 
 Erros: `{ "error": "mensagem" }`, 400 para dados inválidos, 401 para JWT
 ausente/inválido, 403 para acesso negado, 404 para recursos não disponíveis na

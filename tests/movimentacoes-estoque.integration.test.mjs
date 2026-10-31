@@ -565,6 +565,98 @@ test("Estoque: banco real, autorização, saldo, rollback e concorrência", asyn
       },
     )
     await t.test(
+      "abertura comprovada de compras mantém livro, projeção e auditoria na mesma transação",
+      async () => {
+        const local = await prisma.locais_estoque.create({
+          data: { id_empresa: empresas[0], nome: `${marker}-compras-legado` },
+        })
+        const setor = await prisma.setores.create({
+          data: { id_empresa: empresas[0], nome: `${marker}-compras-legado` },
+        })
+        const posicao = { ...base, idLocalEstoque: local.id, idSetor: setor.id }
+        await prisma.estoque.create({
+          data: {
+            id_empresa: empresas[0],
+            id_local_estoque: local.id,
+            id_setor: setor.id,
+            id_produto: produto.id,
+            quantidade: "15",
+            quantidade_reservada: "1",
+          },
+        })
+        const dataCompra = new Date("2026-10-01T12:00:00Z")
+        const movimento = await prisma.movimentacao_estoque.create({
+          data: {
+            id_empresa: empresas[0],
+            id_local_estoque: local.id,
+            id_setor: setor.id,
+            id_produto: produto.id,
+            tipo: "ENTRADA_NF",
+            quantidade: "5",
+            origem_tipo: "COMPRA_RECEBIMENTO",
+            id_usuario: usuario.id,
+            data_movimentacao: dataCompra,
+          },
+        })
+        await prisma.kardex.create({
+          data: {
+            id_empresa: empresas[0],
+            id_local_estoque: local.id,
+            id_setor: setor.id,
+            id_produto: produto.id,
+            id_movimentacao: movimento.id,
+            tipo_movimentacao: "ENTRADA",
+            quantidade: "5",
+            saldo_anterior: "10",
+            saldo_atual: "15",
+            data_movimentacao: dataCompra,
+          },
+        })
+        // A abertura também deve sumir se a baixa solicitada não puder concluir.
+        const antes = await snapshot()
+        assert.equal(
+          (await chamar(saidaHandler, { ...posicao, quantidade: "16" })).status,
+          409,
+        )
+        assert.equal(await snapshot(), antes)
+        const resultado = await ok(saidaHandler, {
+          ...posicao,
+          quantidade: "2",
+        })
+        assert.equal(resultado.saldoAnterior, "15.000")
+        assert.equal(resultado.saldoAtual, "13.000")
+        assert.ok(resultado.idMovimentacaoAbertura)
+        const abertura = await prisma.movimentacao_estoque.findUnique({
+          where: { id: resultado.idMovimentacaoAbertura },
+        })
+        assert.equal(abertura.quantidade.toFixed(3), "10.000")
+        assert.ok(abertura.data_movimentacao < dataCompra)
+        const audit = await prisma.auditoria.findFirst({
+          where: {
+            tabela: "movimentacao_estoque",
+            id_registro: abertura.id,
+            id_empresa: empresas[0],
+          },
+        })
+        assert.equal(JSON.parse(audit.dados_novos).fundamento, "KARDEX_COMPRAS")
+        const consulta = await saldoHandler(
+          new Request(
+            `http://localhost/api/estoque/saldo?idProduto=${produto.id}&idLocalEstoque=${local.id}`,
+            { headers },
+          ),
+        )
+        const atual = await consulta.json()
+        assert.equal(atual.saldo, "13.000")
+        assert.equal(atual.consistente, true)
+        assert.equal(atual.quantidadeReservada, "1.000")
+        assert.equal(
+          (await ok(entradaHandler, { ...posicao, quantidade: "1" }))
+            .idMovimentacaoAbertura,
+          null,
+        )
+      },
+    )
+    await t.test(
       "primeiras entradas concorrentes criam uma única posição sem perder quantidade",
       async () => {
         const novo = await prisma.produtos.create({

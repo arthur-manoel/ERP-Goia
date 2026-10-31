@@ -2,48 +2,21 @@ import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { ConflictError, NotFoundError } from "@/lib/api/errors"
+import { disputaPersistencia } from "@/lib/prisma-concorrencia"
+import {
+  apurarSaldoEstoque,
+  bloquearProdutoEstoque,
+  prepararSaldoEstoque,
+} from "@/modules/estoque/estoque.livro"
 import type { Contexto } from "./movimentacoes-estoque.authorization"
 import type {
   AjusteInput,
   MovimentoInput,
   Posicao,
 } from "./movimentacoes-estoque.schema"
-import { calcularSaldo, LIMITE } from "./movimentacoes-estoque.service"
+import { calcularSaldo } from "./movimentacoes-estoque.service"
 
 type Tx = Prisma.TransactionClient
-const entradas = [
-  "ENTRADA_NF",
-  "ENTRADA_PRODUCAO",
-  "AJUSTE_ENTRADA",
-  "TRANSFERENCIA_ENTRADA",
-] as const
-async function apurar(
-  tx: Tx,
-  ctx: Contexto,
-  pos: Pick<Posicao, "idProduto" | "idLocalEstoque">,
-) {
-  const where = {
-    id_empresa: ctx.idEmpresa,
-    id_produto: pos.idProduto,
-    id_local_estoque: pos.idLocalEstoque,
-  }
-  const grupos = await tx.movimentacao_estoque.groupBy({
-    by: ["tipo"],
-    where,
-    _sum: { quantidade: true },
-    _count: { _all: true },
-  })
-  let saldo = new Prisma.Decimal(0),
-    registros = 0
-  for (const grupo of grupos) {
-    const valor = grupo._sum.quantidade ?? new Prisma.Decimal(0)
-    saldo = entradas.some((tipo) => tipo === grupo.tipo)
-      ? saldo.plus(valor)
-      : saldo.minus(valor)
-    registros += grupo._count._all
-  }
-  return { saldo, registros }
-}
 async function validarPosicao(
   tx: Tx,
   ctx: Contexto,
@@ -134,11 +107,7 @@ export async function movimentar(
       async (tx) => {
         // Existe mesmo antes da primeira posição. Todas as escritas deste produto
         // aguardam o mesmo lock, inclusive quando locais diferentes são usados.
-        const lock = await tx.$queryRaw<
-          { id: number }[]
-        >`SELECT id FROM produto_empresa WHERE id_empresa = ${ctx.idEmpresa} AND id_produto = ${dados.idProduto} FOR UPDATE`
-        if (!lock.length)
-          throw new NotFoundError("Produto não encontrado na empresa.")
+        await bloquearProdutoEstoque(tx, ctx, dados.idProduto)
         await validarPosicao(tx, ctx, dados)
         const setor = await tx.setores.findFirst({
           where: {
@@ -159,34 +128,8 @@ export async function movimentar(
         })
         if (estoque && estoque.id_setor !== dados.idSetor)
           throw new ConflictError("A posição pertence a outro setor.")
-        const historico = await apurar(tx, ctx, dados)
-        let anterior = historico.saldo
-        let idMovimentacaoAbertura: number | null = null
-        if (estoque && !historico.registros && !estoque.quantidade.isZero()) {
-          if (
-            estoque.quantidade.isNegative() ||
-            estoque.quantidade.greaterThan(LIMITE)
-          )
-            throw new ConflictError(
-              "Saldo legado inválido; regularize antes de movimentar.",
-            )
-          idMovimentacaoAbertura = await registrar(
-            tx,
-            ctx,
-            dados,
-            new Prisma.Decimal(0),
-            estoque.quantidade,
-            "Abertura do saldo legado sem movimentações",
-            "SALDO_INICIAL",
-          )
-          anterior = estoque.quantidade
-        } else if (estoque && !estoque.quantidade.equals(anterior)) {
-          throw new ConflictError(
-            "Saldo armazenado diverge das movimentações. Regularize o histórico antes de movimentar.",
-          )
-        }
-        if (anterior.isNegative() || anterior.greaterThan(LIMITE))
-          throw new ConflictError("Histórico de estoque inválido.")
+        const { saldo: anterior, idMovimentacaoAbertura } =
+          await prepararSaldoEstoque(tx, ctx, dados, estoque)
         const ajuste = "saldoNovo" in dados
         const { atual, delta } = calcularSaldo(
           anterior,
@@ -234,8 +177,9 @@ export async function movimentar(
     )
   } catch (error) {
     if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      ["P2002", "P2003", "P2025", "P2028", "P2034"].includes(error.code)
+      disputaPersistencia(error) ||
+      (error instanceof Prisma.PrismaClientKnownRequestError &&
+        ["P2003", "P2025", "P2028"].includes(error.code))
     )
       throw new ConflictError(
         "Conflito no estoque. Consulte o saldo e tente novamente.",
@@ -250,7 +194,7 @@ export async function consultarSaldo(
   return prisma.$transaction(
     async (tx) => {
       await validarPosicao(tx, ctx, pos)
-      const historico = await apurar(tx, ctx, pos)
+      const historico = await apurarSaldoEstoque(tx, ctx, pos)
       const estoque = await tx.estoque.findUnique({
         where: {
           id_empresa_id_local_estoque_id_produto: {

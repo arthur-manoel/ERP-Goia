@@ -114,7 +114,7 @@
             "exec": [
               "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
               "const r=pm.response.json();",
-              "pm.collectionVariables.set('saldoEsperado', r.precisaAbertura ? r.saldoArmazenado : r.saldo);"
+              "pm.collectionVariables.set('saldoEsperado', r.saldoArmazenado);"
             ]
           }
         }

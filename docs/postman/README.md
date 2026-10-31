@@ -51,9 +51,12 @@ por `saldoNovo` e `saldoEsperado`. Consulta:
 GET `/api/estoque/saldo?idProduto=1&idLocalEstoque=2`.
 
 Saldo legado sem movimentações pode retornar `precisaAbertura: true`. Nesse caso,
-a coleção usa `saldoArmazenado` como saldo esperado; a primeira escrita registra
+a coleção sempre usa `saldoArmazenado` como saldo esperado; a primeira escrita registra
 a abertura dentro da mesma transação. Divergência com histórico existente retorna
-409 e exige investigação antes de continuar.
+409 e exige investigação antes de continuar, salvo a abertura antiga de compras
+comprovada por toda a cadeia de kardex e auditada pelo backend. Isso também cobre
+o legado que já recebeu compras: a consulta pode mostrar histórico 5 e saldo
+armazenado 15; o ajuste deve esperar 15, não 5.
 
 Se o token expirar, execute o login novamente. Repetir todo o fluxo exige começar
 pela etapa 02 para atualizar o saldo esperado. Não exporte a coleção com senha ou
