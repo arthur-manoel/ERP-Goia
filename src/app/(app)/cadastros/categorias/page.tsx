@@ -1,17 +1,8 @@
 import type { Metadata } from "next"
-import { EmConstrucao } from "@/components/layout/em-construcao"
-import { PageHeader } from "@/components/layout/page-header"
+import { TelaCategorias } from "@/features/categorias/components/tela-categorias"
 
-export const metadata: Metadata = { title: "Categorias" }
+export const metadata: Metadata = { title: "Categorias de produto" }
 
 export default function Page() {
-  return (
-    <>
-      <PageHeader
-        titulo="Categorias"
-        descricao="Categorias para organizar os produtos."
-      />
-      <EmConstrucao tabelas={["categorias"]} />
-    </>
-  )
+  return <TelaCategorias />
 }

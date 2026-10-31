@@ -13,7 +13,9 @@ type Bucket = { count: number; resetAt: number }
 const buckets = new Map<string, Bucket>()
 const maxBuckets = 5_000
 
-function clientKey(request: Request) {
+function clientKey(request: Request, subject?: string) {
+  if (subject !== undefined)
+    return createHash("sha256").update(`user:${subject}`).digest("hex")
   const rawAuthorization = request.headers.get("authorization") ?? ""
   const bearer = /^\s*Bearer\s+(.+?)\s*$/i.exec(rawAuthorization)
   const token = bearer?.[1]
@@ -33,10 +35,14 @@ function discardExpired(now: number) {
 }
 
 /** Limite local por processo. Para múltiplas instâncias, use uma store partilhada. */
-export function enforceRateLimit(request: Request, config: RateLimit) {
+export function enforceRateLimit(
+  request: Request,
+  config: RateLimit,
+  subject?: string,
+) {
   const now = Date.now()
   discardExpired(now)
-  const key = `${config.scope}:${clientKey(request)}`
+  const key = `${config.scope}:${clientKey(request, subject)}`
   const current = buckets.get(key)
   if (current) {
     if (current.count >= config.limit)

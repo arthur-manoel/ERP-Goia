@@ -44,6 +44,7 @@ import type { EstadoPosicaoEstoque, PosicaoEstoque } from "../tipos"
 import { FormularioMinimoLocal } from "./formulario-minimo-local"
 
 type FiltroEstado = EstadoPosicaoEstoque | "TODOS"
+type TipoProduto = { id: number; nome: string }
 
 const rotulos: Record<EstadoPosicaoEstoque, string> = {
   SEM_ESTOQUE: "Sem estoque",
@@ -71,6 +72,29 @@ async function consultarPosicoes(
     posicoes: PosicaoEstoque[]
     podeEditar: boolean
   }
+}
+
+async function consultarTiposProduto(
+  requisitar: (url: string, init?: RequestInit) => Promise<Response>,
+) {
+  const tipos: TipoProduto[] = []
+  let pagina = 1
+  let totalPaginas = 1
+
+  do {
+    const response = await requisitar(
+      `/api/tipos_produto?page=${pagina}&limit=100`,
+    )
+    if (!response.ok) throw new Error(await mensagemErro(response))
+    const body = (await response.json()) as {
+      data: { rows: TipoProduto[]; totalPages: number }
+    }
+    tipos.push(...body.data.rows)
+    totalPaginas = body.data.totalPages
+    pagina += 1
+  } while (pagina <= totalPaginas)
+
+  return tipos
 }
 
 function BadgeEstado({ estado }: { estado: EstadoPosicaoEstoque }) {
@@ -133,7 +157,56 @@ export function TelaPosicoesEstoque({
   const versao = useRef(0)
   const [busca, setBusca] = useState("")
   const [estado, setEstado] = useState<FiltroEstado>("TODOS")
+  const [tipoSelecionado, setTipoSelecionado] = useState("")
+  const [tiposProduto, setTiposProduto] = useState<TipoProduto[]>([])
+  const [chaveTipos, setChaveTipos] = useState<string | null>(null)
+  const [erroTipos, setErroTipos] = useState<string | null>(null)
+  const versaoTipos = useRef(0)
   const [selecionada, setSelecionada] = useState<PosicaoEstoque | null>(null)
+
+  const recarregarTipos = useCallback(async () => {
+    if (!chave) return
+    const atual = ++versaoTipos.current
+    try {
+      const tipos = await consultarTiposProduto(requisitar)
+      if (atual !== versaoTipos.current) return
+      setTiposProduto(tipos)
+      setChaveTipos(chave)
+      setErroTipos(null)
+    } catch (error) {
+      if (atual !== versaoTipos.current) return
+      setTipoSelecionado("")
+      setErroTipos(
+        error instanceof Error ? error.message : "Falha ao consultar tipos.",
+      )
+      setChaveTipos(chave)
+    }
+  }, [chave, requisitar])
+
+  useEffect(() => {
+    if (!somenteInsumos || estadoAutenticacao !== "autenticado" || !empresa)
+      return
+    const atual = ++versaoTipos.current
+    void consultarTiposProduto(requisitar).then(
+      (tipos) => {
+        if (atual !== versaoTipos.current) return
+        setTiposProduto(tipos)
+        setChaveTipos(chave)
+        setErroTipos(null)
+      },
+      (error: unknown) => {
+        if (atual !== versaoTipos.current) return
+        setTipoSelecionado("")
+        setErroTipos(
+          error instanceof Error ? error.message : "Falha ao consultar tipos.",
+        )
+        setChaveTipos(chave)
+      },
+    )
+    return () => {
+      versaoTipos.current += 1
+    }
+  }, [somenteInsumos, estadoAutenticacao, empresa, requisitar, chave])
 
   const recarregar = useCallback(async () => {
     const atual = ++versao.current
@@ -181,18 +254,23 @@ export function TelaPosicoesEstoque({
     }
   }, [estadoAutenticacao, empresa, chave, requisitar, somenteInsumos])
 
-  const filtradas = useMemo(
-    () =>
-      posicoes.filter((posicao) => {
-        const correspondeEstado =
-          estado === "TODOS" || posicao.estado === estado
-        const texto = normalizar(
-          `${posicao.produto} ${posicao.codigo} ${posicao.tipo} ${posicao.local}`,
-        )
-        return correspondeEstado && texto.includes(normalizar(busca))
-      }),
-    [busca, estado, posicoes],
-  )
+  const filtradas = useMemo(() => {
+    const nomeTipo = tiposProduto.find(
+      (tipo) => String(tipo.id) === tipoSelecionado,
+    )?.nome
+    return posicoes.filter((posicao) => {
+      const correspondeEstado = estado === "TODOS" || posicao.estado === estado
+      const correspondeTipo = !tipoSelecionado || posicao.tipo === nomeTipo
+      const texto = normalizar(
+        `${posicao.produto} ${posicao.codigo} ${posicao.tipo} ${posicao.local}`,
+      )
+      return (
+        correspondeEstado &&
+        correspondeTipo &&
+        texto.includes(normalizar(busca))
+      )
+    })
+  }, [busca, estado, posicoes, tipoSelecionado, tiposProduto])
 
   const alertas = posicoes.filter((posicao) =>
     ["SEM_ESTOQUE", "ABAIXO_MINIMO", "NO_MINIMO"].includes(posicao.estado),
@@ -251,6 +329,7 @@ export function TelaPosicoesEstoque({
         value={empresa ? String(empresa.id) : ""}
         onValueChange={(valor) => {
           setSelecionada(null)
+          setTipoSelecionado("")
           selecionarEmpresa(Number(valor))
         }}
         label="Empresa ativa"
@@ -351,7 +430,43 @@ export function TelaPosicoesEstoque({
             })),
           ]}
         />
+        {somenteInsumos && (
+          <div className="w-full sm:w-[240px]">
+            <SearchSelect
+              value={tipoSelecionado}
+              onValueChange={setTipoSelecionado}
+              label="Filtrar por tipo de produto"
+              placeholder={
+                chaveTipos === chave && !erroTipos
+                  ? "Todos os tipos de produto"
+                  : "Carregando tipos..."
+              }
+              disabled={chaveTipos !== chave || !!erroTipos}
+              options={[
+                { value: "", label: "Todos os tipos de produto" },
+                ...tiposProduto.map((tipo) => ({
+                  value: String(tipo.id),
+                  label: tipo.nome,
+                })),
+              ]}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Tipos de produto compartilhados entre empresas.
+            </p>
+          </div>
+        )}
       </div>
+
+      {somenteInsumos && erroTipos && chaveTipos === chave && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            <span>Filtro por tipo indisponível: {erroTipos}</span>
+            <Button variant="outline" onClick={() => void recarregarTipos()}>
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="overflow-hidden rounded-lg border">
         <Table>
