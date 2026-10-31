@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto"
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import {
+  bloquearProdutoEstoque,
+  prepararSaldoEstoque,
+} from "@/modules/estoque/estoque.livro"
+import {
   ComprasError,
   auditar,
   escaparLike,
@@ -1029,6 +1033,7 @@ async function entradaEstoque(
   idSetorInformado: number | null | undefined,
   observacao: string,
 ) {
+  await bloquearProdutoEstoque(tx, ctx, item.id_produto)
   const existente = await tx.estoque.findFirst({
     where: {
       id_empresa: ctx.idEmpresa,
@@ -1059,7 +1064,17 @@ async function entradaEstoque(
       )
     idSetor = idSetorInformado
   }
-  const anterior = existente ? qtd(existente.quantidade) : "0.000"
+  const preparado = await prepararSaldoEstoque(
+    tx,
+    ctx,
+    {
+      idProduto: item.id_produto,
+      idLocalEstoque: compra.id_local_estoque,
+      idSetor,
+    },
+    existente,
+  )
+  const anterior = preparado.saldo.toFixed(3)
   const novo = somarQuantidades(anterior, quantidade)
   if (existente)
     await tx.estoque.update({

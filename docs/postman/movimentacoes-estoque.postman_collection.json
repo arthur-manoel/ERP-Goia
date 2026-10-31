@@ -1,0 +1,545 @@
+{
+  "info": {
+    "name": "ERP Goia - Movimentacoes e saldo de estoque",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Use um produto/local/setor exclusivo para testes: o fluxo altera o saldo dessa posicao. Preencha as variaveis da colecao e execute em ordem. Se o saldo inicial ja for 10, pule o passo 03 (ajuste sem diferenca retorna 400). Produto deve controlar estoque, ter vinculo ativo com a empresa; local e setor ativos e da mesma empresa. Usuario precisa ler/criar/editar ESTOQUE. A etapa 12 envia duas baixas em paralelo. Token e senha ficam somente no Postman."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idEmpresa",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idProduto",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idLocalEstoque",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idSetor",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "saldoEsperado",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Login e salvar token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.expect(pm.response.json().accessToken).to.be.a('string');",
+              "pm.collectionVariables.set('token', pm.response.json().accessToken);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "auth": {
+          "type": "noauth"
+        },
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "02 - Consultar saldo inicial",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.collectionVariables.set('saldoEsperado', r.saldoArmazenado);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/saldo?idProduto={{idProduto}}&idLocalEstoque={{idLocalEstoque}}"
+      }
+    },
+    {
+      "name": "03 - Preparar saldo 10",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('saldoEsperado', r.saldoAtual);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/ajustes",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"idProduto\": {{idProduto}},\n  \"idLocalEstoque\": {{idLocalEstoque}},\n  \"idSetor\": {{idSetor}},\n  \"saldoNovo\": \"10.000\",\n  \"saldoEsperado\": \"{{saldoEsperado}}\",\n  \"observacao\": \"Inventario de teste Postman\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "04 - Entrada de 2: saldo 12",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('saldoEsperado', r.saldoAtual);",
+              "pm.expect(r.saldoAtual).to.eql('12.000');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/entradas",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"idProduto\": {{idProduto}},\n  \"idLocalEstoque\": {{idLocalEstoque}},\n  \"idSetor\": {{idSetor}},\n  \"quantidade\": \"2.000\",\n  \"observacao\": \"Teste Postman de movimentacoes\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "05 - Saida de 3: saldo 9",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('saldoEsperado', r.saldoAtual);",
+              "pm.expect(r.saldoAtual).to.eql('9.000');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/saidas",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"idProduto\": {{idProduto}},\n  \"idLocalEstoque\": {{idLocalEstoque}},\n  \"idSetor\": {{idSetor}},\n  \"quantidade\": \"3.000\",\n  \"observacao\": \"Teste Postman de movimentacoes\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "06 - Ajustar para 8",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "const r = pm.response.json();",
+              "pm.collectionVariables.set('saldoEsperado', r.saldoAtual);",
+              "pm.expect(r.saldoAtual).to.eql('8.000');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/ajustes",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"idProduto\": {{idProduto}},\n  \"idLocalEstoque\": {{idLocalEstoque}},\n  \"idSetor\": {{idSetor}},\n  \"saldoNovo\": \"8.000\",\n  \"saldoEsperado\": \"{{saldoEsperado}}\",\n  \"observacao\": \"Inventario de teste Postman\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "07 - Saida insuficiente de 9: 409",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/saidas",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"idProduto\": {{idProduto}},\n  \"idLocalEstoque\": {{idLocalEstoque}},\n  \"idSetor\": {{idSetor}},\n  \"quantidade\": \"9.000\",\n  \"observacao\": \"Teste Postman de movimentacoes\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "08 - Ajuste com saldo esperado desatualizado: 409",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/ajustes",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"idProduto\": {{idProduto}},\n  \"idLocalEstoque\": {{idLocalEstoque}},\n  \"idSetor\": {{idSetor}},\n  \"saldoNovo\": \"5.000\",\n  \"saldoEsperado\": \"7.000\",\n  \"observacao\": \"Inventario de teste Postman\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "09 - Quantidade zero: 400",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/entradas",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"idProduto\": {{idProduto}},\n  \"idLocalEstoque\": {{idLocalEstoque}},\n  \"idSetor\": {{idSetor}},\n  \"quantidade\": \"0\",\n  \"observacao\": \"Teste Postman de movimentacoes\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "10 - Sem token: 401",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "auth": {
+          "type": "noauth"
+        },
+        "url": "{{baseUrl}}/api/estoque/saldo?idProduto={{idProduto}}&idLocalEstoque={{idLocalEstoque}}"
+      }
+    },
+    {
+      "name": "11 - Confirmar saldo 8 antes da concorrencia",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.expect(r.saldo).to.eql('8.000');",
+              "pm.expect(r.consistente).to.eql(true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/saldo?idProduto={{idProduto}}&idLocalEstoque={{idLocalEstoque}}"
+      }
+    },
+    {
+      "name": "12 - Duas saidas simultaneas de 6: uma vence, saldo 2",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.expect(pm.response.json().saldo, 'Execute os passos anteriores para chegar a 8').to.eql('8.000');",
+              "const headers = {'Content-Type':'application/json', 'Authorization':'Bearer '+pm.collectionVariables.get('token'), 'X-Empresa-Id':pm.collectionVariables.get('idEmpresa')};",
+              "const data={idProduto:Number(pm.collectionVariables.get('idProduto')),idLocalEstoque:Number(pm.collectionVariables.get('idLocalEstoque')),idSetor:Number(pm.collectionVariables.get('idSetor')),quantidade:'6.000',observacao:'Concorrencia Postman'};",
+              "const opts={url:pm.collectionVariables.get('baseUrl')+'/api/estoque/saidas',method:'POST',header:headers,body:{mode:'raw',raw:JSON.stringify(data)}};",
+              "const results=[]; let pending=2;",
+              "function done(err,res){",
+              "  pm.test('Requisicao concorrente respondeu',()=>pm.expect(err).to.equal(null));",
+              "  if(res) results.push(res.code);",
+              "  if(--pending) return;",
+              "  pm.test('Somente uma baixa aceita: 201 e 409',()=>pm.expect(results.sort()).to.eql([201,409]));",
+              "  pm.sendRequest({url:pm.variables.replaceIn('{{baseUrl}}/api/estoque/saldo?idProduto={{idProduto}}&idLocalEstoque={{idLocalEstoque}}'),method:'GET',header:headers},(e,r)=>{",
+              "    pm.test('Saldo final 2 e consistente',()=>{pm.expect(e).to.equal(null);pm.expect(r.code).to.eql(200);pm.expect(r.json().saldo).to.eql('2.000');pm.expect(r.json().consistente).to.eql(true);});",
+              "  });",
+              "}",
+              "pm.sendRequest(opts,done); pm.sendRequest(opts,done);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/saldo?idProduto={{idProduto}}&idLocalEstoque={{idLocalEstoque}}"
+      }
+    },
+    {
+      "name": "13 - Consultar saldo final 2",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.expect(r.saldo).to.eql('2.000');",
+              "pm.expect(r.saldoArmazenado).to.eql('2.000');",
+              "pm.expect(r.consistente).to.eql(true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Empresa-Id",
+            "value": "{{idEmpresa}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/estoque/saldo?idProduto={{idProduto}}&idLocalEstoque={{idLocalEstoque}}"
+      }
+    }
+  ]
+}
