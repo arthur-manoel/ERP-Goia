@@ -1,6 +1,7 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
+import { serializarJsonTextMysql } from "@/lib/limites-texto"
 import type { Contexto } from "./pedidos.authorization"
 import type { ListarInput } from "./pedidos.schema"
 import { PedidoError } from "./pedidos.error"
@@ -254,8 +255,16 @@ export async function auditar(
       tabela: "pedido_cliente",
       id_registro: depois.id,
       acao: antes ? "UPDATE" : "INSERT",
-      dados_anteriores: antes ? JSON.stringify(dto(antes)) : null,
-      dados_novos: JSON.stringify(dto(depois)),
+      dados_anteriores: antes
+        ? serializarJsonTextMysql(
+            dto(antes),
+            (mensagem) => new PedidoError(400, mensagem),
+          )
+        : null,
+      dados_novos: serializarJsonTextMysql(
+        dto(depois),
+        (mensagem) => new PedidoError(400, mensagem),
+      ),
     },
   })
 }
