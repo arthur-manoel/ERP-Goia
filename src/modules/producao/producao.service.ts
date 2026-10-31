@@ -22,7 +22,11 @@ import {
 
 import * as fluxos from "../fluxos/fluxos.repository"
 import { validarFluxo } from "../fluxos/fluxos.service"
-import { ready, confirmarQuantidades } from "./ordem.validation"
+import {
+  ready,
+  confirmarQuantidades,
+  validarApontamentoLegado,
+} from "./ordem.validation"
 
 const limite = new Prisma.Decimal("999999999999.999")
 export function calcularInsumos(
@@ -371,31 +375,7 @@ export async function encerrarOrdemNaTransacao(
       409,
       "Conclua a última etapa para encerrar esta ordem.",
     )
-  const fluxo = ordem.ordem_producao_fluxo_setor
-  if (fluxo.length) {
-    if (ordem.id_setor !== fluxo[fluxo.length - 1].id_setor)
-      throw new ProducaoError(
-        409,
-        "Percorra todos os setores antes de encerrar.",
-      )
-    let ultimoId = 0
-    for (let index = 0; index < fluxo.length; index++) {
-      const movimento = ordem.ordem_producao_movimentacao_setor.find(
-        (mov) =>
-          mov.id > ultimoId &&
-          mov.status === "ENTREGUE" &&
-          mov.data_recebimento &&
-          mov.id_setor_destino === fluxo[index].id_setor &&
-          mov.id_setor_origem === (fluxo[index - 1]?.id_setor ?? null),
-      )
-      if (!movimento)
-        throw new ProducaoError(
-          409,
-          "O histórico não comprova a passagem por todos os setores.",
-        )
-      ultimoId = movimento.id
-    }
-  }
+  validarApontamentoLegado(ordem)
   await confirmarQuantidades(tx, ordem)
   await atualizarEstado(tx, ctx, ordem, {
     status: "CONCLUIDA",

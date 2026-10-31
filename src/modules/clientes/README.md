@@ -131,6 +131,10 @@ Falhas inesperadas retornam exclusivamente **500 `{ "error": "Erro interno" }`**
 
 ## Verificação
 
+A interface `/cadastros/clientes` usa este contrato diretamente. Busca por documento exige o valor completo e válido. O formulário envia camelCase, sem empresa no corpo, e omite na edição os campos que não foram alterados. Contatos/documento/endereço podem ser limpos com `null`; ações de situação usam DELETE para inativar e PATCH com `status: ATIVO` para reativar.
+
+O seletor usa `/api/auth/contexto` para obter vínculos ativos. Isso não concede permissões de CLIENTES: os handlers continuam exigindo o perfil, vínculo e autorização de cada operação.
+
 ```bash
 node tests/clientes.test.mjs
 node tests/clientes.integration.test.mjs

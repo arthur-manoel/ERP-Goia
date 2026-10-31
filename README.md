@@ -59,6 +59,14 @@ As variações podem ser cadastradas nos produtos prontos do estoque (unidades o
 
 **Status: front-end com adaptador temporário em memória.** Não cria reservas, não persiste após recarregar e não está conectado ao banco. Cadastros separados de cores/tamanhos, numeração automática e integração com as tabelas reais continuam pendentes. Nenhum dado de demonstração é carregado na aplicação.
 
+### Interface de clientes
+
+A tela `/cadastros/clientes` consulta `/api/clientes` com busca por nome, CPF/CNPJ completo, situação e paginação executadas no servidor. Cadastro, consulta individual, edição parcial, inativação/reativação e histórico paginado de vendas usam as rotas autenticadas existentes.
+
+Somente nome/razão social é obrigatório. O formulário compartilha a validação da API para CPF/CNPJ (inclusive alfanumérico), UF e CEP; opcionais vazios são enviados como `null`. A edição envia apenas campos alterados, preservando documentos legados não modificados. A troca de empresa reinicia a tela e cancela consultas pendentes.
+
+O contexto `/api/auth/contexto` fornece os vínculos ativos para seleção de empresa, sem exigir acesso a estoque. A autorização de `CLIENTES` permanece no servidor por operação. Nenhum schema, migration, permissão ou dado de demonstração foi adicionado ao fluxo real. A tela de fornecedores continua na sua implementação própria.
+
 ### Interface de insumos
 
 A tela `/estoque/insumos` reúne as posições físicas reais de produtos marcados para compra e não para venda, com busca e filtros por situação. A tela `/estoque` consolida insumos e produtos acabados. Ambas mostram depósito/localização, saldo físico, mínimo local, déficit e estados distintos para zerado, abaixo, exatamente no mínimo, regular e sem configuração.

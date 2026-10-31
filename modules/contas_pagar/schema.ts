@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { textoMysqlSchema } from "@/lib/limites-texto"
 import { Prisma } from "../../src/generated/prisma/client"
 
 const positiveId = z.number().int().positive().max(2_147_483_647)
@@ -60,7 +61,7 @@ const fields = {
   numero_parcela: installment,
   total_parcelas: installment,
   descricao: z.string().trim().max(255).nullable().optional(),
-  observacao: z.string().max(65_535).nullable().optional(),
+  observacao: textoMysqlSchema.nullable().optional(),
   situacao: contaPagarSituacaoSchema,
 }
 function validInstallments(

@@ -1,6 +1,9 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
+import { serializarJsonTextMysql } from "@/lib/limites-texto"
+import { HttpError } from "@/lib/api/errors"
+import { disputaPersistencia } from "@/lib/prisma-concorrencia"
 
 export class ComprasError extends Error {
   constructor(
@@ -60,12 +63,17 @@ export async function gravacao<T>(
       { isolationLevel: "Serializable" },
     )
   } catch (error) {
+    if (
+      error instanceof HttpError &&
+      (error.status === 404 || error.status === 409)
+    )
+      throw new ComprasError(error.status, error.message)
+    if (disputaPersistencia(error))
+      throw new ComprasError(
+        409,
+        "Conflito de cadastro ou operação concorrente. Atualize a tela e tente novamente.",
+      )
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (["P2002", "P2034"].includes(error.code))
-        throw new ComprasError(
-          409,
-          "Conflito de cadastro ou operação concorrente. Atualize a tela e tente novamente.",
-        )
       if (["P2000", "P2020"].includes(error.code))
         throw new ComprasError(400, "Há valores fora dos limites permitidos.")
       if (["P2003", "P2004", "P2025"].includes(error.code))
@@ -114,8 +122,16 @@ export function auditar(
       tabela,
       id_registro: idRegistro,
       acao: antes ? "UPDATE" : "INSERT",
-      dados_anteriores: antes ? JSON.stringify(antes) : null,
-      dados_novos: JSON.stringify(depois),
+      dados_anteriores: antes
+        ? serializarJsonTextMysql(
+            antes,
+            (mensagem) => new ComprasError(400, mensagem),
+          )
+        : null,
+      dados_novos: serializarJsonTextMysql(
+        depois,
+        (mensagem) => new ComprasError(400, mensagem),
+      ),
     },
   })
 }

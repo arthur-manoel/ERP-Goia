@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { textoMysqlSchema } from "@/lib/limites-texto"
 import { Prisma } from "../../src/generated/prisma/client"
 const positiveId = z.number().int().positive().max(2_147_483_647)
 export const despesaIdSchema = z
@@ -44,7 +45,7 @@ const fields = {
   data_despesa: date,
   valor: money,
   situacao: despesaSituacaoSchema,
-  observacao: z.string().max(65_535).nullable().optional(),
+  observacao: textoMysqlSchema.nullable().optional(),
 }
 const complete = {
   ...fields,

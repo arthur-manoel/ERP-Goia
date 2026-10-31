@@ -273,6 +273,13 @@ export function operationalCounts(ctx: Contexto, id: number, tx: Transaction) {
         ],
       },
     }),
+    tx.ordem_producao_item.count({
+      where: {
+        id_ordem_producao: id,
+        ...parent,
+        quantidade_produzida: { gt: 0 },
+      },
+    }),
   ])
 }
 export async function conclusionBlockers(

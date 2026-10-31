@@ -7,6 +7,7 @@ import { POST as iniciar } from "../../../src/app/api/ordem_producao/[id]/inicia
 import { POST as pausar } from "../../../src/app/api/ordem_producao/[id]/pausar/route"
 import { POST as retomar } from "../../../src/app/api/ordem_producao/[id]/retomar/route"
 import { POST as concluir } from "../../../src/app/api/ordem_producao/[id]/concluir/route"
+import { POST as encerrarLegado } from "../../../src/app/api/ordens-producao/[id]/encerrar/route"
 import { PUT as apontar } from "../../../src/app/api/ordem_producao/[id]/itens/[itemId]/producao/route"
 import {
   GET as listItems,
@@ -148,6 +149,7 @@ beforeEach(() => {
     db.ordem_producao_movimentacao_setor,
     db.ordem_producao_apontamento,
     db.contas_pagar,
+    db.ordem_producao_item,
   ])
     model.count.mockResolvedValue(0)
   db.produto_empresa.findFirst.mockResolvedValue({ id: 1 })
@@ -599,6 +601,170 @@ it("pendências operacionais impedem conclusão antes de atualizar a etapa", asy
   expect((await concluir(await req("POST"), context())).status).toBe(409)
   expect(db.$executeRaw).not.toHaveBeenCalled()
   expect(row.status).toBe("EM_PRODUCAO")
+})
+function legacyProduction() {
+  production()
+  snapshot = false
+  stages = []
+  row.id_setor = null
+}
+const itemContext = () => ({
+  params: Promise.resolve({ id: "1", itemId: "8" }),
+})
+it("ordem legada sem etapas pode apontar e concluir sem criar etapa fictícia", async () => {
+  legacyProduction()
+  expect((await concluir(await req("POST"), context())).status).toBe(409)
+  const body = { quantidade_produzida: "7.125", quantidade_esperada: "0" }
+  expect((await apontar(await req("PUT", body), itemContext())).status).toBe(
+    200,
+  )
+  expect((await apontar(await req("PUT", body), itemContext())).status).toBe(
+    200,
+  )
+  expect(db.ordem_producao_item.updateMany).toHaveBeenCalledOnce()
+  expect(db.ordem_producao_apontamento.create).not.toHaveBeenCalled()
+  expect(db.ordem_producao_fluxo_setor.createMany).not.toHaveBeenCalled()
+  expect(db.auditoria.create).toHaveBeenCalledOnce()
+  const audit = JSON.parse(
+    db.auditoria.create.mock.calls[0][0].data.dados_novos,
+  )
+  expect(audit.apontamento).toMatchObject({
+    fluxo: "LEGADO",
+    id_item: 8,
+    quantidade_anterior: "0",
+    quantidade_produzida: "7.125",
+    delta: "7.125",
+  })
+  expect((await concluir(await req("POST"), context())).status).toBe(200)
+  expect(row.status).toBe("CONCLUIDA")
+  expect(item.quantidade_produzida.toString()).toBe("7.125")
+})
+it("ordem com snapshot sem etapas continua bloqueada", async () => {
+  production()
+  stages = []
+  expect(
+    (
+      await apontar(
+        await req("PUT", {
+          quantidade_produzida: "3",
+          quantidade_esperada: "0",
+        }),
+        itemContext(),
+      )
+    ).status,
+  ).toBe(409)
+  expect(db.ordem_producao_item.updateMany).not.toHaveBeenCalled()
+})
+it("apontamento legado também permite concluir pelo endpoint antigo", async () => {
+  legacyProduction()
+  expect(
+    (
+      await apontar(
+        await req("PUT", {
+          quantidade_produzida: "3",
+          quantidade_esperada: "0",
+        }),
+        itemContext(),
+      )
+    ).status,
+  ).toBe(200)
+  const response = await encerrarLegado(
+    await req("POST", { statusEsperado: "EM_PRODUCAO", setorEsperado: null }),
+    context(),
+  )
+  expect(response.status).toBe(200)
+  expect((await response.json()).ordem.status).toBe("CONCLUIDA")
+})
+it("legado sem início efetivo ou com movimentação pendente não permite apontar", async () => {
+  legacyProduction()
+  row.data_inicio = null
+  const body = { quantidade_produzida: "3", quantidade_esperada: "0" }
+  expect((await apontar(await req("PUT", body), itemContext())).status).toBe(
+    409,
+  )
+  row.data_inicio = new Date(Date.now() - 1000)
+  row.ordem_producao_movimentacao_setor = [{ status: "EM_TRANSITO" }]
+  expect((await apontar(await req("PUT", body), itemContext())).status).toBe(
+    409,
+  )
+  expect(db.ordem_producao_item.updateMany).not.toHaveBeenCalled()
+})
+it("legado com setores exige a passagem por todo o fluxo antes do apontamento", async () => {
+  legacyProduction()
+  row.id_setor = 3
+  row.ordem_producao_fluxo_setor = [
+    { id: 9, id_setor: 3, ordem: 1, status: "PENDENTE" },
+  ]
+  const body = { quantidade_produzida: "3", quantidade_esperada: "0" }
+  expect((await apontar(await req("PUT", body), itemContext())).status).toBe(
+    409,
+  )
+  row.ordem_producao_movimentacao_setor = [
+    {
+      id: 1,
+      id_setor_origem: null,
+      id_setor_destino: 3,
+      status: "ENTREGUE",
+      data_recebimento: new Date(),
+    },
+  ]
+  expect((await apontar(await req("PUT", body), itemContext())).status).toBe(
+    200,
+  )
+  expect((await concluir(await req("POST"), context())).status).toBe(200)
+})
+it.each(["PAUSADA", "CONCLUIDA", "CANCELADA"])(
+  "legado não aceita apontamento no estado %s",
+  async (status) => {
+    legacyProduction()
+    row.status = status
+    expect(
+      (
+        await apontar(
+          await req("PUT", {
+            quantidade_produzida: "3",
+            quantidade_esperada: "0",
+          }),
+          itemContext(),
+        )
+      ).status,
+    ).toBe(409)
+    expect(db.ordem_producao_item.updateMany).not.toHaveBeenCalled()
+  },
+)
+it("legado mantém controle concorrente e não admite reduções diretas", async () => {
+  legacyProduction()
+  const results = await Promise.all(
+    ["3", "4"].map(async (total) =>
+      apontar(
+        await req("PUT", {
+          quantidade_produzida: total,
+          quantidade_esperada: "0",
+        }),
+        itemContext(),
+      ),
+    ),
+  )
+  expect(results.map((r) => r.status).sort()).toEqual([200, 409])
+  expect(db.auditoria.create).toHaveBeenCalledOnce()
+  expect(
+    (
+      await apontar(
+        await req("PUT", {
+          quantidade_produzida: "1",
+          quantidade_esperada: item.quantidade_produzida.toString(),
+        }),
+        itemContext(),
+      )
+    ).status,
+  ).toBe(409)
+})
+it("quantidade legada produzida impede cancelamento mesmo sem linha de apontamento", async () => {
+  legacyProduction()
+  item.quantidade_produzida = decimal(3)
+  db.ordem_producao_item.count.mockResolvedValue(1)
+  expect((await route.DELETE(await req("DELETE"), context())).status).toBe(409)
+  expect(db.ordem_producao.updateMany).not.toHaveBeenCalled()
 })
 it("rate limit usa identidade autenticada mesmo mudando caixa do Bearer e IP", async () => {
   db.ordem_producao.findMany.mockResolvedValue([])

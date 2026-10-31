@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto"
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import {
+  bloquearProdutoEstoque,
+  prepararSaldoEstoque,
+} from "@/modules/estoque/estoque.livro"
+import {
   ComprasError,
   auditar,
   escaparLike,
@@ -21,7 +25,10 @@ import {
   type Transaction,
 } from "./compras.repository"
 import {
+  ObservacaoForaDoLimite,
   excedeQuantidade,
+  observacaoPedidoOrigem,
+  observacaoRecebimento,
   paraEscala,
   proximoStatus,
   quantidadePendente,
@@ -123,6 +130,16 @@ function recebidoEfetivo(
 
 const compraAtiva = <T extends { status: string }>(c: T | null) =>
   c && c.status !== "CANCELADA" ? c : null
+
+function validarObservacao(compor: () => string) {
+  try {
+    return compor()
+  } catch (erro) {
+    if (erro instanceof ObservacaoForaDoLimite)
+      throw new ComprasError(400, erro.message)
+    throw erro
+  }
+}
 /**
  * uk_compra_pedido_legado permite UMA compra por pedido no banco e o schema não pode ser alterado aqui.
  * Ao cancelar, a compra solta o vínculo (id_pedido_compra_legado = NULL) e guarda o pedido de origem na observação;
@@ -133,10 +150,9 @@ const dadosSoltarPedido = (
   observacao: string | null,
 ) => ({
   id_pedido_compra_legado: null,
-  observacao: [`Pedido de origem: ${numeroPedido}`, observacao]
-    .filter(Boolean)
-    .join(" | ")
-    .slice(0, 255),
+  observacao: validarObservacao(() =>
+    observacaoPedidoOrigem(numeroPedido, observacao),
+  ),
 })
 const conflito = (mensagem: string) => new ComprasError(409, mensagem)
 
@@ -1017,6 +1033,7 @@ async function entradaEstoque(
   idSetorInformado: number | null | undefined,
   observacao: string,
 ) {
+  await bloquearProdutoEstoque(tx, ctx, item.id_produto)
   const existente = await tx.estoque.findFirst({
     where: {
       id_empresa: ctx.idEmpresa,
@@ -1047,7 +1064,17 @@ async function entradaEstoque(
       )
     idSetor = idSetorInformado
   }
-  const anterior = existente ? qtd(existente.quantidade) : "0.000"
+  const preparado = await prepararSaldoEstoque(
+    tx,
+    ctx,
+    {
+      idProduto: item.id_produto,
+      idLocalEstoque: compra.id_local_estoque,
+      idSetor,
+    },
+    existente,
+  )
+  const anterior = preparado.saldo.toFixed(3)
   const novo = somarQuantidades(anterior, quantidade)
   if (existente)
     await tx.estoque.update({
@@ -1150,9 +1177,9 @@ export function receberCompra(
         )
     }
 
-    const marca = ` [rec:${chave}]`
-    const texto = `Recebimento da compra ${compra.codigo}${input.observacao ? `: ${input.observacao}` : ""}`
-    const observacao = texto.slice(0, 255 - marca.length) + marca
+    const observacao = validarObservacao(() =>
+      observacaoRecebimento(compra.codigo, chave, input.observacao),
+    )
     for (const s of solicitados)
       await entradaEstoque(
         tx,
@@ -1214,15 +1241,17 @@ export function acaoCompra(ctx: Contexto, id: number, acao: string) {
           "Cancele as notas fiscais vinculadas antes de cancelar a compra.",
         )
     }
+    const dadosVinculo =
+      novo === "CANCELADA" && antes.pedido
+        ? dadosSoltarPedido(antes.pedido.numero, antes.observacao)
+        : {}
     const r = await tx.compras.updateMany({
       where: { id, id_empresa: ctx.idEmpresa, status: antes.status },
       data: {
         status: novo,
         data_atualizacao: new Date(),
         // Cancelada libera o pedido para gerar outra compra (ver dadosSoltarPedido).
-        ...(novo === "CANCELADA" && antes.pedido
-          ? dadosSoltarPedido(antes.pedido.numero, antes.observacao)
-          : {}),
+        ...dadosVinculo,
       },
     })
     if (r.count !== 1)

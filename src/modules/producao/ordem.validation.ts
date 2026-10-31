@@ -104,3 +104,42 @@ export async function confirmarQuantidades(tx: Transaction, ordem: Ordem) {
       "A data de início precisa anteceder a conclusão.",
     )
 }
+
+/** Fluxo antigo não usa os estados de etapa do snapshot. */
+export function validarApontamentoLegado(ordem: Ordem) {
+  if (!ordem.data_inicio || ordem.data_inicio > new Date())
+    fail(
+      "A ordem precisa ter início efetivo válido antes de registrar produção.",
+    )
+  if (
+    ordem.ordem_producao_movimentacao_setor.some(
+      (mov) => mov.status === "EM_TRANSITO",
+    )
+  )
+    fail("A ordem possui movimentação de setor pendente.")
+  const fluxo = ordem.ordem_producao_fluxo_setor
+  if (fluxo.length) {
+    if (ordem.id_setor !== fluxo[fluxo.length - 1].id_setor)
+      throw new ProducaoError(
+        409,
+        "Percorra todos os setores antes de encerrar.",
+      )
+    let ultimoId = 0
+    for (let index = 0; index < fluxo.length; index++) {
+      const movimento = ordem.ordem_producao_movimentacao_setor.find(
+        (mov) =>
+          mov.id > ultimoId &&
+          mov.status === "ENTREGUE" &&
+          mov.data_recebimento &&
+          mov.id_setor_destino === fluxo[index].id_setor &&
+          mov.id_setor_origem === (fluxo[index - 1]?.id_setor ?? null),
+      )
+      if (!movimento)
+        throw new ProducaoError(
+          409,
+          "O histórico não comprova a passagem por todos os setores.",
+        )
+      ultimoId = movimento.id
+    }
+  }
+}

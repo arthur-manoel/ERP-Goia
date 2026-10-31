@@ -1,4 +1,7 @@
 import { assertCompany } from "../catalogos/access"
+import { withCompanyWriteLock } from "../catalogos/transactions"
+import { assertProductCategory } from "../categorias/relations"
+import { disputaPersistencia } from "../../src/lib/prisma-concorrencia"
 import { Prisma } from "../../src/generated/prisma/client"
 import * as repository from "./repository"
 import {
@@ -42,6 +45,10 @@ async function write<T>(operation: () => Promise<T>): Promise<T> {
         )
       }
     }
+    if (disputaPersistencia(error))
+      throw new ConflictError(
+        "Conflito concorrente. Consulte os dados e tente novamente.",
+      )
     throw error
   }
 }
@@ -50,7 +57,15 @@ export async function createProduto(input: unknown, companies: number[]) {
   const data = validate(createProdutoSchema, input)
   assertCompany(data.id_empresa, companies)
   if (await repository.findByCodigo(data.codigo)) throw new ConflictError()
-  return write(() => repository.create(data))
+  const categoryId = data.id_categoria
+  if (categoryId === undefined || categoryId === null)
+    return write(() => repository.create(data))
+  return write(() =>
+    withCompanyWriteLock([data.id_empresa], async (database) => {
+      await assertProductCategory(categoryId, [data.id_empresa], database)
+      return repository.create(data, database)
+    }),
+  )
 }
 
 export async function listProdutos(input: unknown, companies: number[]) {
@@ -78,6 +93,26 @@ export async function updateProduto(
 ) {
   const id = validate(produtoIdSchema, idInput)
   const data = validate(updateProdutoSchema, input)
+  const categoryId = data.id_categoria
+  if (categoryId !== undefined && categoryId !== null) {
+    return write(() =>
+      withCompanyWriteLock(companies, async (database) => {
+        const current = await repository.findWritableWithCompanies(
+          id,
+          companies,
+          database,
+        )
+        if (!current) throw new NotFoundError()
+        const owners = [
+          ...new Set(current.produto_empresa.map((link) => link.id_empresa)),
+        ]
+        await assertProductCategory(categoryId, owners, database)
+        const produto = await repository.update(id, data, companies, database)
+        if (!produto) throw new NotFoundError()
+        return produto
+      }),
+    )
+  }
   const produto = await write(() => repository.update(id, data, companies))
   if (!produto) throw new NotFoundError()
   return produto

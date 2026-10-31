@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  limiteObservacaoRecebimento,
   paraEscala,
   quantidadePendente,
   quantidadeValida,
@@ -225,9 +226,12 @@ export function DialogoReceber({
   const [setor, setSetor] = useState<Ref>(null)
   // Mesma chave em toda tentativa deste diálogo: reenvio após falha de rede não duplica o recebimento/estoque.
   const [chave] = useState(() => crypto.randomUUID())
+  const limiteObservacao = limiteObservacaoRecebimento(compra.codigo, chave)
   const { ocupado, erro, setErro, executar } = useExecutar()
 
   async function salvar() {
+    if (Array.from(obs.trim()).length > limiteObservacao)
+      return setErro(`Observação: use até ${limiteObservacao} caracteres.`)
     const itens: Array<{ idProduto: number; quantidade: string }> = []
     for (const i of pendentes) {
       const q = numero(qtds[i.idProduto] ?? "")
@@ -333,12 +337,11 @@ export function DialogoReceber({
             placeholder="Buscar setor"
           />
         </Campo>
-        <Campo rotulo="Observações deste recebimento">
-          <Textarea
-            maxLength={255}
-            value={obs}
-            onChange={(e) => setObs(e.target.value)}
-          />
+        <Campo
+          rotulo="Observações deste recebimento"
+          ajuda={`Use até ${limiteObservacao} caracteres.`}
+        >
+          <Textarea value={obs} onChange={(e) => setObs(e.target.value)} />
         </Campo>
         {erro && (
           <Alert variant="destructive" role="alert">

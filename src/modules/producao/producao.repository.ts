@@ -1,6 +1,7 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
+import { serializarJsonTextMysql } from "@/lib/limites-texto"
 import { conflitoPersistencia } from "./producao.errors"
 import { HttpError } from "@/lib/api/errors"
 
@@ -111,12 +112,17 @@ export async function auditar(
       tabela: "ordem_producao",
       id_registro: depois.id,
       acao: antes ? "UPDATE" : "INSERT",
-      dados_anteriores: antes ? JSON.stringify(antes) : null,
-      dados_novos: JSON.stringify({
-        ...depois,
-        perdaAplicada: false,
-        baixaEstoque: "pendente",
-      }),
+      dados_anteriores: antes
+        ? serializarJsonTextMysql(antes, (msg) => new ProducaoError(400, msg))
+        : null,
+      dados_novos: serializarJsonTextMysql(
+        {
+          ...depois,
+          perdaAplicada: false,
+          baixaEstoque: "pendente",
+        },
+        (msg) => new ProducaoError(400, msg),
+      ),
     },
   })
 }

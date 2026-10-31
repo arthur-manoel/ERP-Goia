@@ -2,7 +2,11 @@ import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import type { z } from "zod"
 import * as repo from "./ordem.repository"
-import { relationships, ready } from "./ordem.validation"
+import {
+  relationships,
+  ready,
+  validarApontamentoLegado,
+} from "./ordem.validation"
 import {
   auditar,
   buscarOrdem,
@@ -177,6 +181,7 @@ export function cancel(ctx: Contexto, id: number) {
       "movimentações entre setores",
       "apontamentos de produção",
       "obrigações financeiras",
+      "quantidades produzidas registradas",
     ]
     const blocked = reasons.filter((_, index) => effects[index] > 0)
     if (blocked.length)
@@ -349,15 +354,22 @@ export function recordProduction(
       conflict("Apontamentos exigem ordem em produção.")
     const item = await repo.item(ctx, id, itemId, tx)
     if (!item) throw new ProducaoError(404, "Item não encontrado nesta ordem.")
-    const stages = await fluxos.etapas(tx, id)
-    const stage = stages.find((value) => value.status !== "CONCLUIDA")
-    if (
-      !stage ||
-      stage.id !== stages.at(-1)?.id ||
-      stage.status !== "EM_PRODUCAO" ||
-      stage.id_setor !== row.id_setor
-    )
-      return conflict("Registre a produção na última etapa em execução.")
+    const snapshot = await fluxos.snapshot(tx, id)
+    let sector: number | null = null
+    if (snapshot) {
+      const stages = await fluxos.etapas(tx, id)
+      const stage = stages.find((value) => value.status !== "CONCLUIDA")
+      if (
+        !stage ||
+        stage.id !== stages.at(-1)?.id ||
+        stage.status !== "EM_PRODUCAO" ||
+        stage.id_setor !== row.id_setor
+      )
+        return conflict("Registre a produção na última etapa em execução.")
+      sector = stage.id_setor
+    } else {
+      validarApontamentoLegado(await buscarOrdem(tx, ctx, id))
+    }
     const total = new Prisma.Decimal(input.quantidade_produzida)
     if (item.quantidade_produzida.eq(total)) return item
     if (!item.quantidade_produzida.eq(input.quantidade_esperada))
@@ -378,9 +390,23 @@ export function recordProduction(
       ).count !== 1
     )
       conflict("Apontamento concorrente. Recarregue o item.")
-    await repo.registerProduction(ctx, id, itemId, stage.id_setor, delta, tx)
+    // A FK de apontamento exige etapa. O fluxo legado registra o delta na
+    // auditoria, junto ao total persistido, sem inventar uma etapa histórica.
+    if (sector !== null)
+      await repo.registerProduction(ctx, id, itemId, sector, delta, tx)
     const after = await repo.item(ctx, id, itemId, tx)
-    const audit = { id, item: after }
+    const audit = {
+      id,
+      item: after,
+      apontamento: {
+        fluxo: snapshot ? "SNAPSHOT" : "LEGADO",
+        id_item: itemId,
+        id_setor: row.id_setor,
+        quantidade_anterior: item.quantidade_produzida.toString(),
+        quantidade_produzida: total.toString(),
+        delta: delta.toString(),
+      },
+    }
     await auditar(tx, ctx, { id, item }, audit)
     return after
   })
