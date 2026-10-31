@@ -65,6 +65,12 @@ Somente nome/razão social é obrigatório. O formulário compartilha a validaç
 
 O contexto `/api/auth/contexto` fornece os vínculos ativos para seleção de empresa, sem exigir acesso a estoque. A autorização de `CLIENTES` permanece no servidor por operação. Nenhum schema, migration, permissão ou dado de demonstração foi adicionado ao fluxo real. A tela de fornecedores continua na sua implementação própria.
 
+### Interface de categorias
+
+A tela `/cadastros/categorias` do PR #102 está integrada à API `/api/categorias` do PR #110. Busca, filtros de situação e paginação são executados no servidor. O formulário cadastra e edita nome/descrição; a confirmação inativa por DELETE ou reativa por PATCH, preservando os vínculos históricos.
+
+A empresa selecionada acompanha cada requisição no header `X-Empresa-Id`. A troca de empresa reinicia a tela e cancela consultas pendentes. Permissões, unicidade e regras de vínculos continuam validadas pela API existente. Nenhum schema ou migration foi alterado nesta integração.
+
 ### Interface de insumos
 
 A tela `/estoque/insumos` reúne as posições físicas reais de produtos marcados para compra e não para venda, com busca e filtros por situação. A tela `/estoque` consolida insumos e produtos acabados. Ambas mostram depósito/localização, saldo físico, mínimo local, déficit e estados distintos para zerado, abaixo, exatamente no mínimo, regular e sem configuração.
@@ -495,6 +501,7 @@ A aprovação/aplicação no banco compartilhado segue pendente na
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-10-31 | Alexsander Gabriel | `feature/integracao-api-categorias` | Integração da tela de categorias do PR #102 à API do PR #110, com busca, paginação, cadastro, edição e situação por empresa. Sem alterações no schema ou migrations. |
 | 2026-10-17 | Maria | `feature/pedido-contas-receber-automaticas` | Fechamento após recebimento confirmado e geração atômica de venda/parcelas, consulta financeira protegida e migration versionada com implantação compartilhada sujeita à aprovação da equipe (#91). Sem front-end ou baixa. |
 | 2026-10-10 | Maria | `feature/api-pedidos-itens-variacoes` | API de pedidos/itens por variação, cálculos no servidor e controle transacional de rascunhos. SQL DB-first para aprovação da equipe. |
 | 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |

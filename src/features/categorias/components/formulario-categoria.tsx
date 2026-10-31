@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
+import { normalizeNome } from "../../../../modules/categorias/schema"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,9 +22,13 @@ import type { Categoria, DadosCategoria } from "../tipos"
 const schema = z.object({
   nome: z
     .string()
-    .trim()
-    .min(1, "Informe o nome da categoria.")
-    .max(100, "Use até 100 caracteres."),
+    .transform(normalizeNome)
+    .pipe(
+      z
+        .string()
+        .min(2, "Informe pelo menos 2 caracteres.")
+        .max(100, "Use até 100 caracteres."),
+    ),
   descricao: z
     .string()
     .trim()
@@ -38,7 +43,7 @@ type Props = {
   empresaNome: string
   onClose: () => void
   returnFocus: () => void
-  onSalvar?: (dados: DadosCategoria, categoria?: Categoria) => Promise<void>
+  onSalvar: (dados: DadosCategoria, categoria?: Categoria) => Promise<void>
 }
 
 export function FormularioCategoria({
@@ -58,7 +63,6 @@ export function FormularioCategoria({
   const pendente = form.formState.isSubmitting
 
   async function salvar(dados: DadosCategoria) {
-    if (!onSalvar) return
     try {
       await onSalvar(dados, categoria)
       onClose()
@@ -142,14 +146,6 @@ export function FormularioCategoria({
                 </FieldError>
               )}
             </Field>
-            {!onSalvar && (
-              <Alert>
-                <AlertDescription>
-                  O cadastro ficará disponível quando a integração estiver
-                  pronta.
-                </AlertDescription>
-              </Alert>
-            )}
             {form.formState.errors.root?.server && (
               <Alert variant="destructive" role="alert">
                 <AlertDescription>
@@ -161,7 +157,7 @@ export function FormularioCategoria({
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={!onSalvar || pendente}>
+              <Button type="submit" disabled={pendente}>
                 {pendente
                   ? "Salvando…"
                   : categoria
