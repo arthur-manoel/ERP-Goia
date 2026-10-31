@@ -199,9 +199,17 @@ export function TelaFornecedores() {
       titulo="Fornecedores"
       descricao="Cadastre e consulte os fornecedores da empresa."
       acoes={
-        <Button onClick={abrirNovo} disabled={!empresa}>
-          <Plus /> Novo fornecedor
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            render={<Link href="/cadastros/empresa-fornecedor" />}
+          >
+            Condições comerciais
+          </Button>
+          <Button onClick={abrirNovo} disabled={!empresa}>
+            <Plus /> Novo fornecedor
+          </Button>
+        </div>
       }
     />
   )

@@ -18,6 +18,12 @@ export type Opcao = {
   unidade: string | null
   /** Só em seletores de compras: total da compra, usado como valor padrão da nota. */
   valorTotal?: string
+  tipoFornecedor?: "ESPECIFICO" | "GLOBAL_ASSOCIADO"
+  condicoesComerciais?: {
+    prazo_pagamento: number | null
+    prazo_entrega: number | null
+    observacao: string | null
+  } | null
 }
 export type Pessoa = { id: number; nome: string }
 export type Entidade = { id: number; nome: string; razaoSocial: string }

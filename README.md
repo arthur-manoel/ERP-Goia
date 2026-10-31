@@ -37,7 +37,7 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Base compartilhada | ⬜ | `sequencias_automaticas` | [#6](https://github.com/arthur-manoel/ERP-Goia/issues/6) a [#10](https://github.com/arthur-manoel/ERP-Goia/issues/10), [#15](https://github.com/arthur-manoel/ERP-Goia/issues/15) |
 | Acesso e segurança | ⬜ | `usuarios`, `refresh_tokens`, `administradores_gerais`, `usuario_empresa`, `permissoes_usuario`, `auditoria` | [#11](https://github.com/arthur-manoel/ERP-Goia/issues/11) a [#14](https://github.com/arthur-manoel/ERP-Goia/issues/14), [#19](https://github.com/arthur-manoel/ERP-Goia/issues/19) |
 | Administração | ⬜ | `empresas`, `setores`, `tipos_setor`, `permissoes_setor`, `cargos` | [#16](https://github.com/arthur-manoel/ERP-Goia/issues/16) a [#18](https://github.com/arthur-manoel/ERP-Goia/issues/18) |
-| Cadastros | ⬜ | `clientes`, `fornecedores`, `empresa_fornecedor`, `categorias`, `cores`, `tamanhos`, `tipos_produto` | [#20](https://github.com/arthur-manoel/ERP-Goia/issues/20) a [#25](https://github.com/arthur-manoel/ERP-Goia/issues/25) |
+| Cadastros | 🟨 | `clientes`, `fornecedores`, `empresa_fornecedor`, `categorias`, `cores`, `tamanhos`, `tipos_produto` | [#20](https://github.com/arthur-manoel/ERP-Goia/issues/20) a [#25](https://github.com/arthur-manoel/ERP-Goia/issues/25) |
 | Produtos e ficha técnica | ⬜ | `produtos`, `produto_empresa`, `produto_variacoes`, `produto_fornecedor`, `ficha_tecnica`, `ficha_tecnica_item` | [#26](https://github.com/arthur-manoel/ERP-Goia/issues/26) a [#28](https://github.com/arthur-manoel/ERP-Goia/issues/28) |
 | Estoque | 🟨 | `locais_estoque`, `estoque`, `estoque_minimo_local`, `movimentacao_estoque`, `kardex`, `reserva_estoque` | [#29](https://github.com/arthur-manoel/ERP-Goia/issues/29) a [#32](https://github.com/arthur-manoel/ERP-Goia/issues/32) |
 | Compras | ⬜ | `requisicao_compra`, `item_requisicao_compra`, `pedido_compra`, `item_pedido_compra`, `compras`, `compra_itens` | [#33](https://github.com/arthur-manoel/ERP-Goia/issues/33) a [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
@@ -48,6 +48,8 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
 O quadro acompanha os módulos e suas tabelas principais; a estrutura completa está em `prisma/schema.prisma`.
+
+Associações empresa–fornecedor: backend e tela disponíveis em `/cadastros/empresa-fornecedor`, com condições independentes, reativação e validação de disponibilidade integrada a Compras. Contrato, arquivos e limites em [src/modules/empresa-fornecedor/README.md](src/modules/empresa-fornecedor/README.md).
 
 ### Interface de pedidos de venda
 
@@ -495,6 +497,7 @@ A aprovação/aplicação no banco compartilhado segue pendente na
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-10-31 | — | `feature/21-vincular-fornecedores-empresas` | Backend e interface de associações empresa–fornecedor, condições comerciais independentes e elegibilidade de globais integrada a Compras. Sem alteração de schema ou histórico financeiro. |
 | 2026-10-17 | Maria | `feature/pedido-contas-receber-automaticas` | Fechamento após recebimento confirmado e geração atômica de venda/parcelas, consulta financeira protegida e migration versionada com implantação compartilhada sujeita à aprovação da equipe (#91). Sem front-end ou baixa. |
 | 2026-10-10 | Maria | `feature/api-pedidos-itens-variacoes` | API de pedidos/itens por variação, cálculos no servidor e controle transacional de rascunhos. SQL DB-first para aprovação da equipe. |
 | 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |

@@ -54,7 +54,7 @@ function rota(
   status = 200,
   recursos?: (request: Request) => Recurso[],
 ) {
-  return async (request: Request, context?: RouteContext) => {
+  return async (request: Request, context: RouteContext) => {
     try {
       const ctx = await autorizar(request, area, acao, recursos?.(request))
       if (ctx instanceof Response) {
