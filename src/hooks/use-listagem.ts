@@ -81,11 +81,9 @@ export function useListagem<T, M = undefined>({
   const [ordenacao, setOrdenacao] = useState<OrdenacaoListagem | null>(null)
   const [versao, setVersao] = useState(0)
   const [escolhida, setEscolhida] = useState({ pagina: 1, chave: "" })
-  const [consulta, setConsulta] = useState<ConsultaConcluida<T, M>>({
-    chave: "",
-    dados: null,
-    erro: "",
-  })
+  const [consulta, setConsulta] = useState<
+    ConsultaConcluida<T, M> & { idFonte: number }
+  >({ chave: "", dados: null, erro: "", idFonte: 0 })
 
   useEffect(() => {
     const tempo = setTimeout(() => setBuscaAplicada(busca.trim()), atrasoBusca)
@@ -113,14 +111,15 @@ export function useListagem<T, M = undefined>({
             setEscolhida({ pagina: corrigida, chave: criterios })
             return
           }
-          setConsulta({ chave: chaveConsulta, dados, erro: "" })
+          setConsulta({ chave: chaveConsulta, dados, erro: "", idFonte })
         },
         (causa: unknown) => {
           if (!ativo || foiCancelada(causa)) return
           setConsulta((atual) => ({
             chave: chaveConsulta,
-            dados: atual.dados,
+            dados: atual.idFonte === idFonte ? atual.dados : null,
             erro: mensagemDeErro(causa),
+            idFonte,
           }))
         },
       )
@@ -137,10 +136,17 @@ export function useListagem<T, M = undefined>({
     ordenacao,
     criterios,
     chaveConsulta,
+    idFonte,
   ])
 
-  const { estado, atualizando, erro } = derivarEstado(consulta, chaveConsulta)
-  const dados = consulta.dados
+  // Dados de outra fonte (ex.: outra empresa) nunca ficam na tela, nem
+  // esmaecidos: só a mesma fonte pode mostrar o resultado anterior enquanto
+  // recarrega.
+  const dados = consulta.idFonte === idFonte ? consulta.dados : null
+  const { estado, atualizando, erro } = derivarEstado(
+    { ...consulta, dados },
+    chaveConsulta,
+  )
 
   const definirFiltro = useCallback(
     (chave: string, valor: string) =>

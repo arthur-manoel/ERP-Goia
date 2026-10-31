@@ -107,6 +107,9 @@ export function TelaFornecedores() {
 
   return (
     <ConteudoFornecedores
+      // Remonta ao trocar de empresa: descarta a lista, a busca e fecha
+      // qualquer diálogo aberto da empresa anterior.
+      key={empresa.id}
       idEmpresa={empresa.id}
       seletorEmpresa={seletorEmpresa}
     />

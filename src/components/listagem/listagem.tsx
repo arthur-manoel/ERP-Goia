@@ -201,6 +201,7 @@ export function Listagem<T, M = undefined>({
                               <Button
                                 size="icon"
                                 variant="ghost"
+                                disabled={listagem.atualizando}
                                 aria-label={
                                   rotuloAcoesDe?.(item) ?? "Ações do registro"
                                 }
