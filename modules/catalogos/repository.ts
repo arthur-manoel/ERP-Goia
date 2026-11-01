@@ -1,13 +1,20 @@
 import { prisma } from "../../src/lib/prisma"
 import type { Prisma } from "../../src/generated/prisma/client"
-export type Resource = "PRODUTOS" | "CORES" | "FINANCEIRO" | "CATEGORIAS"
+import {
+  recursoValido,
+  acaoValida,
+  type RecursoPermissao,
+} from "@/lib/permissoes"
+export type Resource = RecursoPermissao
 export type Action = "pode_ler" | "pode_criar" | "pode_editar" | "pode_excluir"
 export async function allowedCompanies(
   id: number,
-  recurso: Resource | null,
+  recurso: Resource,
   action: Action,
   database: Pick<Prisma.TransactionClient, "usuario_empresa"> = prisma,
 ) {
+  // Falhar fechado também em chamadas JS/legadas que escapem da tipagem.
+  if (!recursoValido(recurso) || !acaoValida(action)) return []
   const authorization = {
     OR: [
       // Administração global ainda exige vínculo ativo com a empresa.
@@ -17,7 +24,7 @@ export async function allowedCompanies(
       // Demais usuários só recebem a operação explicitamente concedida.
       {
         permissoes_usuario: {
-          some: { recurso: recurso as Resource, [action]: true },
+          some: { recurso, [action]: true },
         },
       },
     ],
@@ -28,7 +35,7 @@ export async function allowedCompanies(
       status: "ATIVO",
       usuarios: { status: "ATIVO" },
       empresas: { status: "ATIVA" },
-      ...(recurso === null ? {} : authorization),
+      ...authorization,
     },
     select: { id_empresa: true },
   })

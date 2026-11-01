@@ -94,7 +94,10 @@ export async function updateProduto(
   const id = validate(produtoIdSchema, idInput)
   const data = validate(updateProdutoSchema, input)
   const categoryId = data.id_categoria
-  if (categoryId !== undefined && categoryId !== null) {
+  if (
+    (categoryId !== undefined && categoryId !== null) ||
+    data.unidade !== undefined
+  ) {
     return write(() =>
       withCompanyWriteLock(companies, async (database) => {
         const current = await repository.findWritableWithCompanies(
@@ -103,10 +106,21 @@ export async function updateProduto(
           database,
         )
         if (!current) throw new NotFoundError()
+        await database.$queryRaw`SELECT id FROM produtos WHERE id=${id} FOR UPDATE`
+        if (data.unidade !== undefined && data.unidade !== current.unidade) {
+          const historico = await database.ordem_producao_apontamento.count({
+            where: { ordem_producao_item: { id_produto: id } },
+          })
+          if (historico)
+            throw new ConflictError(
+              "A unidade não pode mudar após existir apontamento de produção, inclusive estornado.",
+            )
+        }
         const owners = [
           ...new Set(current.produto_empresa.map((link) => link.id_empresa)),
         ]
-        await assertProductCategory(categoryId, owners, database)
+        if (categoryId !== undefined && categoryId !== null)
+          await assertProductCategory(categoryId, owners, database)
         const produto = await repository.update(id, data, companies, database)
         if (!produto) throw new NotFoundError()
         return produto

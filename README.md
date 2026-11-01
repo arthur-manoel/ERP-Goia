@@ -441,7 +441,7 @@ Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
 | Proteção de branches, branch padrão `develop`, merge só com merge commit | Depende de admin e de GitHub Pro para repositório privado: [#6](https://github.com/arthur-manoel/ERP-Goia/issues/6) |
 | Todos usam o mesmo usuário do banco, com acesso público na porta 3306 | [#7](https://github.com/arthur-manoel/ERP-Goia/issues/7) |
 | Banco de desenvolvimento vazio | Seed: [#8](https://github.com/arthur-manoel/ERP-Goia/issues/8) |
-| Enum de recursos de `permissoes_usuario` não cobre compras, vendas, fornecedores... | Decisão em [#13](https://github.com/arthur-manoel/ERP-Goia/issues/13) |
+| Recursos e autorização por módulo | Enum com 18 valores e integração documentada na [matriz de permissões](docs/permissoes-modulos.md); novos acessos exigem atribuição explícita, sem concessão automática (#13). Conferir aplicação do SQL em cada ambiente. |
 | `compras.id_pedido_compra_legado` sugere que `compras` substitui `pedido_compra` | Decisão em [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Check constraint `chk_ordem_producao_status_quantidade`: `quantidade_planejada > 0`, exceto nos status PLANEJADA e CANCELADA | O Prisma não a representa. Validar no zod e tratar o erro ([#37](https://github.com/arthur-manoel/ERP-Goia/issues/37)) |
 | Nomes em `snake_case` no Prisma Client | Decisão: manter os nomes do banco para que `db pull` seja reprodutível |
@@ -489,11 +489,31 @@ A aprovação/aplicação no banco compartilhado segue pendente na
 [decisão #91](https://github.com/arthur-manoel/ERP-Goia/issues/91); a PR não a executa automaticamente.
 [Contrato, implantação e testes locais](src/modules/pedido-recebiveis/README.md).
 
+## Permissões por módulo e apontamentos de perdas
+
+O backend exige os recursos próprios dos módulos, incluindo COMPRAS,
+FORNECEDORES, SETORES, VENDAS, RELATORIOS, FLUXOS_PRODUCAO, TAMANHOS e
+TIPOS_PRODUTO. Relatório de estoque exige leitura de RELATORIOS e ESTOQUE na
+mesma empresa. A [matriz completa](docs/permissoes-modulos.md) relaciona todas
+as entradas atuais, ações, exceções e cobertura.
+
+A [API de apontamentos](src/modules/apontamentos/README.md) persiste produção,
+perda, motivo e ocorrência por item/etapa, com idempotência, auditoria transacional,
+correção/estorno rastreável e limites entre etapas. Preserva a tabela existente
+ordem_producao_apontamento e acrescenta eventos na migration
+`20261031000000_eventos_apontamentos_producao`. Não movimenta estoque nem altera
+a quantidade final da OP. Não inclui implementação de frontend.
+
+SQL e integração são validados em MySQL/MariaDB local e isolado; aplicação no
+banco compartilhado/produção cabe ao responsável após conferência/aprovação.
+Enviar ou incorporar a PR não executa DDL automaticamente.
+
 ## Histórico
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
 | 2026-10-30 | — | Backend de ordens de produção | CRUD, ciclo de vida, itens e apontamentos em `/api/ordem_producao`, com isolamento multiempresa, permissões, rate limiting, auditoria e concorrência. Schema preservado; estornos e liberação de reservas indisponíveis bloqueiam cancelamentos dependentes. |
+| 2026-10-31 | Maria | `feature/permissoes-modulos-perdas-producao` | Dois cards (#13/#38): recursos próprios na autorização, relatório com permissões combinadas, apontamentos persistidos com idempotência, histórico de correção/estorno e extensão SQL validada localmente. Sem frontend ou aplicação no banco remoto. |
 | 2026-10-17 | Maria | `feature/pedido-contas-receber-automaticas` | Fechamento após recebimento confirmado e geração atômica de venda/parcelas, consulta financeira protegida e migration versionada com implantação compartilhada sujeita à aprovação da equipe (#91). Sem front-end ou baixa. |
 | 2026-10-10 | Maria | `feature/api-pedidos-itens-variacoes` | API de pedidos/itens por variação, cálculos no servidor e controle transacional de rascunhos. SQL DB-first para aprovação da equipe. |
 | 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |

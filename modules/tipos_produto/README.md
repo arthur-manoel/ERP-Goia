@@ -4,7 +4,7 @@ O módulo usa `tipos_produto`: `id`, `nome` único, `descricao` opcional e
 `status` com padrão `ATIVO`.
 
 As rotas exigem JWT válido e um vínculo ativo a uma empresa com autorização para
-`PRODUTOS`: administrador global, vínculo de nível `EMPRESA`, ou permissão
+`TIPOS_PRODUTO`: administrador global, vínculo de nível `EMPRESA`, ou permissão
 explícita para a operação. Isso protege o acesso ao cadastro global sem confiar
 no cabeçalho `X-Empresa-Id` enviado pelo cliente.
 

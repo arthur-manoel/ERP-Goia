@@ -30,7 +30,7 @@ Content-Type: application/json
 
 O header seleciona um vínculo ativo; nunca concede acesso. Pode ser omitido quando existe apenas um vínculo ativo. Perfis aceitos: ADMINISTRACAO/PRODUCAO, conforme autorização de produção. Administradores também precisam de vínculo ativo.
 
-Setores e fluxos usam permissões `ORDENS_PRODUCAO`: `pode_ler`, `pode_criar`, `pode_editar`, `pode_excluir`, conforme método. Inativação também exige `pode_excluir`. Associação/desassociação requer `PRODUTOS.pode_editar`; GET da associação requer `PRODUTOS.pode_ler`. Consulta de OP usa `ORDENS_PRODUCAO.pode_ler`; ações usam `pode_editar`.
+Setores usam `SETORES` e fluxos usam `FLUXOS_PRODUCAO`: `pode_ler`, `pode_criar`, `pode_editar`, `pode_excluir`, conforme operação. Inativação também exige `pode_excluir`. Associação/desassociação requer `PRODUTOS.pode_editar`; GET da associação requer `PRODUTOS.pode_ler`. Consulta de OP usa `ORDENS_PRODUCAO.pode_ler`; ações usam `pode_editar`. Os novos recursos exigem atribuição explícita; não herdam concessões de produção.
 
 Todas as respostas dos novos endpoints têm `Cache-Control: no-store`. GET e DELETE não recebem corpo; 204 não tem JSON. Erros usam `{"error":"mensagem"}`.
 

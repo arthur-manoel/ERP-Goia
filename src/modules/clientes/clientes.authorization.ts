@@ -9,6 +9,7 @@ import {
 export async function autorizar(
   request: Request,
   acao: "ler" | "criar" | "editar" | "excluir",
+  exigirVendas = false,
 ): Promise<Contexto | Response> {
   const auth = await requireRole(request, ["ADMINISTRACAO", "VENDAS"])
   if (auth.error) return auth.error
@@ -43,6 +44,14 @@ export async function autorizar(
   )
   if (!admin && !permissao?.[`pode_${acao}`])
     throw new ClienteError(403, "Acesso negado.")
+  if (
+    exigirVendas &&
+    !admin &&
+    !vinculo.permissoes_usuario.some(
+      (item) => item.recurso === "VENDAS" && item.pode_ler === true,
+    )
+  )
+    throw new ClienteError(403, "Acesso negado ao histórico de vendas.")
   return {
     idUsuario,
     idEmpresa: vinculo.id_empresa,

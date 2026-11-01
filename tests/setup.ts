@@ -1,5 +1,6 @@
 import { beforeEach, vi } from "vitest"
 import { db } from "./helpers/prisma"
+import { resetRateLimitsForTests } from "../src/lib/api/rate-limit"
 
 vi.mock("../src/lib/prisma", async () => ({
   prisma: (await import("./helpers/prisma")).db,
@@ -15,6 +16,7 @@ vi.mock("../src/lib/jwt", () => ({
 }))
 beforeEach(() => {
   vi.resetAllMocks()
+  resetRateLimitsForTests()
   db.usuario_empresa.findMany.mockResolvedValue([{ id_empresa: 10 }])
   db.pagamentos_receber.aggregate.mockResolvedValue({
     _sum: { valor: null },

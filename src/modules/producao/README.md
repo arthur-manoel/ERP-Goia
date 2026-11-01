@@ -1,5 +1,12 @@
 # Backend de ordens de produção
 
+Os [apontamentos de produção/perdas](../apontamentos/README.md) usam rotas
+filhas de `/api/ordens-producao/{id}/apontamentos`, recurso ORDENS_PRODUCAO e
+histórico persistente. São distintos do apontamento de quantidade final em
+`/api/ordem_producao/{id}/itens/{itemId}/producao`: não o atualizam automaticamente,
+não movimentam estoque nem concluem etapas. Setores e fluxos usam SETORES e
+FLUXOS_PRODUCAO; veja a [matriz](../../../docs/permissoes-modulos.md).
+
 Implementação em `src/modules/producao`: schemas Zod, Repository Prisma, Service, autorização e Router HTTP. Backend apenas; nenhuma tela ou estrutura do banco foi alterada. O Prisma Client deve estar gerado a partir do schema atual (`npm run db:generate`).
 
 ## Segurança e respostas
