@@ -43,7 +43,6 @@ export const db = {
   pagamentos_receber: model(),
   pagamentos_pagar: model(),
   compras: model(),
-  pedido_compra: model(),
   despesas: model(),
   ordem_producao: model(),
   ordem_producao_item: model(),
