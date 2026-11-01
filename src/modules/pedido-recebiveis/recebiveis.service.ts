@@ -171,7 +171,20 @@ export function fecharPedido(
     const antes = await pedidos.buscarPedido(tx, ctx, id)
     const existente = await repo.buscarFechamento(tx, ctx, id)
     if (existente) {
-      const { plano } = validarIntegridade(antes, existente)
+      if (
+        await tx.pedido_fechamento_estorno.findUnique({
+          where: { id_fechamento: existente.id },
+        })
+      )
+        throw new PedidoError(
+          409,
+          "Fechamento estornado. Reabertura automática bloqueada para impedir cobrança duplicada; consulte o histórico de cancelamento.",
+        )
+      const { plano } = validarIntegridade(
+        antes,
+        existente,
+        await repo.buscarCreditos(tx, ctx, existente),
+      )
       if (
         plano.idCategoriaFinanceira !== input.idCategoriaFinanceira ||
         hash(plano.vencimentos) !== hash(input.vencimentos)
@@ -353,8 +366,17 @@ export function consultarContaReceber(ctx: Contexto, id: number) {
         "Pedido ainda não possui fechamento financeiro comprovado.",
       )
     }
-    const { plano } = validarIntegridade(pedido, fechamento)
+    const { plano } = validarIntegridade(
+      pedido,
+      fechamento,
+      await repo.buscarCreditos(tx, ctx, fechamento),
+    )
     return {
+      estornado: Boolean(
+        await tx.pedido_fechamento_estorno.findUnique({
+          where: { id_fechamento: fechamento.id },
+        }),
+      ),
       idPedido: id,
       idFechamento: fechamento.id,
       idVenda: fechamento.id_venda,

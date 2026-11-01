@@ -270,6 +270,41 @@ test("Recebimentos HTTP: fechamento real, persistência, concorrência e rollbac
         })
       },
     )
+
+    await t.test(
+      "título manual cancelado continua consultável sem reabrir cobrança",
+      async () => {
+        const venda = await prisma.venda.create({
+          data: {
+            id_empresa: empresas[0],
+            id_cliente: a.clientes[0].id,
+            id_usuario: a.usuarios[0],
+            numero: randomUUID(),
+            valor_total: "100.00",
+          },
+        })
+        const titulo = await prisma.contas_receber.create({
+          data: {
+            id_empresa: empresas[0],
+            id_venda: venda.id,
+            id_categoria: a.categorias[0].id,
+            data_lancamento: new Date(),
+            data_vencimento: new Date("2026-12-01"),
+            valor_original: "100.00",
+            valor_final: "100.00",
+            saldo: "100.00",
+            situacao: "CANCELADO",
+          },
+        })
+        const antes = await estado(titulo.id)
+        const r = await a.chamar(rota(titulo.id))
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+        assert.equal(r.body.data.situacao, "CANCELADO")
+        assert.equal(r.body.data.valorRecebido, "0.00")
+        assert.equal((await receber(titulo, input("1.00"))).status, 409)
+        assert.equal(await estado(titulo.id), antes)
+      },
+    )
   } finally {
     await a.encerrar()
   }

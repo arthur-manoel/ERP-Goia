@@ -8,7 +8,7 @@ import { disputaPersistencia } from "@/lib/prisma-concorrencia"
 export type Tx = Prisma.TransactionClient
 export type Contexto = { idEmpresa: number; idUsuario: number }
 export type Exigencia = [
-  "ESTOQUE" | "PEDIDOS" | "ORDENS_PRODUCAO",
+  "ESTOQUE" | "PEDIDOS" | "ORDENS_PRODUCAO" | "FINANCEIRO",
   "ler" | "criar" | "editar" | "excluir",
 ]
 export async function conferir(
@@ -127,6 +127,7 @@ export async function executar<T extends Prisma.InputJsonValue>(
   input: unknown,
   exigencias: Exigencia[],
   operacao: (tx: Tx) => Promise<T>,
+  opcoes?: { validar?: (tx: Tx) => Promise<void>; timeout?: number },
 ) {
   const hash = createHash("sha256")
     .update(
@@ -143,6 +144,7 @@ export async function executar<T extends Prisma.InputJsonValue>(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
           await conferir(tx, ctx, exigencias)
+          await opcoes?.validar?.(tx)
           const anterior = await tx.operacao_erp.findUnique({
             where: { id_empresa_chave: { id_empresa: ctx.idEmpresa, chave } },
           })
@@ -170,7 +172,11 @@ export async function executar<T extends Prisma.InputJsonValue>(
           })
           return { dados, criado: true }
         },
-        { isolationLevel: "Serializable", timeout: 20000, maxWait: 10000 },
+        {
+          isolationLevel: "Serializable",
+          timeout: opcoes?.timeout ?? 20000,
+          maxWait: 10000,
+        },
       )
     } catch (e) {
       if (!disputaPersistencia(e)) throw e

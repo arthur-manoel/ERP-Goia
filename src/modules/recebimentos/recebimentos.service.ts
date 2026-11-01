@@ -12,6 +12,8 @@ import {
 } from "./recebimentos.authorization"
 import { formasRecebimento, type RecebimentoInput } from "./recebimentos.schema"
 
+import { calcularCobranca } from "./recebimentos.saldo"
+
 type Tx = Prisma.TransactionClient
 type Titulo = Prisma.contas_receberGetPayload<object>
 const limite = new Prisma.Decimal("9999999999999.99")
@@ -71,7 +73,7 @@ async function titulo(tx: Tx, ctx: ContextoRecebimento, id: number) {
   if (!row) throw new NotFoundError("Título não encontrado na empresa ativa.")
   return row
 }
-async function recebidoValido(tx: Tx, row: Titulo) {
+export async function recebidoValido(tx: Tx, row: Titulo) {
   const pagamentos = await tx.pagamentos_receber.aggregate({
     where: { id_conta_receber: row.id, status: "CONFIRMADO" },
     _sum: { valor: true },
@@ -89,8 +91,8 @@ async function recebidoValido(tx: Tx, row: Titulo) {
     throw new ConflictError(
       "Há recebimentos sem comprovação financeira íntegra. Regularização necessária.",
     )
-  // Não existe serviço de estorno no contrato atual. Um cancelamento por SQL
-  // que deixou dinheiro no extrato não autoriza nova entrada automática.
+  // Créditos de pedido preservam os pagamentos. Cancelar pagamento por SQL
+  // deixando dinheiro no extrato não autoriza uma nova entrada automática.
   if (
     await tx.pagamentos_receber.count({
       where: {
@@ -104,22 +106,49 @@ async function recebidoValido(tx: Tx, row: Titulo) {
       "Há pagamento cancelado com movimento financeiro. Regularize o estorno antes de receber.",
     )
   const valor = pagamentos._sum.valor ?? new Prisma.Decimal(0)
-  const saldo = row.valor_final.minus(valor)
+  const creditos = await tx.pedido_credito_receber.findMany({
+    where: { id_conta_receber: row.id },
+    include: {
+      pedido_cancelamento: {
+        select: {
+          id_empresa: true,
+          id_fechamento_referencia: true,
+          executado_em: true,
+        },
+      },
+    },
+  })
+  if (
+    creditos.some(
+      (c) =>
+        c.id_empresa !== row.id_empresa ||
+        c.pedido_cancelamento.id_empresa !== row.id_empresa ||
+        c.pedido_cancelamento.id_fechamento_referencia !== row.id_fechamento ||
+        !c.pedido_cancelamento.executado_em,
+    )
+  )
+    throw new ConflictError(
+      "Crédito sem vínculo íntegro com a origem executada; regularização necessária.",
+    )
+  const cobranca = calcularCobranca(row.valor_final, valor, creditos)
+  // Preserva a consulta do cancelamento lógico manual anterior, sem liberação de nova baixa.
+  const canceladoManual =
+    row.id_fechamento === null &&
+    row.situacao === "CANCELADO" &&
+    valor.isZero() &&
+    creditos.length === 0
   if (
     !row.valor_final.gt(0) ||
     row.valor_final.gt(limite) ||
-    saldo.lt(0) ||
-    (row.saldo !== null && !row.saldo.eq(saldo)) ||
-    (saldo.isZero() && row.situacao !== "PAGO") ||
-    (row.situacao === "CANCELADO" && valor.gt(0)) ||
-    (row.situacao === "PAGO" && !saldo.isZero()) ||
-    (row.situacao === "PARCIAL" && (valor.isZero() || saldo.isZero())) ||
-    (row.situacao === "ABERTO" && !valor.isZero())
+    (row.saldo !== null && !row.saldo.eq(cobranca.saldo)) ||
+    (!canceladoManual &&
+      row.situacao !== cobranca.situacao &&
+      !(row.situacao === "ATRASADO" && cobranca.saldo.gt(0)))
   )
     throw new ConflictError(
       "Saldo e situação do título divergem do histórico. Regularização necessária.",
     )
-  return { valor, saldo }
+  return { valor, ...cobranca }
 }
 function serializarPagamento(
   row: Prisma.pagamentos_receberGetPayload<{
@@ -183,7 +212,9 @@ export async function consultarRecebimentos(
         totalParcelas: row.total_parcelas,
         descricao: row.descricao,
         valorOriginal: row.valor_original.toFixed(2),
-        valorDevido: row.valor_final.toFixed(2),
+        valorDevido: total.exigivel.toFixed(2),
+        valorCreditado: total.creditado.toFixed(2),
+        restituicaoPrevista: total.restituir.toFixed(2),
         valorRecebido: total.valor.toFixed(2),
         saldo: total.saldo.toFixed(2),
         vencimento: row.data_vencimento.toISOString().slice(0, 10),
@@ -327,7 +358,7 @@ export async function registrarRecebimento(
             )
           const recebido = await recebidoValido(tx, row)
           const baixa = conferirValorRecebido(
-            row.valor_final,
+            recebido.exigivel,
             recebido.valor,
             input.valor,
           )

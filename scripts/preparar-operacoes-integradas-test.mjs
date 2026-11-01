@@ -98,6 +98,12 @@ prisma([
   "--file",
   "prisma/migrations/20261101010000_reservas_operacionais/migration.sql",
 ])
+prisma([
+  "db",
+  "execute",
+  "--file",
+  "prisma/migrations/20261101020000_cancelamentos_estornos/migration.sql",
+])
 console.log(
-  "Contrato da develop e extensões dos três cards preparados exclusivamente no banco local vazio; nenhuma adoção de histórico de migrations.",
+  "Contrato da develop e extensões dos três cards e cancelamentos preparados exclusivamente no banco local vazio; nenhuma adoção de histórico de migrations.",
 )

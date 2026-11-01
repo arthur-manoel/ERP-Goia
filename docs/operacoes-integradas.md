@@ -103,9 +103,7 @@ desse planejamento, não uma baixa artificial no encerramento.
 
 Cancelamento da OP existente libera as reservas integradas na mesma transação,
 somente quando os demais efeitos permitem cancelar. Consumos/movimentos e
-apontamentos continuam exigindo tratamento próprio. Não há cancelamento completo
-de pedidos nesta base: o endpoint de liberação exige autorização do documento e
-fornece o mecanismo, sem implementar aprovação gerencial, estorno ou notificações.
+apontamentos continuam exigindo tratamento próprio. O cancelamento de pedidos acrescentado à mesma PR usa essas reservas e o serviço oficial de movimentação, com aprovação, retorno físico e restituição em etapas separadas. Contrato em [cancelamentos](../src/modules/cancelamentos/README.md).
 
 ## Entrega, produção e transferência
 
@@ -145,11 +143,11 @@ lançamento e hoje. Não há conta fixa, integração bancária ou conciliação
 DINHEIRO permite selecionar uma conta CAIXA real; o serviço aceita os tipos de
 conta ativos já existentes, sem inventar uma restrição adicional por forma.
 
-Saldo é valor final devido menos pagamentos confirmados e comprovados pelos
+Sem compensações, saldo é valor final devido menos pagamentos confirmados e comprovados pelos
 movimentos financeiros. Saldo armazenado e situação incompatíveis geram 409,
 sem reconciliação implícita. Legado com saldo nulo pode derivá-lo de um histórico
 íntegro; a primeira baixa grava o saldo correspondente. Pagamento cancelado com
-movimento remanescente exige regularização, pois não há estorno implementado.
+movimento remanescente exige regularização, sem apagar o pagamento ou inventar estorno. O cancelamento agora registra créditos vinculados e obrigações de restituição, preservando o extrato original.
 
 Parcial mantém PARCIAL e saldo positivo, mesmo se houver vencimento. Pagar o
 restante muda para PAGO. Zero, negativo, excesso e título/documento cancelado
@@ -197,7 +195,7 @@ As migrations incrementais `20261101000000_recebimentos_rastreaveis` e
 `20261101010000_reservas_operacionais` acompanham o código. Preservam as tabelas
 atuais e os legados; acrescentam autoria/conta/chave nos pagamentos, FKs compostas,
 grade, consumo ligado ao movimento, histórico de idempotência e transferências.
-Nenhuma publicação da PR executa esse SQL em outro ambiente.
+O incremento adicional `20261101020000_cancelamentos_estornos` acrescenta o fluxo de [cancelamentos](../src/modules/cancelamentos/README.md). Nenhuma publicação da PR executa esse SQL em outro ambiente.
 
 Antes de aplicar em banco compartilhado/produção, o responsável deve conferir o
 schema efetivo, nomes e definições dos índices/FKs, tabelas novas eventualmente

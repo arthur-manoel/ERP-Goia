@@ -399,6 +399,9 @@ function Conteudo({
         <Link href="/vendas/pedidos" className="underline">
           Pedidos e entregas
         </Link>
+        <Link href="/vendas/pedidos/cancelamentos" className="underline">
+          Cancelamentos e estornos
+        </Link>
         <Link href="/producao/ordens" className="underline">
           Produção e consumo
         </Link>

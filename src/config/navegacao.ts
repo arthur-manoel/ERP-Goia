@@ -47,7 +47,10 @@ export type GrupoNavegacao = {
 export const navegacao: GrupoNavegacao[] = [
   {
     titulo: "Geral",
-    itens: [{ titulo: "Dashboard", href: "/", icone: LayoutDashboard }],
+    itens: [
+      { titulo: "Dashboard", href: "/", icone: LayoutDashboard },
+      { titulo: "Notificações", href: "/notificacoes", icone: Bookmark },
+    ],
   },
   {
     titulo: "Cadastros",
@@ -135,6 +138,11 @@ export const navegacao: GrupoNavegacao[] = [
         titulo: "Situação dos pedidos",
         href: "/vendas/pedidos/situacao",
         icone: PackageSearch,
+      },
+      {
+        titulo: "Cancelamentos e estornos",
+        href: "/vendas/pedidos/cancelamentos",
+        icone: ArrowLeftRight,
       },
       { titulo: "Vendas", href: "/vendas", icone: BadgeDollarSign },
     ],
