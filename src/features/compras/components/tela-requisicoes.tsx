@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { ClipboardList, Plus } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { BarraFiltros } from "@/components/listagem/barra-filtros"
+import { Listagem } from "@/components/listagem/listagem"
+import { useListagem } from "@/hooks/use-listagem"
+import {
+  criarFonteServidor,
+  nomesPaginacao,
+  normalizarPaginacao,
+} from "@/lib/listagem/contratos"
 import { BASE, type ComprasApi } from "../api"
 import { useExecutar } from "../executar"
 import type {
@@ -28,21 +36,16 @@ import type {
   RequisicaoDetalhe,
   ResumoStatus,
 } from "../tipos"
-import { useAtraso, useDetalhe, useLista } from "../use-lista"
+import { useDetalhe } from "../use-lista"
 import { ShellCompras } from "../shell"
 import {
   BadgeStatus,
-  BarraFiltros,
   CartoesResumo,
   ConfirmarAcao,
   data,
-  EstadoLista,
-  filtrosVazios,
   Fluxo,
-  Paginador,
   quantidade,
   rotulosStatus,
-  type Filtros,
 } from "./comuns"
 import { DialogoPedido, type PedidoInicial } from "./dialogo-pedido"
 import { DialogoRequisicao } from "./dialogo-requisicao"
@@ -61,19 +64,25 @@ export function TelaRequisicoes() {
 }
 
 function Conteudo({ api }: { api: ComprasApi }) {
-  const [filtros, setFiltros] = useState<Filtros>(filtrosVazios)
-  const [pagina, setPagina] = useState(1)
   const [aberto, setAberto] = useState<number | null>(null)
   const [dialogo, setDialogo] = useState<
     "nova" | { editar: RequisicaoDetalhe } | { pedido: PedidoInicial } | null
   >(null)
-  const busca = useAtraso(filtros.busca.trim())
-  const { dados, erro, carregando, recarregar } = useLista<Resposta>(
-    api,
-    `${BASE}/requisicoes`,
-    { busca, status: filtros.status, de: filtros.de, ate: filtros.ate },
-    pagina,
+  const fonte = useMemo(
+    () =>
+      criarFonteServidor<Requisicao, Resposta>({
+        obter: (url) => api.get<unknown>(url),
+        rota: `${BASE}/requisicoes`,
+        nomes: nomesPaginacao,
+        normalizar: (corpo) =>
+          normalizarPaginacao<Requisicao, Resposta>(corpo, "requisicoes"),
+      }),
+    [api],
   )
+  const listagem = useListagem({ fonte })
+  const { recarregar } = listagem
+  // Corpo completo da resposta: traz também o resumo por status e as permissões.
+  const dados = listagem.meta
   const s = dados?.resumo.porStatus ?? {}
   const total = Object.values(s).reduce((a, b) => a + b, 0)
   const resumo = dados
@@ -84,21 +93,28 @@ function Conteudo({ api }: { api: ComprasApi }) {
         { rotulo: "Convertidas em pedido", valor: s.ATENDIDA ?? 0 },
       ]
     : null
-  const filtrado = Boolean(
-    filtros.busca || filtros.status || filtros.de || filtros.ate,
-  )
 
   return (
     <>
       {resumo && total > 0 && <CartoesResumo itens={resumo} />}
       <BarraFiltros
-        valor={filtros}
-        onChange={(f) => {
-          setFiltros(f)
-          setPagina(1)
-        }}
-        status={rotulosStatus("requisicao")}
+        listagem={listagem}
         placeholderBusca="Buscar por número ou solicitante"
+        campos={[
+          {
+            tipo: "selecao",
+            chave: "status",
+            rotulo: "Filtrar por status",
+            opcaoTodos: "Todos os status",
+            opcoes: rotulosStatus("requisicao"),
+          },
+          {
+            tipo: "periodo",
+            chaveDe: "de",
+            chaveAte: "ate",
+            rotulo: "Período",
+          },
+        ]}
         acao={
           dados?.permissoes.criar ? (
             <Button onClick={() => setDialogo("nova")}>
@@ -107,65 +123,63 @@ function Conteudo({ api }: { api: ComprasApi }) {
           ) : undefined
         }
       />
-      <EstadoLista
-        carregando={carregando}
-        erro={erro}
-        vazio={!dados?.requisicoes.length}
-        filtrado={filtrado}
-        onRecarregar={recarregar}
-        icone={<ClipboardList />}
-        tituloVazio="Nenhuma solicitação de compra"
-        descricaoVazio="Crie a primeira solicitação para iniciar o fluxo de compras."
-      >
-        {dados && (
-          <div className="space-y-3">
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Número</TableHead>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Solicitante</TableHead>
-                    <TableHead>Setor</TableHead>
-                    <TableHead className="text-right">Itens</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-20">
-                      <span className="sr-only">Ações</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {dados.requisicoes.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="font-mono">{r.numero}</TableCell>
-                      <TableCell>{data(r.dataSolicitacao)}</TableCell>
-                      <TableCell>{r.solicitante.nome}</TableCell>
-                      <TableCell>{r.setor ?? "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {r.totalItens}
-                      </TableCell>
-                      <TableCell>
-                        <BadgeStatus tipo="requisicao" status={r.status} />
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setAberto(r.id)}
-                          aria-label={`Ver ${r.numero}`}
-                        >
-                          Ver
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <Paginador p={dados.paginacao} onPagina={setPagina} />
-          </div>
-        )}
-      </EstadoLista>
+      <Listagem
+        listagem={listagem}
+        rotulo="Solicitações de compra"
+        substantivo={{ singular: "solicitação", plural: "solicitações" }}
+        chaveItem={(r) => r.id}
+        vazio={{
+          icone: <ClipboardList />,
+          titulo: "Nenhuma solicitação de compra",
+          descricao:
+            "Crie a primeira solicitação para iniciar o fluxo de compras.",
+        }}
+        colunas={[
+          {
+            id: "numero",
+            cabecalho: "Número",
+            className: "font-mono",
+            celula: (r) => r.numero,
+          },
+          {
+            id: "data",
+            cabecalho: "Data",
+            celula: (r) => data(r.dataSolicitacao),
+          },
+          {
+            id: "solicitante",
+            cabecalho: "Solicitante",
+            celula: (r) => r.solicitante.nome,
+          },
+          { id: "setor", cabecalho: "Setor", celula: (r) => r.setor ?? "—" },
+          {
+            id: "itens",
+            cabecalho: "Itens",
+            className: "text-right tabular-nums",
+            celula: (r) => r.totalItens,
+          },
+          {
+            id: "status",
+            cabecalho: "Status",
+            celula: (r) => <BadgeStatus tipo="requisicao" status={r.status} />,
+          },
+          {
+            id: "ver",
+            cabecalho: <span className="sr-only">Ações</span>,
+            className: "w-20",
+            celula: (r) => (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAberto(r.id)}
+                aria-label={`Ver ${r.numero}`}
+              >
+                Ver
+              </Button>
+            ),
+          },
+        ]}
+      />
 
       {aberto !== null && (
         <Detalhe

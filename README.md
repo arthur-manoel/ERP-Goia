@@ -42,12 +42,14 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Estoque | 🟨 | `locais_estoque`, `estoque`, `estoque_minimo_local`, `movimentacao_estoque`, `kardex`, `reserva_estoque` | [#29](https://github.com/arthur-manoel/ERP-Goia/issues/29) a [#32](https://github.com/arthur-manoel/ERP-Goia/issues/32) |
 | Compras | ⬜ | `requisicao_compra`, `item_requisicao_compra`, `pedido_compra`, `item_pedido_compra`, `compras`, `compra_itens` | [#33](https://github.com/arthur-manoel/ERP-Goia/issues/33) a [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Notas fiscais de entrada | ⬜ | `nota_fiscal`, `item_nota_fiscal` | [#36](https://github.com/arthur-manoel/ERP-Goia/issues/36) |
-| Produção | ⬜ | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
+| Produção | 🟨 | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
 | Vendas | 🟨 | `pedido_cliente`, `pedido_cliente_item`, `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39); API de rascunhos e fechamento explícito após recebimento confirmado. Migration versionada; aprovação/aplicação compartilhada pendentes. |
 | Financeiro do pedido | 🟨 | `pedido_cliente_fechamento`, `contas_receber`, `pagamentos_receber`, `categoria_financeira`, `condicoes_pagamento` | Geração transacional de títulos, sem baixa automática. Decisão técnica/implantação: [#91](https://github.com/arthur-manoel/ERP-Goia/issues/91). |
 | Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
 O quadro acompanha os módulos e suas tabelas principais; a estrutura completa está em `prisma/schema.prisma`.
+
+Backend de ordens de produção: CRUD multiempresa, ciclo de vida, itens e apontamentos efetivos disponíveis em `/api/ordem_producao`, preservando os endpoints anteriores. Liberação de reservas e estornos de consumo/estoque permanecem pendentes; cancelamentos que dependem dessas integrações são bloqueados. Contrato e limites em [src/modules/producao/README.md](src/modules/producao/README.md).
 
 ### Interface de pedidos de venda
 
@@ -185,13 +187,10 @@ Preencha o `.env.local` **antes** de instalar, porque o `postinstall` gera o Pri
 
 ```dotenv
 DATABASE_URL="mysql://USUARIO:SENHA@HOST:3306/joseev47_erp_dev"
-DEV_ID_USUARIO=1
-DEV_ID_EMPRESA=1
 ```
 
 - Credenciais do banco: peça ao time em mensagem privada e nunca as versione. Caracteres especiais no usuário ou na senha precisam de URL encoding (`@` vira `%40`).
-- `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` alimentam a **sessão provisória** (`src/lib/sessao.ts`) até a autenticação ([#11](https://github.com/arthur-manoel/ERP-Goia/issues/11)) existir. Use ids que existam no banco (veja o seed, [#8](https://github.com/arthur-manoel/ERP-Goia/issues/8)).
-- O estoque mínimo não usa essa sessão provisória: suas telas fazem login real e chamam as rotas JSON com JWT e empresa ativa. Configure também `ACCESS_TOKEN_SECRET` no ambiente do servidor para o login; veja o [contrato da API](src/modules/estoque-minimo/README.md).
+- Configure `ACCESS_TOKEN_SECRET` no ambiente do servidor para o login; veja o [contrato da API](src/modules/estoque-minimo/README.md).
 
 ```bash
 npm install     # também gera o Prisma Client e ativa os hooks de commit
@@ -224,13 +223,13 @@ Fluxo para mudar a estrutura:
 
 O histórico antigo não representa todas as alterações DB-first de pedidos e financeiro. Não basta executar `migrate deploy` em um banco vazio para instalar o contrato atual. Para reproduzir o fechamento em banco local isolado, veja o [preparo controlado e a migration de recebíveis](src/modules/pedido-recebiveis/README.md#testes-locais-reproduzíveis). Nunca marque migrations como aplicadas sem validar que suas alterações já existem no alvo.
 
-**Uso no código.** O cliente é `server-only`. Use-o em Server Components, Server Actions e Route Handlers, sempre filtrando pela empresa da sessão. O padrão completo está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md#anatomia-de-um-módulo).
+**Uso no código.** O cliente é `server-only`. Use-o em Route Handlers autenticados, sempre filtrando pela empresa autorizada a partir do JWT e da seleção ativa. O padrão completo está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md#anatomia-de-um-módulo).
 
 ```ts
 import { prisma } from "@/lib/prisma"
-import { getEmpresaAtual } from "@/lib/sessao"
-
-const { idEmpresa } = await getEmpresaAtual()
+// O idEmpresa vem do contexto retornado pelo autorizador do módulo
+// (JWT + empresa ativa).
+const idEmpresa = contexto.idEmpresa
 const ativos = await prisma.produto_empresa.findMany({
   where: { id_empresa: idEmpresa, status: "ATIVO" },
   include: { produtos: true },
@@ -278,7 +277,7 @@ Qual componente usar em cada situação: [docs/ARQUITETURA.md → Interface](doc
 │   ├── features/            # lógica por entidade (queries, actions, schemas, components)
 │   ├── generated/prisma/    # Prisma Client gerado (ignorado pelo git)
 │   ├── hooks/
-│   └── lib/                 # prisma, sessao, formatacao, formulario, utils
+│   └── lib/                 # prisma, auth, formatacao, formulario, utils
 ├── CONTRIBUTING.md          # como contribuir
 └── .env.example             # modelo do .env.local
 ```
@@ -448,7 +447,6 @@ Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
 | Proteção de branches, branch padrão `develop`, merge só com merge commit | Depende de admin e de GitHub Pro para repositório privado: [#6](https://github.com/arthur-manoel/ERP-Goia/issues/6) |
 | Todos usam o mesmo usuário do banco, com acesso público na porta 3306 | [#7](https://github.com/arthur-manoel/ERP-Goia/issues/7) |
 | Banco de desenvolvimento vazio | Seed: [#8](https://github.com/arthur-manoel/ERP-Goia/issues/8) |
-| Sessão provisória (`src/lib/sessao.ts`) lê ids do `.env.local` e é bloqueada em produção | Substituída por [#11](https://github.com/arthur-manoel/ERP-Goia/issues/11) e [#12](https://github.com/arthur-manoel/ERP-Goia/issues/12) |
 | Enum de recursos de `permissoes_usuario` não cobre compras, vendas, fornecedores... | Decisão em [#13](https://github.com/arthur-manoel/ERP-Goia/issues/13) |
 | `compras.id_pedido_compra_legado` sugere que `compras` substitui `pedido_compra` | Decisão em [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Check constraint `chk_ordem_producao_status_quantidade`: `quantidade_planejada > 0`, exceto nos status PLANEJADA e CANCELADA | O Prisma não a representa. Validar no zod e tratar o erro ([#37](https://github.com/arthur-manoel/ERP-Goia/issues/37)) |
@@ -501,7 +499,9 @@ A aprovação/aplicação no banco compartilhado segue pendente na
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-10-31 | — | `feature/21-vincular-fornecedores-empresas` | Backend e interface de associações empresa–fornecedor, condições comerciais independentes e elegibilidade de globais integrada a Compras. Sem alteração de schema ou histórico financeiro. |
 | 2026-10-31 | Alexsander Gabriel | `feature/integracao-api-categorias` | Integração da tela de categorias do PR #102 à API do PR #110, com busca, paginação, cadastro, edição e situação por empresa. Sem alterações no schema ou migrations. |
+| 2026-10-30 | — | Backend de ordens de produção | CRUD, ciclo de vida, itens e apontamentos em `/api/ordem_producao`, com isolamento multiempresa, permissões, rate limiting, auditoria e concorrência. Schema preservado; estornos e liberação de reservas indisponíveis bloqueiam cancelamentos dependentes. |
 | 2026-10-17 | Maria | `feature/pedido-contas-receber-automaticas` | Fechamento após recebimento confirmado e geração atômica de venda/parcelas, consulta financeira protegida e migration versionada com implantação compartilhada sujeita à aprovação da equipe (#91). Sem front-end ou baixa. |
 | 2026-10-10 | Maria | `feature/api-pedidos-itens-variacoes` | API de pedidos/itens por variação, cálculos no servidor e controle transacional de rascunhos. SQL DB-first para aprovação da equipe. |
 | 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |
