@@ -11,8 +11,11 @@ import {
 } from "@/modules/compras/compras.repository"
 import { limiteObservacaoRecebimento } from "@/modules/compras/compras.regras"
 import { receberCompraSchema } from "@/modules/compras/compras.schema"
+import { movimentar } from "@/modules/movimentacoes-estoque/movimentacoes-estoque.repository"
+import { db } from "../../helpers/prisma"
 
 const tx = vi.hoisted(() => ({
+  $queryRaw: vi.fn(),
   compras: {
     findFirst: vi.fn(),
     update: vi.fn(),
@@ -20,8 +23,22 @@ const tx = vi.hoisted(() => ({
     create: vi.fn(),
   },
   pedido_compra: { findFirst: vi.fn(), updateMany: vi.fn() },
-  movimentacao_estoque: { findMany: vi.fn(), create: vi.fn() },
-  estoque: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  movimentacao_estoque: {
+    findMany: vi.fn(),
+    create: vi.fn(),
+    groupBy: vi.fn(),
+  },
+  estoque: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    create: vi.fn(),
+  },
+  produto_empresa: { findFirst: vi.fn() },
+  locais_estoque: { findFirst: vi.fn() },
+  setores: { findFirst: vi.fn() },
+  auditoria: { create: vi.fn() },
   kardex: { create: vi.fn() },
 }))
 
@@ -83,8 +100,123 @@ function semGravacoes() {
 }
 
 beforeEach(() => {
+  tx.$queryRaw.mockResolvedValue([{ id: 1 }])
+  tx.movimentacao_estoque.groupBy.mockResolvedValue([])
   tx.movimentacao_estoque.findMany.mockResolvedValue([])
   tx.compras.findFirst.mockResolvedValue(compra())
+})
+
+it("recebimento real do serviço abre legado antes de somar e permanece compatível com a API de saída", async () => {
+  const estoque = {
+    id: 1,
+    id_setor: 1,
+    quantidade: new Prisma.Decimal(10),
+    quantidade_reservada: new Prisma.Decimal(0),
+  }
+  type Registro = {
+    id: number
+    tipo: string
+    quantidade: Prisma.Decimal
+    origem_tipo: string
+    observacao: string
+    id_produto: number
+  }
+  const livro: Registro[] = []
+  tx.estoque.findFirst.mockResolvedValue(estoque)
+  tx.estoque.findUnique.mockResolvedValue(estoque)
+  tx.estoque.update.mockImplementation(async ({ data }) => {
+    estoque.quantidade = new Prisma.Decimal(data.quantidade)
+    return estoque
+  })
+  tx.estoque.updateMany.mockImplementation(async ({ data }) => {
+    estoque.quantidade = new Prisma.Decimal(data.quantidade)
+    return { count: 1 }
+  })
+  tx.movimentacao_estoque.create.mockImplementation(async ({ data }) => {
+    const registro = {
+      ...data,
+      quantidade: new Prisma.Decimal(data.quantidade),
+      id: livro.length + 1,
+    }
+    livro.push(registro)
+    return registro
+  })
+  tx.movimentacao_estoque.groupBy.mockImplementation(async () => {
+    const grupos = new Map<
+      string,
+      { quantidade: Prisma.Decimal; count: number }
+    >()
+    for (const mov of livro) {
+      const grupo = grupos.get(mov.tipo) ?? {
+        quantidade: new Prisma.Decimal(0),
+        count: 0,
+      }
+      grupos.set(mov.tipo, {
+        quantidade: grupo.quantidade.plus(mov.quantidade),
+        count: grupo.count + 1,
+      })
+    }
+    return [...grupos].map(([tipo, grupo]) => ({
+      tipo,
+      _sum: { quantidade: grupo.quantidade },
+      _count: { _all: grupo.count },
+    }))
+  })
+  tx.movimentacao_estoque.findMany.mockImplementation(async ({ where }) =>
+    livro
+      .filter(
+        (mov) => !where.origem_tipo || mov.origem_tipo === where.origem_tipo,
+      )
+      .map((mov) => ({
+        ...mov,
+        data_movimentacao: new Date(),
+        usuarios: { id: 1, nome: "Teste" },
+        produtos: { codigo: "P1", nome: "Produto" },
+      })),
+  )
+  tx.compras.updateMany.mockResolvedValue({ count: 1 })
+  tx.pedido_compra.updateMany.mockResolvedValue({ count: 1 })
+  const entrada = receberCompraSchema.parse({
+    chaveIdempotencia: chave,
+    itens: [{ idProduto: 1, quantidade: "5.000" }],
+  })
+  await receberCompra(ctx, 1, entrada)
+  expect(
+    livro.map((mov) => [mov.origem_tipo, mov.quantidade.toFixed(3)]),
+  ).toEqual([
+    ["SALDO_INICIAL", "10.000"],
+    ["COMPRA_RECEBIMENTO", "5.000"],
+  ])
+  expect(new Prisma.Decimal(estoque.quantidade).toFixed(3)).toBe("15.000")
+  expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    tx.estoque.findFirst.mock.invocationCallOrder[0],
+  )
+  tx.produto_empresa.findFirst.mockResolvedValue({ id: 1 })
+  tx.locais_estoque.findFirst.mockResolvedValue({ id: 1 })
+  tx.setores.findFirst.mockResolvedValue({ id: 1 })
+  db.$transaction.mockImplementation(async (run) => run(tx))
+  const saida = await movimentar(
+    ctx,
+    {
+      idProduto: 1,
+      idLocalEstoque: 1,
+      idSetor: 1,
+      quantidade: "2.000",
+      observacao: "Consumo após compra",
+    },
+    "saida",
+  )
+  expect(saida).toMatchObject({
+    saldoAnterior: "15.000",
+    saldoAtual: "13.000",
+    idMovimentacaoAbertura: null,
+  })
+  expect(new Prisma.Decimal(estoque.quantidade).toFixed(3)).toBe("13.000")
+  expect(
+    livro.filter((mov) => mov.origem_tipo === "SALDO_INICIAL"),
+  ).toHaveLength(1)
+  expect(await receberCompra(ctx, 1, entrada)).toMatchObject({ repetido: true })
+  expect(livro).toHaveLength(3)
 })
 
 describe("compras rejeitam observação composta antes da primeira escrita", () => {

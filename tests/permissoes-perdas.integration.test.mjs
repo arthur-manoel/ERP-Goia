@@ -20,6 +20,10 @@ const { allowedCompanies } = await import("../modules/catalogos/repository.ts")
 const { RECURSOS_PERMISSAO } = await import("../src/lib/permissoes.ts")
 const { diaOperacional } =
   await import("../src/modules/apontamentos/apontamentos.regras.ts")
+const { resetRateLimitsForTests } = await import("../src/lib/api/rate-limit.ts")
+const modoHttp =
+  process.env.PERMISSOES_PERDAS_TEST_HTTP === "1" ||
+  process.argv.includes("--http")
 const connection = await mariadb.createConnection({
   host: url.hostname,
   port: Number(url.port || 3306),
@@ -111,8 +115,22 @@ test("Permissões e perdas: persistência, constraints, concorrência e contrato
     const tokens = usuarios.map((id) =>
       signAccessToken({ id, role: "ADMINISTRACAO" }),
     )
-    if (process.argv.includes("--http"))
-      ({ server, base } = await httpProducao())
+    let httpAnunciado = false
+    // O banco permanece igual entre cenários; os contadores são isolados.
+    t.beforeEach(async () => {
+      if (modoHttp) {
+        if (server && server.exitCode === null)
+          await new Promise((resolve) => {
+            server.once("exit", resolve)
+            server.kill()
+          })
+        ;({ server, base } = await httpProducao())
+        if (!httpAnunciado) {
+          console.log("Modo HTTP real: Next compilado em NODE_ENV=production.")
+          httpAnunciado = true
+        }
+      } else resetRateLimitsForTests()
+    })
     const routes = (path) => {
       const a =
         /^\/api\/ordens-producao\/(\d+)\/apontamentos(?:\/(\d+)\/(corrigir|estornar))?$/.exec(
@@ -150,8 +168,13 @@ test("Permissões e perdas: persistência, constraints, concorrência e contrato
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       }
       let response
-      if (base) response = await fetch(base + path, options)
-      else {
+      if (modoHttp) {
+        assert.ok(
+          base,
+          "O servidor HTTP precisa estar iniciado; não há fallback para handlers.",
+        )
+        response = await fetch(base + path, options)
+      } else {
         const [route, params] = routes(path.split("?")[0])
         const mod = await import(`../src/app/api/${route}/route.ts`)
         response = await mod[method](
@@ -443,6 +466,51 @@ test("Permissões e perdas: persistência, constraints, concorrência e contrato
           where: { id_usuario_empresa: outro.id },
         })
         await prisma.usuario_empresa.delete({ where: { id: outro.id } })
+      },
+    )
+    await t.test(
+      "limite e totais são por item, sem usar a meta do cabeçalho como saldo comum",
+      async () => {
+        const multi = await ordem("10")
+        const second = await prisma.ordem_producao_item.create({
+          data: {
+            id_ordem_producao: multi.id,
+            id_produto: p.id,
+            tamanho: "M",
+            quantidade: "2",
+          },
+        })
+        assert.equal((await post(multi, registro(multi, "9", "1"))).status, 201)
+        assert.equal(
+          (
+            await post(multi, {
+              ...registro(multi, "3", "0"),
+              idItem: second.id,
+            })
+          ).status,
+          409,
+        )
+        assert.equal(
+          (
+            await post(multi, {
+              ...registro(multi, "2", "0"),
+              idItem: second.id,
+            })
+          ).status,
+          201,
+        )
+        const h = await call(`/api/ordens-producao/${multi.id}/apontamentos`)
+        assert.equal(h.status, 200)
+        assert.equal(h.body.totais.length, 2)
+        assert.equal(
+          h.body.totais.find((item) => item.idItem === second.id).planejada,
+          "2.000",
+        )
+        assert.equal(
+          h.body.totais.find((item) => item.idItem === multi.item)
+            .disponibilidade[1].disponivel,
+          "9.000",
+        )
       },
     )
     await t.test("validações HTTP, item/etapa/empresa e datas", async () => {

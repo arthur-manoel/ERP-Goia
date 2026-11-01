@@ -138,3 +138,14 @@ export async function inserirEvento(
   await tx.$executeRaw`INSERT INTO producao_apontamento_evento(id_empresa,id_ordem_producao,id_etapa,id_ordem_producao_item,id_setor,id_usuario,chave_idempotencia,hash_requisicao,tipo,id_apontamento_novo,id_apontamento_anterior,motivo) VALUES(${data.id_empresa},${data.id_ordem_producao},${data.id_etapa},${data.id_ordem_producao_item},${data.id_setor},${data.id_usuario},${data.chave_idempotencia},${data.hash_requisicao},${data.tipo},${data.id_apontamento_novo},${data.id_apontamento_anterior},${data.motivo})`
   return (await eventoPorChave(tx, data.id_empresa, data.chave_idempotencia))!
 }
+
+export async function totaisDaOrdem(tx: Transaction, id: number) {
+  return tx.$queryRaw<Array<Total & { id_ordem_producao_item: number }>>`
+    SELECT a.id_ordem_producao_item,a.id_setor,
+      SUM(a.quantidade_produzida) AS produzida,SUM(a.quantidade_perdida) AS perdida
+    FROM ordem_producao_apontamento a
+    WHERE a.id_ordem_producao=${id}
+      AND NOT EXISTS(SELECT 1 FROM producao_apontamento_evento e WHERE e.id_apontamento_anterior=a.id)
+    GROUP BY a.id_ordem_producao_item,a.id_setor
+  `
+}

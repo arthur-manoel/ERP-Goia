@@ -97,7 +97,7 @@ Nunca se soma a produção de etapas diferentes como produção final da OP.
 Erros usam `{ "error": "mensagem" }`: 400 entrada inválida, 401 autenticação,
 403 vínculo/permissão, 404 ordem/etapa/item/alvo inacessível, 409 estado,
 disponibilidade, correção incompatível ou chave em conflito, 413 corpo >64 KiB,
-415 tipo de conteúdo e 500 falha interna. Respostas não armazenam cache.
+415 tipo de conteúdo, 429 limite de requisições e 500 falha interna. Respostas não armazenam cache.
 
 ## Estados, datas e quantidades
 
@@ -188,13 +188,24 @@ npm run lint
 npm run format:check
 npm run typecheck
 npm run build
-node --test tests/permissoes-perdas.integration.test.mjs --http
+node tests/permissoes-perdas.integration.test.mjs --http
 ```
 
 A suíte de banco usa fixtures próprias, constraints efetivas, concorrência e um
 trigger temporário de falha da auditoria no banco de teste; remove apenas seus
 dados e trigger. `--http` inicia o build local com NODE_ENV=production, JWT real e
 sem DEV_ID_*. Ausência de banco não é resultado aprovado nem skip dessa suíte.
+
+Os limites compartilhados da produção permanecem ativos: 120 leituras e 30
+escritas por usuário/minuto, por processo, incluindo as URLs novas e legadas.
+Os cenários HTTP de integração usam processos separados para isolar contadores,
+mantendo o banco persistido e o limitador real habilitado. Totais dos itens da
+ordem são agregados em uma única consulta, sem uma consulta por item.
+
+Para passar `--http`, execute o arquivo diretamente, conforme acima; o executor
+`node --test` não repassa essa opção ao arquivo. Outra forma explícita é definir
+PERMISSOES_PERDAS_TEST_HTTP=1 antes de `node --test`. Nesse modo a suíte exige o
+servidor real e nunca volta silenciosamente à chamada direta dos handlers.
 
 Para integrar o frontend depois: substituir useErp/estado temporário por estas
 rotas, usar IDs reais da ordem/item/etapa, strings decimais e chave estável, tratar

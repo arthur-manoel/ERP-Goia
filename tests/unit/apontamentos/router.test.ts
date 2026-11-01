@@ -1,5 +1,7 @@
 import { expect, it } from "vitest"
 import { db } from "../../helpers/prisma"
+import { enforceRateLimit } from "../../../src/lib/api/rate-limit"
+import { handler as fluxoHandler } from "../../../src/modules/fluxos/router"
 import { POST } from "../../../src/app/api/ordens-producao/[id]/apontamentos/route"
 const context = { params: Promise.resolve({ id: "1" }) }
 it.each([
@@ -36,3 +38,27 @@ it.each([
     expect(db.$transaction).not.toHaveBeenCalled()
   },
 )
+
+it("mantém 429 do autorizador compartilhado em apontamentos e cadastros de fluxo", async () => {
+  const make = () =>
+    new Request("http://localhost/api/teste", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-token",
+        "X-Empresa-Id": "10",
+        "Content-Type": "application/json",
+        "Idempotency-Key": "12345678",
+      },
+      body: "{}",
+    })
+  for (let i = 0; i < 30; i++)
+    enforceRateLimit(
+      make(),
+      { scope: "producao:write", limit: 30, windowMs: 60000 },
+      "1",
+    )
+  expect((await POST(make(), context)).status).toBe(429)
+  expect((await fluxoHandler("fluxo", "criar")(make())).status).toBe(429)
+  expect(db.$transaction).not.toHaveBeenCalled()
+  expect(db.usuario_empresa.findMany).not.toHaveBeenCalled()
+})

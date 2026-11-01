@@ -13,8 +13,6 @@ test("Pedidos: persistência real, HTTP de produção, permissões e concorrênc
   bancoLocal(url)
   process.env.DATABASE_URL = url
   process.env.ACCESS_TOKEN_SECRET = randomBytes(48).toString("hex")
-  delete process.env.DEV_ID_USUARIO
-  delete process.env.DEV_ID_EMPRESA
   const hooks = typescript()
   const empresas = [],
     usuarios = [],

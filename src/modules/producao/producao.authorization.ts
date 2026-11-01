@@ -1,5 +1,6 @@
 import "server-only"
 import { requireRole } from "@/lib/authorize"
+import { enforceRateLimit } from "@/lib/api/rate-limit"
 import {
   recursoValido,
   acaoValida,
@@ -23,6 +24,15 @@ export async function autorizar(
   const idUsuario = Number(auth.user.id)
   if (!Number.isSafeInteger(idUsuario) || idUsuario <= 0)
     throw new ProducaoError(401, "Não autenticado.")
+  enforceRateLimit(
+    request,
+    {
+      scope: acao === "ler" ? "producao:read" : "producao:write",
+      limit: acao === "ler" ? 120 : 30,
+      windowMs: 60_000,
+    },
+    String(idUsuario),
+  )
   const vinculos = await vinculosAtivos(idUsuario)
   const header = request.headers.get("X-Empresa-Id")
   // Mesmo administradores precisam de vínculo ativo; o header nunca concede acesso.

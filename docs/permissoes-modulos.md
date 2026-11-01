@@ -94,6 +94,7 @@ novos recursos. As suítes próprias indicadas cobrem operações e regras adici
 | `/estoque/saldo` | GET de saldo físico/reservado/disponível | ESTOQUE / L | S | A | I, unit/movimentacoes-estoque (develop a5d3b72) |
 | `/estoque/entradas`, `/estoque/saidas` | POST de movimentação | ESTOQUE / L **e** C | S | A | I, unit/movimentacoes-estoque (develop a5d3b72) |
 | `/estoque/ajustes` | POST de ajuste | ESTOQUE / L **e** E | S | A | I, unit/movimentacoes-estoque (develop a5d3b72) |
+| `/estoque/movimentacoes/opcoes` | GET de opções demonstrativas autenticadas | ESTOQUE / L | S | A | I, unit/movimentacao/opcoes |
 | `/estoque-minimo` | GET; PUT de configuração | ESTOQUE / L; E | S | A | I, unit/estoque, estoque-minimo.integration.test.mjs |
 | `/estoque-minimo/empresas` | GET de vínculos autorizados para estoque | ESTOQUE / L por vínculo retornado | Cada vínculo | A | I, unit/estoque |
 | `/relatorios/estoque/produtos` | GET | RELATORIOS / L **e** ESTOQUE / L | S | A | I, M, B, relatorio-estoque.integration.test.mjs |
@@ -109,6 +110,15 @@ novos recursos. As suítes próprias indicadas cobrem operações e regras adici
 | `/ordens-producao/{id}/avancar`, `/ordens-producao/{id}/encerrar`, `/ordens-producao/{id}/etapas/iniciar`, `/ordens-producao/{id}/etapas/concluir` | POST | ORDENS_PRODUCAO / E | S | A | I, producao.test.mjs |
 | `/ordens-producao/{id}/apontamentos` | GET; POST | ORDENS_PRODUCAO / L; E | S | A | I, M, B |
 | `/ordens-producao/{id}/apontamentos/{idApontamento}/corrigir`, `/ordens-producao/{id}/apontamentos/{idApontamento}/estornar` | POST | ORDENS_PRODUCAO / E | S | A | I, M, B |
+| `/ordem_producao`, `/ordem_producao/{id}` | GET de ordens/cabeçalho | ORDENS_PRODUCAO / L | S | A | I, unit/ordem_producao |
+| `/ordem_producao` | POST de cadastro | ORDENS_PRODUCAO / C | S | A | I, unit/ordem_producao |
+| `/ordem_producao/{id}` | PUT, PATCH; DELETE de cancelamento lógico | ORDENS_PRODUCAO / E; X | S | A | I, unit/ordem_producao |
+| `/ordem_producao/{id}/liberar`, `/ordem_producao/{id}/iniciar`, `/ordem_producao/{id}/pausar`, `/ordem_producao/{id}/retomar`, `/ordem_producao/{id}/replanejar`, `/ordem_producao/{id}/concluir` | POST de ciclo de vida | ORDENS_PRODUCAO / E | S | A | I, unit/ordem_producao |
+| `/ordem_producao/{id}/itens`, `/ordem_producao/{id}/etapas` | GET paginado | ORDENS_PRODUCAO / L | S | A | I, unit/ordem_producao |
+| `/ordem_producao/{id}/itens` | POST de inclusão | ORDENS_PRODUCAO / C | S | A | I, unit/ordem_producao |
+| `/ordem_producao/{id}/itens/{itemId}` | PATCH; DELETE no planejamento | ORDENS_PRODUCAO / E; X | S | A | I, unit/ordem_producao |
+| `/ordem_producao/{id}/itens/{itemId}/producao` | PUT da quantidade final efetiva, independente do histórico de perdas | ORDENS_PRODUCAO / E | S | A | I, unit/ordem_producao |
+| `/ordem_producao/{id}/etapas/{etapaId}/iniciar`, `/ordem_producao/{id}/etapas/{etapaId}/concluir` | POST | ORDENS_PRODUCAO / E | S | A | I, unit/ordem_producao |
 
 Inativar por POST/PUT/PATCH exige também X nos catálogos, clientes e setores/
 fluxos. Cancelar título/despesa por edição exige E+X, preservando a verificação
@@ -154,6 +164,12 @@ As quatro entradas de movimentação acima foram incorporadas à `develop` duran
 esta implementação. Seu autorizador próprio já exige leitura junto da ação de
 escrita, pois a resposta contém saldos; não foi substituído nem duplicado nesta
 entrega. A validação do inventário também as cobre quando executada com essa base.
+
+As URLs `/ordem_producao` e a remoção da sessão provisória entraram depois,
+na base 68639fd. O autorizador de produção mantém o rate limiting compartilhado
+dessas URLs e das legadas, inclusive setores/fluxos e apontamentos. A opção de
+movimentação ainda entrega dados demonstrativos após autenticação, não dados de
+estoque persistidos; não foi usada como prova de integração real do estoque.
 
 ## Banco e verificação local
 

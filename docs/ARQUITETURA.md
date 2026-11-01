@@ -4,7 +4,7 @@ Como o código do ERP Goia é organizado e quais padrões seguir. Com 8 pessoas 
 
 > O projeto usa **Next.js 16**, que tem APIs diferentes das versões antigas. Antes de usar uma API do Next, confira a documentação instalada em `node_modules/next/dist/docs/`.
 
-> **Atenção ao fluxo autenticado:** este guia também descreve telas legadas com sessão provisória e Server Actions. Os módulos de ordens de produção e estoque mínimo seguem o padrão de `Route Handlers` em `/api`, lógica em `src/modules`, `Authorization: Bearer <JWT>` e `X-Empresa-Id`. O servidor valida o vínculo e a permissão da empresa ativa; `getSessao()` e `DEV_ID_*` não podem sustentar esses fluxos em produção. Veja `src/modules/estoque-minimo/README.md` para o contrato do estoque.
+> **Fluxo autenticado:** os módulos de ordens de produção e estoque mínimo seguem o padrão de `Route Handlers` em `/api`, lógica em `src/modules`, `Authorization: Bearer <JWT>` e `X-Empresa-Id`. O servidor valida o vínculo e a permissão da empresa ativa. Veja `src/modules/estoque-minimo/README.md` para o contrato do estoque.
 
 ## Sumário
 
@@ -53,7 +53,6 @@ src/
     ├── prisma.ts            # cliente Prisma (server-only)
     ├── formatacao.ts        # formatarMoeda, formatarQuantidade, formatarData...
     ├── formulario.ts        # EstadoFormulario (retorno das Server Actions)
-    ├── sessao.ts            # getSessao() / getEmpresaAtual()
     └── utils.ts             # cn()
 ```
 
@@ -93,11 +92,7 @@ export const cargoSchema = z.object({
 ```ts
 import "server-only"
 import { prisma } from "@/lib/prisma"
-import { getEmpresaAtual } from "@/lib/sessao"
-
-export async function listarCargos() {
-  const { idEmpresa } = await getEmpresaAtual()
-
+export async function listarCargos(idEmpresa: number) {
   return prisma.cargos.findMany({
     where: { id_empresa: idEmpresa },
     orderBy: { nome: "asc" },
@@ -115,14 +110,15 @@ import { z } from "zod"
 import { Prisma } from "@/generated/prisma/client"
 import type { EstadoFormulario } from "@/lib/formulario"
 import { prisma } from "@/lib/prisma"
-import { getEmpresaAtual } from "@/lib/sessao"
 import { cargoSchema } from "./schemas"
 
 export async function criarCargo(
   _estado: EstadoFormulario,
   formData: FormData,
 ): Promise<EstadoFormulario> {
-  const { idEmpresa } = await getEmpresaAtual()
+  // O idEmpresa vem do contexto retornado pelo autorizador do módulo
+  // (JWT + empresa ativa).
+  const idEmpresa = contexto.idEmpresa
 
   const resultado = cargoSchema.safeParse(Object.fromEntries(formData))
   if (!resultado.success) {
@@ -213,7 +209,7 @@ export default async function Page() {
 
 ## Regras obrigatórias
 
-1. **Multiempresa.** Toda leitura ou escrita em tabela com `id_empresa` usa a empresa autorizada no servidor. Telas legadas ainda usam `getEmpresaAtual()`/`getSessao()`; esses helpers dependem de `DEV_ID_*` e não funcionam em produção. Nas APIs autenticadas, derive o usuário do JWT e valide o vínculo ativo antes de aceitar `X-Empresa-Id`. Nunca confie em `id_empresa` ou `id_usuario` enviados no corpo da requisição.
+1. **Multiempresa.** Toda leitura ou escrita em tabela com `id_empresa` usa a empresa autorizada no servidor. Nas APIs autenticadas, derive o usuário do JWT e valide o vínculo ativo antes de aceitar `X-Empresa-Id`. Nunca confie em `id_empresa` ou `id_usuario` enviados no corpo da requisição.
 2. **Permissão no servidor.** Toda Server Action ou Route Handler verifica autenticação e permissão antes de ler ou gravar. Esconder um botão não protege nada.
 3. **Transações.** Operações que mexem em mais de uma tabela (estoque, kardex, reservas, produção, entrada de NF) usam `prisma.$transaction`. Movimentação de estoque passa **sempre** pelo serviço único de estoque ([#30](https://github.com/arthur-manoel/ERP-Goia/issues/30)).
 4. **Numeração automática.** Números de pedido, compra, venda e OP vêm do helper de `sequencias_automaticas` ([#15](https://github.com/arthur-manoel/ERP-Goia/issues/15)), nunca de `count() + 1`.

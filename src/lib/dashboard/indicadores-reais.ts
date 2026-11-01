@@ -12,10 +12,9 @@ import type {
  * Estes indicadores continuam explicitamente não integrados. O estoque mínimo
  * usa a API autenticada em src/modules/estoque-minimo.
  *
- * Ao implementar cada uma:
- *  - obtenha a empresa SEMPRE de getEmpresaAtual() (lib/sessao). Estas funções
- *    não recebem idEmpresa por parâmetro de propósito;
- *  - filtre TODA consulta por idEmpresa;
+ * Ao implementar cada uma, receba o contexto autenticado resolvido a partir do
+ * JWT e da empresa autorizada para a requisição e filtre toda consulta por
+ * idEmpresa. Estas funções não recebem idEmpresa por parâmetro por enquanto;
  *  - devolva só o que o tipo pede, sem repassar registros inteiros do banco.
  *
  * Tabelas previstas nos placeholders das telas: estoque (insumos), ordem_producao

@@ -2,6 +2,7 @@ import "server-only"
 import { z } from "zod"
 import { autorizar } from "@/modules/producao/producao.authorization"
 import { ProducaoError } from "@/modules/producao/producao.repository"
+import { HttpError } from "@/lib/api/errors"
 import {
   chaveSchema,
   idSchema,
@@ -118,7 +119,7 @@ export function handler(
         headers,
       })
     } catch (error) {
-      if (error instanceof ProducaoError)
+      if (error instanceof ProducaoError || error instanceof HttpError)
         return Response.json(
           { error: error.message },
           { status: error.status, headers },

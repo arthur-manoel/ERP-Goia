@@ -19,7 +19,7 @@ O header seleciona a empresa; não concede acesso. A API reutiliza
   sempre com vínculo ativo na empresa selecionada.
 
 Com exatamente um vínculo ativo, o autorizador permite omitir o header.
-Com mais de um, exige a seleção. Não usa sessão provisória nem `DEV_ID_*`.
+Com mais de um, exige a seleção.
 `id_empresa` na query é rejeitado. IDs de produto/local alheios e IDs inexistentes
 produzem o mesmo resultado vazio, sem consulta global que revele sua existência.
 

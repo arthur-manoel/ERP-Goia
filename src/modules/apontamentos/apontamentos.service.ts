@@ -217,9 +217,12 @@ export function consultar(
       include: { produtos: { select: { unidade: true } } },
       orderBy: { id: "asc" },
     })
+    const acumuladosDaOrdem = await repository.totaisDaOrdem(tx, ordemId)
     const totais = []
     for (const item of itens) {
-      const acumulados = await repository.totais(tx, ordemId, item.id)
+      const acumulados = acumuladosDaOrdem.filter(
+        (total) => total.id_ordem_producao_item === item.id,
+      )
       // Legados inconsistentes continuam visíveis sem inventar disponibilidade.
       let disponibilidade = null,
         pendencia = null

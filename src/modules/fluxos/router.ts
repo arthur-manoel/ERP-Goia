@@ -2,6 +2,7 @@ import "server-only"
 import type { z } from "zod"
 import { autorizar } from "../producao/producao.authorization"
 import { ProducaoError } from "../producao/producao.repository"
+import { HttpError } from "@/lib/api/errors"
 import * as schemas from "./fluxos.schema"
 import * as service from "./fluxos.service"
 import type { Entidade } from "./fluxos.repository"
@@ -145,7 +146,7 @@ export function handler(tipo: Entidade, operacao: Operacao) {
         headers,
       })
     } catch (error) {
-      if (error instanceof ProducaoError)
+      if (error instanceof ProducaoError || error instanceof HttpError)
         return Response.json(
           { error: error.message },
           { status: error.status, headers },

@@ -83,6 +83,7 @@ test(
       ;({ prisma } = await import("../src/lib/prisma.ts"))
       const service =
         await import("../src/modules/producao/producao.service.ts")
+      const orders = await import("../src/modules/producao/ordem.service.ts")
       const fluxos = await import("../src/modules/fluxos/fluxos.service.ts")
       const schemas = await import("../src/modules/producao/producao.schema.ts")
       const auth =
@@ -347,6 +348,16 @@ test(
       await service.executarEtapa(ctx, id, opened.etapas[1].id, true)
       await service.executarEtapa(ctx, id, opened.etapas[1].id, false)
       await service.executarEtapa(ctx, id, opened.etapas[2].id, true)
+      await assert.rejects(
+        service.executarEtapa(ctx, id, opened.etapas[2].id, false),
+        (e) => e.status === 409,
+      )
+      await orders.recordProduction(
+        ctx,
+        id,
+        opened.ordem.ordem_producao_item[0].id,
+        { quantidade_produzida: "3.750", quantidade_esperada: "0" },
+      )
       const closed = await service.executarEtapa(
         ctx,
         id,
@@ -354,6 +365,10 @@ test(
         false,
       )
       assert.equal(closed.ordem.status, "CONCLUIDA")
+      assert.equal(
+        closed.ordem.ordem_producao_item[0].quantidade_produzida.toString(),
+        "3.75",
+      )
       assert.equal(closed.baixaEstoque, "pendente")
       assert.equal(closed.ordem.ordem_producao_movimentacao_setor.length, 3)
       assert.equal(consumo(closed), "0.5")
@@ -421,6 +436,13 @@ test(
             produtos.length ||
             tipos.length
           ) {
+            await prisma.ordem_producao_apontamento.deleteMany({
+              where: {
+                ordem_producao_item: {
+                  ordem_producao: { id_empresa: { in: empresas } },
+                },
+              },
+            })
             await prisma.ordem_producao.deleteMany({
               where: { id_empresa: { in: empresas } },
             })

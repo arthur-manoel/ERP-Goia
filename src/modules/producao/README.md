@@ -1,68 +1,120 @@
-# API de ordens de produção
+# Backend de ordens de produção
 
 Os [apontamentos de produção/perdas](../apontamentos/README.md) usam rotas
 filhas de `/api/ordens-producao/{id}/apontamentos`, recurso ORDENS_PRODUCAO e
-histórico persistente, sem alterar automaticamente a quantidade final ou estoque.
-Setores e fluxos possuem recursos próprios SETORES e FLUXOS_PRODUCAO; veja a
-[matriz de autorização](../../../docs/permissoes-modulos.md).
+histórico persistente. São distintos do apontamento de quantidade final em
+`/api/ordem_producao/{id}/itens/{itemId}/producao`: não o atualizam automaticamente,
+não movimentam estoque nem concluem etapas. Setores e fluxos usam SETORES e
+FLUXOS_PRODUCAO; veja a [matriz](../../../docs/permissoes-modulos.md).
 
-Rotas de backend com Bearer JWT. Todas as operações verificam usuário, empresa e vínculo ativos no banco. `X-Empresa-Id` seleciona a empresa quando há múltiplos vínculos; se enviado, deve corresponder a um vínculo ativo, inclusive para administradores. Empresa não autorizada retorna 403. Sem header e com múltiplos vínculos, retorna 400.
+Implementação em `src/modules/producao`: schemas Zod, Repository Prisma, Service, autorização e Router HTTP. Backend apenas; nenhuma tela ou estrutura do banco foi alterada. O Prisma Client deve estar gerado a partir do schema atual (`npm run db:generate`).
 
-Perfis aceitos: `ADMINISTRACAO` e `PRODUCAO`. Além do perfil do token, são exigidas permissões `ORDENS_PRODUCAO.pode_criar` para abertura ou `pode_editar` para outras operações, salvo usuário ADMIN ou vínculo com nível EMPRESA. O vínculo ativo continua obrigatório.
+## Segurança e respostas
 
-## Contrato
+Todas as rotas exigem `Authorization: Bearer <JWT>`, perfil `ADMINISTRACAO` ou `PRODUCAO`, usuário ativo e vínculo ativo com empresa ativa. `X-Empresa-Id` seleciona um vínculo existente; é obrigatório quando existem vários. A empresa e o responsável são definidos no servidor. `id_empresa` é opcional no cadastro e nos filtros, apenas para conferir compatibilidade com a empresa selecionada; outro valor retorna 403. O cliente não pode definir `id_usuario`.
 
-| Método e rota | Corpo JSON |
-| --- | --- |
-| `POST /api/ordens-producao` | `idProduto`, `quantidade`; opcionais: `tamanho`, `observacao`, `dataPrevisao`, `prioridade`, `setores` |
-| `PATCH /api/ordens-producao/{id}` | `statusEsperado` e ao menos um campo editável da abertura, exceto `setores` |
-| `POST /api/ordens-producao/{id}/avancar` | `statusEsperado`, `setorEsperado` (ID ou `null`), `statusDestino` |
-| `POST /api/ordens-producao/{id}/encerrar` | `statusEsperado: "EM_PRODUCAO"`, `setorEsperado` (ID ou `null`) |
+Permissões do recurso `ORDENS_PRODUCAO`: `pode_ler` para consultas, `pode_criar` para cadastro/inclusão de itens, `pode_editar` para edições, apontamentos e operações de ciclo de vida, `pode_excluir` para cancelamento e remoção de itens do planejamento. ADMIN global ou vínculo EMPRESA dispensam a permissão explícita, mas continuam exigindo vínculo ativo. PUT/PATCH não aceitam `status`, impedindo cancelamento pela permissão de edição.
 
-Abertura cria uma ordem com um produto/item. `setores` é uma lista ordenada de IDs de setores ativos da empresa. A lista vazia significa produção sem fluxo setorial. `tamanho` assume `UNICO` se omitido. `quantidade` aceita número ou string decimal positiva com até três casas e 12 dígitos inteiros. Strings são recomendadas para preservar precisão. Observação aceita até 255 caracteres; datas usam ISO 8601 com fuso horário. Campos desconhecidos são rejeitados.
+Rate limiting compartilhado com as URLs existentes: 120 leituras e 30 escritas por usuário/minuto, por processo. O limitador roda após validação do JWT e usa o ID autenticado, sem depender da caixa de Bearer, do texto do token ou de `X-Forwarded-For`. Não é distribuído entre instâncias. Tokens inválidos não criam contadores. O limite global de memória não descarta contadores ativos.
 
-Exemplo de abertura:
+As novas URLs usam NextResponse e o helper global:
 
 ```json
-{"idProduto": 12, "quantidade": "10.500", "setores": [3, 5], "observacao": "Lote piloto"}
+{ "success": true, "data": { "rows": [], "count": 0, "page": 1, "limit": 20, "totalPages": 0 } }
 ```
 
-Sucesso retorna 201 na abertura e 200 nas demais operações:
+Erros: `{ "success": false, "error": "mensagem" }`, com 400/401/403/404/409/429/500. Sucesso 200 ou 201 em cadastros. Respostas não são armazenadas em cache. A consulta de ID inexistente ou fora da empresa retorna 404, sem revelar dados de outra empresa. Relacionamentos inválidos, inativos ou indisponíveis na empresa retornam 400. Falhas internas são registradas no servidor e recebem mensagem genérica.
+
+## Endpoints
+
+Base: `/api/ordem_producao`.
+
+| Método | Caminho | Operação |
+| --- | --- | --- |
+| GET | `/` | Listagem paginada de cabeçalhos e contadores de vínculos |
+| POST | `/` | Cadastro PLANEJADA |
+| GET | `/{id}` | Cabeçalho da ordem na empresa autorizada |
+| PUT | `/{id}` | Substituição dos campos editáveis |
+| PATCH | `/{id}` | Atualização apenas dos campos enviados |
+| DELETE | `/{id}` | Cancelamento lógico, com verificação de efeitos |
+| POST | `/{id}/liberar` | PLANEJADA → LIBERADA |
+| POST | `/{id}/iniciar` | LIBERADA → EM_PRODUCAO; inicia primeira etapa quando há snapshot |
+| POST | `/{id}/pausar` | EM_PRODUCAO → PAUSADA |
+| POST | `/{id}/retomar` | PAUSADA → EM_PRODUCAO, preservando início |
+| POST | `/{id}/replanejar` | LIBERADA → PLANEJADA, somente sem efeitos operacionais |
+| POST | `/{id}/concluir` | Conclui última etapa/ordem em produção |
+| GET | `/{id}/itens` | Itens paginados |
+| POST | `/{id}/itens` | Inclui item, ficha de consumo previsto e snapshot de fluxo |
+| PATCH | `/{id}/itens/{itemId}` | Quantidade/tamanho de item em planejamento |
+| DELETE | `/{id}/itens/{itemId}` | Remove somente item do planejamento sem histórico operacional |
+| PUT | `/{id}/itens/{itemId}/producao` | Registra produção efetiva na última etapa em execução |
+| GET | `/{id}/etapas` | Etapas paginadas |
+| POST | `/{id}/etapas/{etapaId}/iniciar` | Inicia a próxima etapa pendente |
+| POST | `/{id}/etapas/{etapaId}/concluir` | Conclui etapa atual; a última encerra a ordem |
+
+Operações de ciclo de vida não necessitam corpo. O status não é um campo editável no CRUD. As URLs anteriores `/api/ordens-producao` permanecem disponíveis com seu contrato legado (`{ ordem, ... }`/`{ error }`), incluindo abertura com número automático e um produto, avanço e etapas. Compartilham locks, autorização, rate limiting e verificações de conclusão. O estado legado AGUARDANDO_MATERIAL permanece no Prisma e nos contratos antigos; não foi adicionado às transições novas.
+
+## Cadastro e edição
+
+Exemplo de POST:
 
 ```json
 {
-  "ordem": { "id": 1, "status": "PLANEJADA" },
-  "perdaAplicada": false,
-  "baixaEstoque": "pendente",
-  "disponibilidadeEstoque": "nao_verificada"
+  "numero": "OP-2026-001",
+  "quantidade_planejada": "10.500",
+  "prioridade": "NORMAL",
+  "id_local_estoque": 3,
+  "data_previsao": "2026-12-15",
+  "observacao": "Lote piloto"
 }
 ```
 
-`ordem` contém os campos persistidos e as relações `ordem_producao_item` (com `ordem_producao_consumo_planejado`), `ordem_producao_fluxo_setor` e `ordem_producao_movimentacao_setor`. Decimais são serializados como strings e datas como ISO. IDs de setor e status retornados devem ser usados como estado esperado nas próximas chamadas.
+`numero`: obrigatório, trim, 1–50 caracteres. Unicidade por empresa verificada no Service e garantida pela restrição existente `uk_ordem_producao_empresa_numero`; conflitos concorrentes retornam 409. `prioridade`: BAIXA/NORMAL/ALTA/URGENTE, default NORMAL. Quantidade default zero, Decimal(15,3), até 12 dígitos inteiros e três decimais, nunca negativa; prefira strings para preservar precisão. Zero somente durante planejamento; liberação exige quantidade positiva e itens com insumos previstos.
 
-Erros seguem `{ "error": "mensagem" }`: 400 para entrada inválida, 401 para autenticação, 403 para acesso negado, 404 para ordem inexistente na empresa, 409 para conflito de estado/concorrência e 500 para falha inesperada.
+Opcionais/nuláveis: `id_pedido_cliente`, `id_local_estoque`, `id_setor`, `data_inicio`, `data_previsao`, `observacao` (máximo 255). Relacionamentos são consultados com empresa autorizada; pedido cancelado não é aceito. Datas aceitam YYYY-MM-DD (UTC) ou ISO 8601 com fuso; previsão não pode anteceder início. Cadastro não preenche início automaticamente; início efetivo o preenche se estiver nulo. Não é possível iniciar com data de início futura.
 
-## Regras
+PUT exige número, quantidade e prioridade; opcionais omitidos são limpos. PATCH preserva campos ausentes. Apenas PLANEJADA admite edição estrutural; nos demais estados não terminais, apenas observação/previsão podem mudar. CONCLUIDA e CANCELADA rejeitam edições. Uma meta positiva no cabeçalho sincroniza quantidade e insumos quando existe um único item, conforme o fluxo existente. Com vários itens, altera somente a meta geral, sem redistribuir quantidades; edite cada item separadamente. Meta zero pode ser mantida no planejamento, sem zerar itens, mas impede liberação. Nenhum campo automático ou protegido é aceito.
 
-- Caminho principal: `PLANEJADA → LIBERADA → EM_PRODUCAO → CONCLUIDA`.
-- `PLANEJADA` e `LIBERADA` podem ir para `AGUARDANDO_MATERIAL`, que retorna a `LIBERADA`. Essa liberação é uma confirmação administrativa; a API não verifica disponibilidade nem reserva material.
-- `EM_PRODUCAO → PAUSADA → EM_PRODUCAO` retoma o mesmo setor. Não há retorno a `PLANEJADA` nem cancelamento por estes endpoints.
-- De `LIBERADA` a `EM_PRODUCAO`, a ordem entra no primeiro setor. De `EM_PRODUCAO` a `EM_PRODUCAO`, avança exatamente um setor. Cada avanço confirma a transferência integral, registrando entrega e recebimento pelo usuário responsável. Movimentação parcial não faz parte deste contrato.
-- Encerramento confirma a produção integral planejada, exige início da produção, último setor e histórico de passagem por todos os setores, sem movimentação em trânsito. Sem fluxo configurado, exige o estado `EM_PRODUCAO`.
-- Produto, quantidade, tamanho e prioridade só podem ser editados em `PLANEJADA`. Nos demais estados não terminais, somente observação e previsão são editáveis. Estados terminais bloqueiam qualquer alteração.
-- Na abertura ou troca de produto/quantidade em `PLANEJADA`, utiliza-se a ficha ativa, vigente e de maior versão da empresa. O cálculo é `quantidade × consumo unitário`, sem `perda_percentual`, com arredondamento decimal HALF_UP em três casas. Edições de observação/previsão não recalculam insumos. Quantidades resultantes nulas por arredondamento ou acima da capacidade do banco são rejeitadas.
-- Insumos previstos são persistidos; disponibilidade, faltas reais, reservas, consumo efetivo, kardex e baixa de estoque não são apurados. Os campos persistidos de disponibilidade/falta permanecem com defaults e não representam medição de saldo. Os indicadores da resposta explicitam essa limitação, inclusive após encerrar.
-- Operações são transacionais com isolamento Serializable. Avanços/encerramento usam UPDATE condicionado ao status e setor esperados; conflitos retornam 409 sem repetição automática. A sequência é incrementada e a auditoria é gravada na mesma transação.
+## Itens, fluxo e produção efetiva
 
-## Verificação
+POST de item: `{ "id_produto": 12, "quantidade": "10.500", "tamanho": "UNICO" }`. Exige produto ativo vinculado à empresa, habilitado para produção, ficha técnica vigente com componentes válidos e fluxo ativo. Reutiliza o cálculo existente (consumo unitário × quantidade, sem perda percentual, HALF_UP com três casas). O primeiro item cria etapas e snapshot; os demais precisam do mesmo fluxo/ordem de setores. Produto de um snapshot não é substituído. Limite operacional: 200 itens por ordem. Recalcular/remover itens altera somente planejamento sem execução; registros produtivos ou financeiros impedem essas alterações.
 
-```bash
-node tests/producao.test.mjs
-node tests/producao.integration.test.mjs
-# HTTP real: inicia o Next em porta local temporária e usa o MySQL configurado.
-node tests/producao.integration.test.mjs --configured-db --http
+Liberação verifica produtos e componentes em lote, sem exigir disponibilidade total de estoque nem criar reservas. Início, pausa, retomada e etapas reutilizam os Services existentes de produção/fluxos, preservando snapshot e movimentações entre setores. Não é permitido pular etapas. Movimentações em trânsito impedem avanço/conclusão.
+
+Apontamento é o total acumulado efetivamente produzido, com valor esperado para concorrência:
+
+```json
+{ "quantidade_produzida": "7.125", "quantidade_esperada": "0" }
 ```
 
-A integração exige `PRODUCAO_TEST_DATABASE_URL` apontando para um MySQL local de testes com schema já preparado. Alternativamente, `--configured-db` usa a configuração local do projeto. O teste cria fixtures próprias, remove somente essas fixtures e não executa DDL nem migrations. Sem URL explícita/configurada, a integração é marcada como ignorada.
+Em ordens com snapshot, a API atualiza o total do item e insere apenas o delta em `ordem_producao_apontamento`, com setor, usuário e auditoria na mesma transação. Repetir o mesmo total não cria outro apontamento. Estado esperado desatualizado retorna 409; reduções exigem ajuste/estorno e são bloqueadas. Apontamentos exigem ordem EM_PRODUCAO. Com snapshot, exigem a última etapa em execução. Sem snapshot (fluxo legado), não exigem novas etapas: validam início efetivo, ausência de movimentações em trânsito e passagem por todos os setores configurados, quando houver. Nesse fluxo, o total é persistido no item e o delta é registrado na auditoria, na mesma transação, pois a tabela ordem_producao_apontamento exige uma etapa por FK. Nenhuma etapa é fabricada e nenhuma estrutura é alterada. O total produzido também impede cancelamento sem estorno, mesmo quando não existe uma linha na tabela de apontamentos. Não representam entrada de produto acabado no estoque.
 
-Com `--http`, os testes exercitam as quatro URLs no Next real, incluindo dois insumos por produto, recálculo por quantidade e troca de produto, erros HTTP, avanços concorrentes e encerramento com estoque pendente. O servidor temporário é encerrado ao terminar. Execute sem outra instância de `next dev` neste diretório para evitar disputa pelo lock de desenvolvimento.
+Conclusão exige quantidade efetivamente produzida positiva em cada item, início válido, fluxo concluível, ausência de reservas ativas, necessidades não encerradas, compras/pedidos pendentes e consumos inconsistentes. Não copia quantidade planejada para produzida e não exige igualdade entre ambas. Não há política existente para concluir itens com produção integralmente perdida; esse caso permanece bloqueado, aguardando fluxo específico de perdas. Conclusão preenche `data_conclusao`; nunca recebe esse campo do cliente.
+
+## Transações, histórico e limites das integrações
+
+Escritas usam transações Serializable, lock da empresa e releitura da ordem sob `FOR UPDATE`. Caminhos legados também bloqueiam a ordem antes de ler. Status/setor e apontamentos usam atualizações condicionais. Conflitos de serialização/unicidade/FK retornam 409, sem repetição automática. Auditoria e alterações pertencem à mesma transação; uma falha reverte tudo. As operações de ciclo de vida reutilizam os Services existentes dentro da transação corrente, sem transações aninhadas.
+
+Cancelamento consulta reservas, consumos, estoque, compras, pedidos de compra, necessidades, movimentos de setores, apontamentos e obrigações financeiras das compras relacionadas. Também consulta etapas executadas. Havendo qualquer efeito não reversível pelos serviços disponíveis, retorna 409 com motivo. Sem impedimentos, altera somente status para CANCELADA e audita. Nunca apaga a ordem, notas fiscais, compras, pagamentos ou histórico produtivo. Ordens concluídas ou já canceladas não podem ser canceladas.
+
+**Limitações verificadas no projeto:** não existem Services de liberação de reserva ou estorno de consumo/estoque disponíveis para esta integração. Portanto, reservas ativas e execução prévia impedem cancelamento; não se simula sua liberação nem se excluem registros para contornar a regra. Não são criados consumos efetivos, necessidades, reservas, compras, contas a pagar ou entradas/baixas de estoque automaticamente. O módulo coordena o fluxo existente, calcula consumo planejado, registra produção efetiva e valida os efeitos persistidos; essas operações externas devem usar serviços próprios quando implementados. A conclusão permanece administrativa quanto ao estoque (`baixaEstoque: pendente` no contrato legado), não uma confirmação de baixa física. Não há novo mecanismo de estorno, perda ou recebimento parcial.
+
+O modelo ordem_producao não contém `data_cadastro`, `data_atualizacao` nem relação de custos própria. Esses campos não são inventados, preenchidos ou usados como ordenação. A rastreabilidade das escritas usa auditoria existente. Consultas de movimentação de estoque consideram as origens ORDEM_PRODUCAO/PRODUCAO/CONSUMO_PRODUCAO; novas convenções de origem devem ser integradas pelo módulo de estoque, sem presumir que `origem_id` isolado identifica uma ordem.
+
+## Consulta
+
+Listagens: `page=1`, `limit=20` por padrão, máximo 100, skip validado. Itens e etapas usam os mesmos parâmetros. Rows e count são consultados diretamente no Prisma com snapshot RepeatableRead; nenhuma listagem é filtrada em memória. Consulta individual retorna cabeçalho/contadores, sem carregar coleções; consulte sub-recursos paginados.
+
+Filtros: `id_empresa` (conferência do contexto), `id_pedido_cliente`, `id_local_estoque`, `id_setor`, `id_usuario`, `status`, `prioridade`, `numero`, `busca` por número; `data_inicio_de/ate`, `data_previsao_de/ate`, `data_conclusao_de/ate`. Datas finais YYYY-MM-DD incluem o dia UTC completo. Filtros combinados e empresa obrigatória são aplicados no banco. Parâmetros repetidos/desconhecidos são rejeitados.
+
+`ordenar_por`: id, numero, prioridade, data_inicio, data_previsao, data_conclusao; `ordem`: asc/desc. Ordenação padrão id desc, com ID como desempate quando necessário.
+
+## Validação
+
+```sh
+npm test -- tests/unit/ordem_producao tests/unit/api/rate-limit.test.ts
+node --test tests/producao.test.mjs
+npm run typecheck
+```
+
+Os testes unitários usam Prisma mockado e não comprovam locks/rollback contra MySQL real. O teste opt-in `tests/producao.integration.test.mjs` foi ajustado para exigir produção efetiva antes da conclusão. Ele usa somente fixtures em MySQL local com schema preparado, sem DDL/migrations; foi mantido sem execução neste desenvolvimento. Para rodá-lo, configure PRODUCAO_TEST_DATABASE_URL e execute `node --test tests/producao.integration.test.mjs`. A opção `--configured-db --http` também exercita o Next real; execute somente em banco local de testes e sem outra instância dev usando o mesmo lock.
