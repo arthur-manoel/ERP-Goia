@@ -14,6 +14,7 @@ function setup(overrides = {}) {
   const ordem = {
     id: 1,
     id_empresa: 10,
+    id_usuario: 5,
     id_setor: null,
     status: "PLANEJADA",
     quantidade_planejada: new Decimal(2),
@@ -24,7 +25,8 @@ function setup(overrides = {}) {
         id: 20,
         id_produto: 30,
         quantidade: new Decimal(2),
-        ordem_producao_consumo_planejado: [{}],
+        quantidade_produzida: new Decimal(0),
+        ordem_producao_consumo_planejado: [{ id_materia_prima: 50 }],
       },
     ],
     ordem_producao_fluxo_setor: [],
@@ -39,6 +41,36 @@ function setup(overrides = {}) {
     ],
   }
   const tx = {
+    usuario_empresa: {
+      async findFirst() {
+        return { id: 1 }
+      },
+    },
+    reserva_estoque: {
+      async count() {
+        return 0
+      },
+    },
+    necessidade_producao: {
+      async count() {
+        return 0
+      },
+    },
+    consumo_producao: {
+      async count() {
+        return 0
+      },
+    },
+    compras: {
+      async count() {
+        return 0
+      },
+    },
+    pedido_compra: {
+      async count() {
+        return 0
+      },
+    },
     async $queryRaw(query) {
       const sql = (query.strings ?? query).join("?")
       if (sql.includes("FROM produto_fluxo")) return [{ id_fluxo: 3 }]
@@ -374,9 +406,19 @@ test("encerramento exige último setor e histórico completo; informa estoque pe
       data_recebimento: new Date(),
     },
   ]
+  // Produção efetivamente registrada, diferente do planejado.
+  ordem.ordem_producao_item[0].quantidade_produzida = new Decimal("1.750")
   const result = await service.encerrarOrdem(ctx, 1, input)
   assert.equal(result.baixaEstoque, "pendente")
   assert.equal(result.perdaAplicada, false)
+  assert.equal(
+    ordem.ordem_producao_item[0].quantidade_produzida.toString(),
+    "1.75",
+  )
+  assert.equal(
+    calls.some(([kind]) => kind === "item"),
+    false,
+  )
   assert.equal(
     calls.find(([kind]) => kind === "update")[1].data.status,
     "CONCLUIDA",
@@ -623,6 +665,7 @@ test("etapas respeitam sequência, início obrigatório, pausa e término autom�
   assert.equal(ordem.status, "EM_PRODUCAO")
   await assert.rejects(service.executarEtapa(ctx, 1, 101, false), conflict)
   await service.executarEtapa(ctx, 1, 102, true)
+  ordem.ordem_producao_item[0].quantidade_produzida = new Decimal("1.500")
   await service.executarEtapa(ctx, 1, 102, false)
   assert.equal(ordem.status, "CONCLUIDA")
   assert.ok(etapas.every((e) => e.status === "CONCLUIDA"))

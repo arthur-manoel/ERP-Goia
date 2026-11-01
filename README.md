@@ -42,12 +42,14 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Estoque | 🟨 | `locais_estoque`, `estoque`, `estoque_minimo_local`, `movimentacao_estoque`, `kardex`, `reserva_estoque` | [#29](https://github.com/arthur-manoel/ERP-Goia/issues/29) a [#32](https://github.com/arthur-manoel/ERP-Goia/issues/32) |
 | Compras | ⬜ | `requisicao_compra`, `item_requisicao_compra`, `pedido_compra`, `item_pedido_compra`, `compras`, `compra_itens` | [#33](https://github.com/arthur-manoel/ERP-Goia/issues/33) a [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Notas fiscais de entrada | ⬜ | `nota_fiscal`, `item_nota_fiscal` | [#36](https://github.com/arthur-manoel/ERP-Goia/issues/36) |
-| Produção | ⬜ | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
+| Produção | 🟨 | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
 | Vendas | 🟨 | `pedido_cliente`, `pedido_cliente_item`, `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39); API de rascunhos e fechamento explícito após recebimento confirmado. Migration versionada; aprovação/aplicação compartilhada pendentes. |
 | Financeiro do pedido | 🟨 | `pedido_cliente_fechamento`, `contas_receber`, `pagamentos_receber`, `categoria_financeira`, `condicoes_pagamento` | Geração transacional de títulos, sem baixa automática. Decisão técnica/implantação: [#91](https://github.com/arthur-manoel/ERP-Goia/issues/91). |
 | Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
 O quadro acompanha os módulos e suas tabelas principais; a estrutura completa está em `prisma/schema.prisma`.
+
+Backend de ordens de produção: CRUD multiempresa, ciclo de vida, itens e apontamentos efetivos disponíveis em `/api/ordem_producao`, preservando os endpoints anteriores. Liberação de reservas e estornos de consumo/estoque permanecem pendentes; cancelamentos que dependem dessas integrações são bloqueados. Contrato e limites em [src/modules/producao/README.md](src/modules/producao/README.md).
 
 ### Interface de pedidos de venda
 
@@ -491,6 +493,7 @@ A aprovação/aplicação no banco compartilhado segue pendente na
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-10-30 | — | Backend de ordens de produção | CRUD, ciclo de vida, itens e apontamentos em `/api/ordem_producao`, com isolamento multiempresa, permissões, rate limiting, auditoria e concorrência. Schema preservado; estornos e liberação de reservas indisponíveis bloqueiam cancelamentos dependentes. |
 | 2026-10-17 | Maria | `feature/pedido-contas-receber-automaticas` | Fechamento após recebimento confirmado e geração atômica de venda/parcelas, consulta financeira protegida e migration versionada com implantação compartilhada sujeita à aprovação da equipe (#91). Sem front-end ou baixa. |
 | 2026-10-10 | Maria | `feature/api-pedidos-itens-variacoes` | API de pedidos/itens por variação, cálculos no servidor e controle transacional de rascunhos. SQL DB-first para aprovação da equipe. |
 | 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |
