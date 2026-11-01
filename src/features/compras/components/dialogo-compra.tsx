@@ -30,6 +30,8 @@ import {
 import { BASE, type ComprasApi } from "../api"
 import { useExecutar } from "../executar"
 import type { CompraDetalhe } from "../tipos"
+import type { Opcao } from "../tipos"
+import { CondicoesFornecedor } from "./condicoes-fornecedor"
 import {
   Campo,
   EditorItens,
@@ -40,7 +42,8 @@ import {
   type ItemForm,
 } from "./comuns"
 
-type Ref = { id: number; nome: string } | null
+type Ref =
+  ({ id: number; nome: string } & Pick<Opcao, "condicoesComerciais">) | null
 
 /** Cria uma compra a partir de um pedido emitido (ou avulsa, sem pedido). */
 export function DialogoCompra({
@@ -149,6 +152,7 @@ export function DialogoCompra({
                 onChange={setFornecedor}
                 placeholder="fornecedor"
               />
+              <CondicoesFornecedor fornecedor={fornecedor} />
             </Campo>
             <Campo rotulo="Itens">
               <EditorItens

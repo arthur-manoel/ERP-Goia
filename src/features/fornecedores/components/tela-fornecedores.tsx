@@ -40,9 +40,17 @@ function Cabecalho({ onNovo }: { onNovo?: () => void }) {
       titulo="Fornecedores"
       descricao="Cadastre e consulte os fornecedores da empresa."
       acoes={
-        <Button onClick={onNovo} disabled={!onNovo}>
-          <Plus /> Novo fornecedor
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            render={<Link href="/cadastros/empresa-fornecedor" />}
+          >
+            Condições comerciais
+          </Button>
+          <Button onClick={onNovo} disabled={!onNovo}>
+            <Plus /> Novo fornecedor
+          </Button>
+        </div>
       }
     />
   )

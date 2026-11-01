@@ -14,6 +14,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { BASE, type ComprasApi } from "../api"
 import { useExecutar } from "../executar"
 import type { PedidoDetalhe } from "../tipos"
+import type { Opcao } from "../tipos"
+import { CondicoesFornecedor } from "./condicoes-fornecedor"
 import {
   Campo,
   EditorItens,
@@ -46,6 +48,7 @@ export function DialogoPedido({
   const [fornecedor, setFornecedor] = useState<{
     id: number
     nome: string
+    condicoesComerciais?: Opcao["condicoesComerciais"]
   } | null>(
     existente
       ? { id: existente.fornecedor.id, nome: existente.fornecedor.nome }
@@ -121,6 +124,7 @@ export function DialogoPedido({
             onChange={setFornecedor}
             placeholder="fornecedor"
           />
+          <CondicoesFornecedor fornecedor={fornecedor} />
         </Campo>
         <Campo rotulo="Itens do pedido">
           <EditorItens api={api} itens={itens} onChange={setItens} comValores />

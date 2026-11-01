@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { serializarJsonTextMysql } from "@/lib/limites-texto"
 import { HttpError } from "@/lib/api/errors"
 import { disputaPersistencia } from "@/lib/prisma-concorrencia"
+import { fornecedorDisponivel } from "@/modules/empresa-fornecedor/policy"
 
 export class ComprasError extends Error {
   constructor(
@@ -138,17 +139,7 @@ export function auditar(
 
 // ------------------------------------------------- escopo de empresa (tenant)
 
-export const fornecedorDaEmpresa = (
-  idEmpresa: number,
-): Prisma.fornecedoresWhereInput => ({
-  status: "ATIVO",
-  OR: [
-    { id_empresa: idEmpresa },
-    {
-      empresa_fornecedor: { some: { id_empresa: idEmpresa, status: "ATIVO" } },
-    },
-  ],
-})
+export const fornecedorDaEmpresa = fornecedorDisponivel
 
 export const insumoDaEmpresa = (
   idEmpresa: number,

@@ -648,6 +648,7 @@ export function acaoPedido(ctx: Contexto, id: number, acao: string) {
     const antes = detalhePedido(await carregarPedido(tx, ctx, id))
     const novo = proximoStatus(transicoesPedido, acao, antes.status)
     if (!novo) acaoInvalida(acao, antes.status)
+    if (acao === "emitir") await exigirFornecedor(tx, ctx, antes.fornecedor.id)
     if (acao === "cancelar") {
       if (antes.compra)
         throw conflito(
@@ -985,7 +986,6 @@ export function criarCompra(ctx: Contexto, input: CriarCompraInput) {
       }))
     } else {
       idFornecedor = input.idFornecedor!
-      await exigirFornecedor(tx, ctx, idFornecedor)
       await exigirInsumos(
         tx,
         ctx,
@@ -998,6 +998,8 @@ export function criarCompra(ctx: Contexto, input: CriarCompraInput) {
         valor_total: totalItem(i.quantidade, i.valorUnitario),
       }))
     }
+    // Revalidar também a conversão de pedidos antigos, cuja associação pode ter sido inativada.
+    await exigirFornecedor(tx, ctx, idFornecedor)
     somarValores(itens.map((i) => i.valor_total)) // limite do banco (400)
     const criada = await tx.compras.create({
       data: {
@@ -1563,9 +1565,18 @@ export function listarOpcoes(ctx: Contexto, input: OpcoesInput) {
           where,
           select: {
             id: true,
+            id_empresa: true,
             razao_social: true,
             nome_fantasia: true,
             cnpj: true,
+            empresa_fornecedor: {
+              where: { id_empresa: ctx.idEmpresa, status: "ATIVO" },
+              select: {
+                prazo_pagamento: true,
+                prazo_entrega: true,
+                observacao: true,
+              },
+            },
           },
           orderBy: [{ razao_social: "asc" }, { id: "asc" }],
           skip,
@@ -1578,6 +1589,10 @@ export function listarOpcoes(ctx: Contexto, input: OpcoesInput) {
           nome: nomeFornecedor(f),
           codigo: f.cnpj,
           unidade: null,
+          tipoFornecedor:
+            f.id_empresa === null ? "GLOBAL_ASSOCIADO" : "ESPECIFICO",
+          condicoesComerciais:
+            f.id_empresa === null ? (f.empresa_fornecedor[0] ?? null) : null,
         })),
         total,
       )

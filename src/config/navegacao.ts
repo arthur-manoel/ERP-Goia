@@ -54,6 +54,11 @@ export const navegacao: GrupoNavegacao[] = [
     itens: [
       { titulo: "Clientes", href: "/cadastros/clientes", icone: Users },
       { titulo: "Fornecedores", href: "/cadastros/fornecedores", icone: Truck },
+      {
+        titulo: "Condições de fornecedores",
+        href: "/cadastros/empresa-fornecedor",
+        icone: Truck,
+      },
       { titulo: "Categorias", href: "/cadastros/categorias", icone: Tags },
       { titulo: "Cores", href: "/cadastros/cores", icone: Palette },
       { titulo: "Tamanhos", href: "/cadastros/tamanhos", icone: Ruler },

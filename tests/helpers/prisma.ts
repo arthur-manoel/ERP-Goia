@@ -34,6 +34,7 @@ export const db = {
   tipos_produto: model(),
   $queryRaw: vi.fn(),
   fornecedores: model(),
+  empresa_fornecedor: model(),
   contas_receber: model(),
   contas_pagar: model(),
   empresas: model(),
