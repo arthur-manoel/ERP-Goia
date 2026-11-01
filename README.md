@@ -47,9 +47,16 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Financeiro do pedido | 🟨 | `pedido_cliente_fechamento`, `contas_receber`, `pagamentos_receber`, `categoria_financeira`, `condicoes_pagamento` | Geração de títulos e recebimentos explícitos, com baixa parcial/total transacional. Decisão técnica/implantação: [#91](https://github.com/arthur-manoel/ERP-Goia/issues/91). |
 | Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
+<details>
+<summary>Referência da base develop anterior a esta entrega</summary>
+
 O quadro acompanha os módulos e suas tabelas principais; a estrutura completa está em `prisma/schema.prisma`.
 
 Associações empresa–fornecedor: backend e tela disponíveis em `/cadastros/empresa-fornecedor`, com condições independentes, reativação e validação de disponibilidade integrada a Compras. Contrato, arquivos e limites em [src/modules/empresa-fornecedor/README.md](src/modules/empresa-fornecedor/README.md).
+
+Backend de ordens de produção: CRUD multiempresa, ciclo de vida, itens e apontamentos efetivos disponíveis em `/api/ordem_producao`, preservando os endpoints anteriores. Liberação de reservas e estornos de consumo/estoque permanecem pendentes; cancelamentos que dependem dessas integrações são bloqueados. Contrato e limites em [src/modules/producao/README.md](src/modules/producao/README.md).
+
+</details>
 
 Backend de ordens de produção: CRUD multiempresa, ciclo de vida, itens e apontamentos efetivos disponíveis em `/api/ordem_producao`, preservando os endpoints anteriores. Reservas, consumo real, entrada ao concluir e liberação no cancelamento sem efeitos irreversíveis estão integrados ao serviço de estoque. O fluxo de [cancelamentos e estornos de pedidos](src/modules/cancelamentos/README.md) preserva produção concluída, compras e consumos de material. Contrato e limites em [src/modules/producao/README.md](src/modules/producao/README.md).
 
