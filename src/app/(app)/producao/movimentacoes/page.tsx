@@ -1,17 +1,23 @@
 import type { Metadata } from "next"
+import { EmConstrucao } from "@/components/layout/em-construcao"
 import { PageHeader } from "@/components/layout/page-header"
-import { Apontamento } from "@/components/producao/apontamento"
 
-export const metadata: Metadata = { title: "Apontamento de produção" }
+export const metadata: Metadata = { title: "Movimentação entre setores" }
 
 export default function Page() {
   return (
     <>
       <PageHeader
-        titulo="Apontamento de produção"
-        descricao="Registro do que foi produzido em cada etapa e do que foi perdido, com motivo."
+        titulo="Movimentação entre setores"
+        descricao="Envio e recebimento da produção entre setores e consumo de materiais."
       />
-      <Apontamento />
+      <EmConstrucao
+        tabelas={[
+          "ordem_producao_movimentacao_setor",
+          "ordem_producao_movimentacao_item",
+          "consumo_producao",
+        ]}
+      />
     </>
   )
 }

@@ -39,30 +39,14 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Administração | ⬜ | `empresas`, `setores`, `tipos_setor`, `permissoes_setor`, `cargos` | [#16](https://github.com/arthur-manoel/ERP-Goia/issues/16) a [#18](https://github.com/arthur-manoel/ERP-Goia/issues/18) |
 | Cadastros | ⬜ | `clientes`, `fornecedores`, `empresa_fornecedor`, `categorias`, `cores`, `tamanhos`, `tipos_produto` | [#20](https://github.com/arthur-manoel/ERP-Goia/issues/20) a [#25](https://github.com/arthur-manoel/ERP-Goia/issues/25) |
 | Produtos e ficha técnica | ⬜ | `produtos`, `produto_empresa`, `produto_variacoes`, `produto_fornecedor`, `ficha_tecnica`, `ficha_tecnica_item` | [#26](https://github.com/arthur-manoel/ERP-Goia/issues/26) a [#28](https://github.com/arthur-manoel/ERP-Goia/issues/28) |
-| Estoque | 🟨 | `locais_estoque`, `estoque`, `estoque_minimo_local`, `movimentacao_estoque`, `kardex`, `reserva_estoque` | [#29](https://github.com/arthur-manoel/ERP-Goia/issues/29) a [#32](https://github.com/arthur-manoel/ERP-Goia/issues/32) |
+| Estoque | ⬜ | `locais_estoque`, `estoque`, `movimentacao_estoque`, `kardex`, `reserva_estoque` | [#29](https://github.com/arthur-manoel/ERP-Goia/issues/29) a [#32](https://github.com/arthur-manoel/ERP-Goia/issues/32) |
 | Compras | ⬜ | `requisicao_compra`, `item_requisicao_compra`, `pedido_compra`, `item_pedido_compra`, `compras`, `compra_itens` | [#33](https://github.com/arthur-manoel/ERP-Goia/issues/33) a [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Notas fiscais de entrada | ⬜ | `nota_fiscal`, `item_nota_fiscal` | [#36](https://github.com/arthur-manoel/ERP-Goia/issues/36) |
 | Produção | ⬜ | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
-| Vendas | 🟨 | `pedido_cliente`, `pedido_cliente_item`, `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39); API de rascunhos com SQL DB-first pendente de aprovação/aplicação. |
-| Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
+| Vendas | ⬜ | `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39) |
+| Dashboard e relatórios | ⬜ | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
-As 49 tabelas do schema atual estão distribuídas acima; cada uma aparece em um único módulo.
-
-### Interface de pedidos de venda
-
-O formulário de novo pedido e edição em `/vendas/pedidos` possui seleção de cliente, produto, tamanho e cor, preço sugerido pelo cadastro, subtotais e total automático. A disponibilidade por variação considera o saldo, outros pedidos abertos e ordens planejadas ou em produção com conclusão até a entrega. Uma insuficiência gera aviso e permite salvar para planejamento.
-
-As variações podem ser cadastradas nos produtos prontos do estoque (unidades ou peças) e selecionadas nas ordens de produção. Produtos sem grade continuam compatíveis. O saldo geral deve corresponder à soma das variações; uma variação vinculada não pode ser removida ou renomeada.
-
-**Status: front-end com adaptador temporário em memória.** Não cria reservas, não persiste após recarregar e não está conectado ao banco. Cadastros separados de cores/tamanhos, numeração automática e integração com as tabelas reais continuam pendentes. Nenhum dado de demonstração é carregado na aplicação.
-
-### Interface de insumos
-
-A tela `/estoque/insumos` reúne as posições físicas reais de produtos marcados para compra e não para venda, com busca e filtros por situação. A tela `/estoque` consolida insumos e produtos acabados. Ambas mostram depósito/localização, saldo físico, mínimo local, déficit e estados distintos para zerado, abaixo, exatamente no mínimo, regular e sem configuração.
-
-Usuários autorizados podem configurar o mínimo por empresa, localização e produto. A quantidade reservada não participa do alerta. As posições existentes herdaram o limite anterior de `produto_empresa`; novas posições sem mínimo aparecem explicitamente como não configuradas.
-
-**Status: saldos, mínimos locais e indicador do dashboard integrados ao Prisma.** Cadastro de produtos, movimentações e demais indicadores do dashboard continuam nas entregas próprias; este fluxo não usa o adaptador em memória.
+As 48 tabelas do banco `joseev47_erp_dev` estão distribuídas acima; cada uma aparece em um único módulo.
 
 ---
 
@@ -73,7 +57,7 @@ O andamento de cada item fica na própria issue (responsável, discussão, PR). 
 ### Fase 0 — Infraestrutura ✅
 
 - Next.js 16 + React 19 + TypeScript + Tailwind CSS 4
-- Prisma 7 com adapter MariaDB e schema introspectado do banco (49 models, 38 enums)
+- Prisma 7 com adapter MariaDB e schema introspectado do banco (48 models, 38 enums)
 - shadcn/ui com todos os componentes do style `base-nova`
 - Git Flow com `main` e `develop`, CI no GitHub Actions, Prettier, ESLint, commitlint e hooks
 - Esqueleto da aplicação: layout, menu, uma rota por tela, tema claro/escuro
@@ -176,7 +160,6 @@ DEV_ID_EMPRESA=1
 
 - Credenciais do banco: peça ao time em mensagem privada e nunca as versione. Caracteres especiais no usuário ou na senha precisam de URL encoding (`@` vira `%40`).
 - `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` alimentam a **sessão provisória** (`src/lib/sessao.ts`) até a autenticação ([#11](https://github.com/arthur-manoel/ERP-Goia/issues/11)) existir. Use ids que existam no banco (veja o seed, [#8](https://github.com/arthur-manoel/ERP-Goia/issues/8)).
-- O estoque mínimo não usa essa sessão provisória: suas telas fazem login real e chamam as rotas JSON com JWT e empresa ativa. Configure também `ACCESS_TOKEN_SECRET` no ambiente do servidor para o login; veja o [contrato da API](src/modules/estoque-minimo/README.md).
 
 ```bash
 npm install     # também gera o Prisma Client e ativa os hooks de commit
@@ -205,7 +188,7 @@ Fluxo para mudar a estrutura:
 **Proteções** (em `prisma.config.ts` e `src/lib/prisma.ts`):
 
 - `prisma migrate *` (exceto `migrate diff`) e `prisma db push` são bloqueados para que ninguém altere o banco compartilhado a partir do schema.
-- No MySQL remoto, `DATABASE_URL` só aceita o banco `joseev47_erp_dev`. Em localhost/127.0.0.1/::1, também aceita outros nomes para bancos locais de testes, como `compet`.
+- `DATABASE_URL` só é aceita se apontar para o banco `joseev47_erp_dev`.
 
 **Uso no código.** O cliente é `server-only`. Use-o em Server Components, Server Actions e Route Handlers, sempre filtrando pela empresa da sessão. O padrão completo está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md#anatomia-de-um-módulo).
 
@@ -334,98 +317,6 @@ git push origin main develop --tags
 
 ## Pendências e decisões
 
-### Contrato de autenticação
-
-A autenticação está em `src/modules/auth/`: `auth.schema.ts` valida entradas com
-Zod, `auth.repository.ts` concentra a persistência, `auth.service.ts` implementa
-as regras e `router.ts` cuida de HTTP e cookies. As rotas apenas reexportam os
-handlers. Os helpers antigos em `src/lib/{password,jwt,refreshToken,auth-cookies}.ts`
-reexportam as implementações para manter compatibilidade; `authorize.ts` mantém RBAC.
-As operações de refresh do repository são expostas dentro de callbacks
-transacionais, mantendo o bloqueio por usuário durante as decisões do service.
-`POST /api/auth/login` retorna `{ id, name, role, accessToken }` e grava o refresh
-no cookie `refresh_token`: httpOnly, secure em produção, sameSite lax,
-path `/api/auth`, validade de sete dias. `POST /api/auth/refresh` rotaciona o cookie
-e retorna `{ accessToken }`; token ausente, expirado, revogado ou reutilizado
-retorna 401. Reuso de token já rotacionado revoga todos os refresh tokens do usuário.
-`POST /api/auth/logout` revoga o refresh e limpa o cookie. O cookie antigo
-`session_id` é removido nos fluxos de autenticação.
-
-Configure `ACCESS_TOKEN_SECRET` com um segredo aleatório por ambiente (o `.env`
-local é ignorado pelo Git). Os JWTs usam HS256 e expiram em 15 minutos.
-O cliente envia `Authorization: Bearer <accessToken>` nas rotas protegidas e
-chama refresh para renovar o acesso; serialize as renovações, inclusive entre
-abas, pois reuso concorrente também causa revogação. Logout e alteração de perfil
-não invalidam JWTs já emitidos: eles permanecem válidos até expirar.
-
-O `src/instrumentation.ts` registra automaticamente o adapter Prisma em cada
-instância Node.js do Next, antes de atender requisições, usando o singleton de
-`src/lib/prisma.ts`. Não é necessário configurar o adapter nas rotas.
-O adapter consulta `usuarios`, traduz `nome`/`senha` para `name`/`passwordHash`
-e rejeita usuários inativos. O perfil é recalculado no login e no refresh:
-
-- `usuarios.nivel_acesso = ADMIN` corresponde a `ADMINISTRACAO`.
-- Para `USUARIO`, são considerados nomes de cargos ativos e nomes/tipos de
-  setores ativos em vínculos e empresas ativos. Os nomes reconhecidos são
-  `ADMINISTRACAO`/`ADMINISTRATIVO`, `PRODUCAO`, `VENDAS`/`COMERCIAL` e `FINANCEIRO`,
-  ignorando acentos, espaços nas extremidades e maiúsculas/minúsculas.
-- Nomes não reconhecidos não concedem perfil. Nenhum perfil reconhecido, ou mais
-  de um perfil distinto, impede autenticação: o JWT atual comporta um único perfil.
-  O nível `EMPRESA` de um vínculo não concede administração global automaticamente.
-
-O projeto usa exclusivamente MySQL/MariaDB, com `DATABASE_URL=mysql://...`.
-O Prisma utiliza `prisma/schema.prisma` e o adapter MariaDB também nas integrações
-com MySQL. O banco remoto continua restrito a `joseev47_erp_dev`; bancos locais
-de testes podem usar outros nomes. Após instalar as dependências, gere e valide
-o client com `npm run db:generate` e `npm run db:validate`.
-
-A persistência dos refresh tokens usa Prisma diretamente, com hash SHA-256;
-o hash fica na coluna `token` da tabela existente `refresh_tokens`.
-`replaced_by` guarda o ID inteiro do registro sucessor e `data_revogacao`
-registra a rotação, o logout ou a revogação por reutilização.
-
-```ts
-const auth = await requireRole(request, ["ADMINISTRACAO", "FINANCEIRO"]);
-if (auth.error) return auth.error;
-// auth.user contém id e role; nenhuma consulta ao banco nesta autorização.
-```
-
-A migration `prisma/migrations/20260920000000_refresh_token_rotation/migration.sql`
-adiciona somente `replaced_by INTEGER NULL` à tabela `refresh_tokens`.
-Aplique essa alteração antes de subir o código. A migration que criava a tabela
-paralela foi removida. Se ela já foi aplicada em algum ambiente, reconcilie o
-histórico antes do deploy; esta alteração não remove automaticamente tabelas existentes.
-O projeto veio de introspecção, sem histórico de migrations; foi gerado um baseline do schema anterior em `20260918000000_baseline`.
-Para uma cópia local existente, confira a equivalência do schema antes de registrar
-esse baseline com `npx prisma migrate resolve --applied 20260918000000_baseline`.
-Em banco vazio, as duas migrations serão aplicadas. O baseline reflete o Prisma;
-constraints não representadas pelo ORM precisam ser preservadas no dump local. Não aceite reset de um banco com dados a preservar. A configuração
-permite migrations apenas para localhost/127.0.0.1/::1; mantém a proteção do
-banco compartilhado. Depois de configurar a cópia local e o baseline, execute:
-
-```bash
-npx prisma migrate deploy
-npx prisma generate
-node --test tests/auth.test.mjs
-```
-
-Teste de integração (Node >=22.15) com persistência e adapter de usuários reais:
-use uma cópia **local de testes** MySQL/MariaDB com o baseline e a migration
-acima aplicados. O teste cria usuários próprios e os remove ao terminar.
-Por padrão, ele exige `AUTH_TEST_DATABASE_URL` e não aplica DDL automaticamente.
-
-```bash
-DATABASE_URL=mysql://USER:PASSWORD@127.0.0.1:3306/joseev47_erp_dev npm run db:generate
-AUTH_TEST_DATABASE_URL=mysql://USER:PASSWORD@127.0.0.1:3306/joseev47_erp_dev node --test tests/auth.integration.test.mjs
-```
-
-Para usar o MySQL local configurado no `.env`, inclusive um banco chamado `compet`,
-execute `npm run db:generate` e `node tests/auth.integration.test.mjs --configured-db`
-após aplicar as migrations na cópia de testes.
-
-Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
-é marcado como ignorado. Os testes de integração aceitam somente MySQL local.
-
 | Item | Situação |
 | --- | --- |
 | Proteção de branches, branch padrão `develop`, merge só com merge commit | Depende de admin e de GitHub Pro para repositório privado: [#6](https://github.com/arthur-manoel/ERP-Goia/issues/6) |
@@ -440,35 +331,10 @@ Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
 
 ---
 
-## API de relatório de quantidade por estoque
-
-`GET /api/relatorios/estoque/produtos`: consulta de saldos atuais por local e produto,
-com JWT, autorização de leitura de estoque por empresa, filtros, paginação e totais
-decimais separados por unidade. Entrega somente de back-end, sem telas ou migration.
-Contrato e testes locais: [documentação da API](src/modules/relatorio-estoque/README.md).
-
-## API de estoque e relacionamento de produtos
-
-`GET /api/estoque`, `GET /api/estoque/{id}` e `POST /api/estoque` consultam posições
-reais e vinculam produtos já habilitados a locais/setores da empresa autorizada.
-Novos vínculos começam com saldo zero, são auditados e idempotentes, preservando
-as duas unicidades do banco. Entrega de back-end, sem telas ou alteração de schema.
-Contrato e testes locais: [documentação da API](src/modules/estoque/README.md).
-
-## API de pedidos e itens por variação
-
-API de back-end persistida em `pedido_cliente`/`pedido_cliente_item`: consultas,
-criação idempotente e edição de rascunhos, com variações, totais decimais calculados
-no servidor, autorização comercial e auditoria. Sem alterações de interface ou
-geração financeira. Implantação depende de aprovação/aplicação do SQL mínimo
-pelo responsável do banco. [Contrato e testes locais](src/modules/pedidos/README.md).
-
 ## Histórico
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
-| 2026-10-10 | Maria | `feature/api-pedidos-itens-variacoes` | API de pedidos/itens por variação, cálculos no servidor e controle transacional de rascunhos. SQL DB-first para aprovação da equipe. |
-| 2026-10-01 | Maria | `feature/api-estoque-relacionamento-produtos` | API autenticada de posições e vínculo produto/local/setor com saldo zero, auditoria e proteção contra duplicidade. |
 | 2026-09-18 | Everton | `feature/guia-contribuicao` | CONTRIBUTING, templates de PR e issue, CODEOWNERS; roadmap convertido em 37 issues com milestones e labels. |
 | 2026-09-18 | Everton | PR [#5](https://github.com/arthur-manoel/ERP-Goia/pull/5) | Esqueleto da aplicação (layout, menu, 26 rotas), sessão provisória, helpers e guia de arquitetura. |
 | 2026-09-18 | Everton | PR [#4](https://github.com/arthur-manoel/ERP-Goia/pull/4) | Prettier, husky, lint-staged, commitlint, EditorConfig, `.gitattributes` e CI. |

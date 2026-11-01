@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import type { ReactNode } from "react"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Providers } from "@/components/providers"
 import "./globals.css"
@@ -23,7 +22,7 @@ export const metadata: Metadata = {
     "ERP multiempresa: cadastros, estoque, compras, produção e vendas.",
 }
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     // suppressHydrationWarning: o next-themes aplica a classe do tema no <html> antes da hidratação.
     <html
