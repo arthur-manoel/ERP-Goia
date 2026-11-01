@@ -32,10 +32,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-!.env.example
-
-# Prisma Client é regenerado no npm install e no npm run db:pull.
-/src/generated/prisma/
 
 # vercel
 .vercel
@@ -43,5 +39,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-.claude
