@@ -69,6 +69,12 @@ Somente nome/razão social é obrigatório. O formulário compartilha a validaç
 
 O contexto `/api/auth/contexto` fornece os vínculos ativos para seleção de empresa, sem exigir acesso a estoque. A autorização de `CLIENTES` permanece no servidor por operação. Nenhum schema, migration, permissão ou dado de demonstração foi adicionado ao fluxo real. A tela de fornecedores continua na sua implementação própria.
 
+### Interface de categorias
+
+A tela `/cadastros/categorias` do PR #102 está integrada à API `/api/categorias` do PR #110. Busca, filtros de situação e paginação são executados no servidor. O formulário cadastra e edita nome/descrição; a confirmação inativa por DELETE ou reativa por PATCH, preservando os vínculos históricos.
+
+A empresa selecionada acompanha cada requisição no header `X-Empresa-Id`. A troca de empresa reinicia a tela e cancela consultas pendentes. Permissões, unicidade e regras de vínculos continuam validadas pela API existente. Nenhum schema ou migration foi alterado nesta integração.
+
 ### Interface de insumos
 
 A tela `/estoque/insumos` reúne as posições físicas reais de produtos marcados para compra e não para venda, com busca e filtros por situação. A tela `/estoque` consolida insumos e produtos acabados. Ambas mostram depósito/localização, saldo físico, mínimo local, déficit e estados distintos para zerado, abaixo, exatamente no mínimo, regular e sem configuração.
