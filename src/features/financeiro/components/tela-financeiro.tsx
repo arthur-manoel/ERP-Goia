@@ -1,5 +1,5 @@
-import { TelaModulo } from "@/features/erp/components/tela-modulo"
+import { TelaRecebimentos } from "@/features/recebimentos/components/tela-recebimentos"
 
 export function TelaFinanceiro() {
-  return <TelaModulo module="financeiro" />
+  return <TelaRecebimentos />
 }

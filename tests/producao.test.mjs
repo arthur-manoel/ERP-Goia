@@ -46,6 +46,13 @@ function setup(overrides = {}) {
         return { id: 1 }
       },
     },
+    movimentacao_estoque: {
+      async count() {
+        return calls.some(([tipo]) => tipo === "entrada-producao")
+          ? ordem.ordem_producao_item.length
+          : 0
+      },
+    },
     reserva_estoque: {
       async count() {
         return 0
@@ -182,6 +189,16 @@ function setup(overrides = {}) {
     }).outputText
     function localRequire(id) {
       if (Object.hasOwn(overrides, id)) return overrides[id]
+      // O efeito físico é exercitado por HTTP/MariaDB em operacoes-integradas.
+      // Aqui validamos que o orquestrador chama o mesmo colaborador transacional.
+      if (id === "@/modules/reservas/fluxo.service")
+        return {
+          async entradaConclusao(database, contexto, idOP) {
+            assert.equal(database, tx)
+            calls.push(["entrada-producao", contexto, idOP])
+            return []
+          },
+        }
       if (id === "server-only") return {}
       if (id === "@/generated/prisma/client")
         return { Prisma: { ...runtime, sql: runtime.sqltag } }
@@ -382,8 +399,14 @@ test("lock otimista inclui status, empresa e setor; falha não gera histórico",
   )
 })
 
-test("encerramento exige último setor e histórico completo; informa estoque pendente", async () => {
-  const { service, ordem, calls } = setup()
+test("encerramento exige último setor e histórico completo; chama entrada de estoque na transação", async () => {
+  const { service, ordem, calls, tx } = setup()
+  const atualizar = tx.ordem_producao.updateMany
+  tx.ordem_producao.updateMany = async (args) => {
+    const r = await atualizar(args)
+    Object.assign(ordem, args.data)
+    return r
+  }
   ordem.status = "EM_PRODUCAO"
   ordem.data_inicio = new Date()
   ordem.id_setor = 8
@@ -409,7 +432,11 @@ test("encerramento exige último setor e histórico completo; informa estoque pe
   // Produção efetivamente registrada, diferente do planejado.
   ordem.ordem_producao_item[0].quantidade_produzida = new Decimal("1.750")
   const result = await service.encerrarOrdem(ctx, 1, input)
-  assert.equal(result.baixaEstoque, "pendente")
+  assert.equal(result.baixaEstoque, "efetivada")
+  assert.deepEqual(
+    calls.filter(([tipo]) => tipo === "entrada-producao"),
+    [["entrada-producao", ctx, 1]],
+  )
   assert.equal(result.perdaAplicada, false)
   assert.equal(
     ordem.ordem_producao_item[0].quantidade_produzida.toString(),

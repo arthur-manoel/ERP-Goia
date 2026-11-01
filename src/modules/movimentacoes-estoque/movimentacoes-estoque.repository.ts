@@ -15,8 +15,16 @@ import type {
   Posicao,
 } from "./movimentacoes-estoque.schema"
 import { calcularSaldo } from "./movimentacoes-estoque.service"
+import { atualizarGradeEstoque } from "@/modules/estoque/estoque.grade"
 
 type Tx = Prisma.TransactionClient
+type Origem = {
+  tipo: Prisma.movimentacao_estoqueUncheckedCreateInput["tipo"]
+  nome: string
+  id: number
+  chave: string
+  valorTotal?: Prisma.Decimal
+}
 async function validarPosicao(
   tx: Tx,
   ctx: Contexto,
@@ -48,6 +56,7 @@ async function registrar(
   delta: Prisma.Decimal,
   observacao: string,
   origem: string,
+  documento?: Origem,
 ) {
   const atual = anterior.plus(delta)
   const movimento = await tx.movimentacao_estoque.create({
@@ -56,11 +65,17 @@ async function registrar(
       id_local_estoque: pos.idLocalEstoque,
       id_setor: pos.idSetor,
       id_produto: pos.idProduto,
-      tipo: delta.isPositive() ? "AJUSTE_ENTRADA" : "AJUSTE_SAIDA",
+      tipo:
+        documento?.tipo ??
+        (delta.isPositive() ? "AJUSTE_ENTRADA" : "AJUSTE_SAIDA"),
       quantidade: delta.abs(),
       id_usuario: ctx.idUsuario,
       observacao,
       origem_tipo: origem,
+      origem_id: documento?.id,
+      chave_operacao: documento?.chave,
+      valor_total: documento?.valorTotal,
+      id_variacao: pos.idVariacao,
     },
   })
   await tx.kardex.create({
@@ -97,6 +112,90 @@ async function registrar(
   })
   return movimento.id
 }
+export async function movimentarNaTransacao(
+  tx: Tx,
+  ctx: Contexto,
+  dados: MovimentoInput | AjusteInput,
+  operacao: "entrada" | "saida" | "ajuste",
+  documento?: Origem,
+) {
+  // Existe mesmo antes da primeira posição. Todas as escritas deste produto
+  // aguardam o mesmo lock, inclusive quando locais diferentes são usados.
+  await bloquearProdutoEstoque(tx, ctx, dados.idProduto)
+  await validarPosicao(tx, ctx, dados)
+  const setor = await tx.setores.findFirst({
+    where: {
+      id: dados.idSetor,
+      id_empresa: ctx.idEmpresa,
+      status: "ATIVO",
+    },
+  })
+  if (!setor) throw new NotFoundError("Setor ativo não encontrado na empresa.")
+  const chave = {
+    id_empresa: ctx.idEmpresa,
+    id_local_estoque: dados.idLocalEstoque,
+    id_produto: dados.idProduto,
+  }
+  let estoque = await tx.estoque.findUnique({
+    where: { id_empresa_id_local_estoque_id_produto: chave },
+  })
+  if (estoque && estoque.id_setor !== dados.idSetor)
+    throw new ConflictError("A posição pertence a outro setor.")
+  const { saldo: anterior, idMovimentacaoAbertura } =
+    await prepararSaldoEstoque(tx, ctx, dados, estoque)
+  const ajuste = "saldoNovo" in dados
+  if (ajuste && dados.idVariacao)
+    throw new ConflictError(
+      "Inventário por variação exige reconciliação específica; não substitui o saldo agregado.",
+    )
+  const { atual, delta } = calcularSaldo(
+    anterior,
+    ajuste ? dados.saldoNovo : dados.quantidade,
+    operacao,
+    ajuste ? dados.saldoEsperado : undefined,
+  )
+  if (!estoque)
+    estoque = await tx.estoque.create({
+      data: { ...chave, id_setor: dados.idSetor, quantidade: anterior },
+    })
+  if (atual.lt(estoque.quantidade_reservada))
+    throw new ConflictError(
+      "A saída comprometeria quantidades reservadas. Consuma a reserva no documento de origem.",
+    )
+  await atualizarGradeEstoque(tx, ctx, estoque, dados.idVariacao, delta)
+  // A condição também detecta escritores externos que alteraram a projeção.
+  const resultado = await tx.estoque.updateMany({
+    where: {
+      id: estoque.id,
+      id_empresa: ctx.idEmpresa,
+      quantidade: anterior,
+    },
+    data: { quantidade: atual, data_atualizacao: new Date() },
+  })
+  if (resultado.count !== 1)
+    throw new ConflictError("O saldo mudou durante a operação.")
+  const idMovimentacao = await registrar(
+    tx,
+    ctx,
+    dados,
+    anterior,
+    delta,
+    dados.observacao,
+    documento?.nome ?? `API_${operacao.toUpperCase()}`,
+    documento,
+  )
+  return {
+    idMovimentacao,
+    idMovimentacaoAbertura,
+    idProduto: dados.idProduto,
+    idLocalEstoque: dados.idLocalEstoque,
+    idSetor: dados.idSetor,
+    operacao,
+    quantidade: delta.abs().toFixed(3),
+    saldoAnterior: anterior.toFixed(3),
+    saldoAtual: atual.toFixed(3),
+  }
+}
 export async function movimentar(
   ctx: Contexto,
   dados: MovimentoInput | AjusteInput,
@@ -104,75 +203,7 @@ export async function movimentar(
 ) {
   try {
     return await prisma.$transaction(
-      async (tx) => {
-        // Existe mesmo antes da primeira posição. Todas as escritas deste produto
-        // aguardam o mesmo lock, inclusive quando locais diferentes são usados.
-        await bloquearProdutoEstoque(tx, ctx, dados.idProduto)
-        await validarPosicao(tx, ctx, dados)
-        const setor = await tx.setores.findFirst({
-          where: {
-            id: dados.idSetor,
-            id_empresa: ctx.idEmpresa,
-            status: "ATIVO",
-          },
-        })
-        if (!setor)
-          throw new NotFoundError("Setor ativo não encontrado na empresa.")
-        const chave = {
-          id_empresa: ctx.idEmpresa,
-          id_local_estoque: dados.idLocalEstoque,
-          id_produto: dados.idProduto,
-        }
-        let estoque = await tx.estoque.findUnique({
-          where: { id_empresa_id_local_estoque_id_produto: chave },
-        })
-        if (estoque && estoque.id_setor !== dados.idSetor)
-          throw new ConflictError("A posição pertence a outro setor.")
-        const { saldo: anterior, idMovimentacaoAbertura } =
-          await prepararSaldoEstoque(tx, ctx, dados, estoque)
-        const ajuste = "saldoNovo" in dados
-        const { atual, delta } = calcularSaldo(
-          anterior,
-          ajuste ? dados.saldoNovo : dados.quantidade,
-          operacao,
-          ajuste ? dados.saldoEsperado : undefined,
-        )
-        if (!estoque)
-          estoque = await tx.estoque.create({
-            data: { ...chave, id_setor: dados.idSetor, quantidade: anterior },
-          })
-        // A condição também detecta escritores externos que alteraram a projeção.
-        const resultado = await tx.estoque.updateMany({
-          where: {
-            id: estoque.id,
-            id_empresa: ctx.idEmpresa,
-            quantidade: anterior,
-          },
-          data: { quantidade: atual, data_atualizacao: new Date() },
-        })
-        if (resultado.count !== 1)
-          throw new ConflictError("O saldo mudou durante a operação.")
-        const idMovimentacao = await registrar(
-          tx,
-          ctx,
-          dados,
-          anterior,
-          delta,
-          dados.observacao,
-          `API_${operacao.toUpperCase()}`,
-        )
-        return {
-          idMovimentacao,
-          idMovimentacaoAbertura,
-          idProduto: dados.idProduto,
-          idLocalEstoque: dados.idLocalEstoque,
-          idSetor: dados.idSetor,
-          operacao,
-          quantidade: delta.abs().toFixed(3),
-          saldoAnterior: anterior.toFixed(3),
-          saldoAtual: atual.toFixed(3),
-        }
-      },
+      (tx) => movimentarNaTransacao(tx, ctx, dados, operacao),
       { isolationLevel: "Serializable", maxWait: 10000, timeout: 15000 },
     )
   } catch (error) {

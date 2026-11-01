@@ -394,7 +394,13 @@ export function item(
 export async function createItem(
   ctx: Contexto,
   id: number,
-  data: { id_produto: number; quantidade: string; tamanho: string },
+  data: {
+    id_produto: number
+    quantidade: string
+    tamanho: string
+    id_cor?: number | null
+    id_tamanho?: number | null
+  },
   tx: Transaction,
 ) {
   await assertParent(ctx, id, tx)

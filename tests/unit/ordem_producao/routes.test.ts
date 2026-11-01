@@ -19,6 +19,7 @@ import {
   DELETE as removeItem,
 } from "../../../src/app/api/ordem_producao/[id]/itens/[itemId]/route"
 import * as flowRepository from "../../../src/modules/fluxos/fluxos.repository"
+import * as estoqueProducao from "../../../src/modules/reservas/fluxo.service"
 import { db } from "../../helpers/prisma"
 import { request, context } from "../../helpers/http"
 import { resetRateLimitsForTests } from "../../../src/lib/api/rate-limit"
@@ -84,6 +85,11 @@ function membership(
   }
 }
 beforeEach(() => {
+  // Estes testes isolam roteamento e estados. O serviço de estoque e seus
+  // efeitos indivisíveis são exercitados na integração HTTP com MariaDB real.
+  vi.spyOn(estoqueProducao, "entradaConclusao").mockResolvedValue([99])
+  db.reserva_estoque.findMany.mockResolvedValue([])
+  db.necessidade_producao.updateMany.mockResolvedValue({ count: 0 })
   resetRateLimitsForTests()
   row = {
     ...base,
@@ -398,6 +404,11 @@ it("conclusão exige produção real e respeita quantidades diferentes do plano"
   expect((await concluir(await req("POST"), context())).status).toBe(200)
   expect(item.quantidade_produzida.toString()).toBe("7.125")
   expect(row.status).toBe("CONCLUIDA")
+  expect(estoqueProducao.entradaConclusao).toHaveBeenCalledWith(
+    expect.anything(),
+    { idEmpresa: 10, idUsuario: 1 },
+    1,
+  )
   expect(db.ordem_producao_item.update).not.toHaveBeenCalled()
   expect(db.movimentacao_estoque.create).not.toHaveBeenCalled()
 })
@@ -565,6 +576,8 @@ it("item cria snapshot, etapas e consumo previsto na mesma transação", async (
   })
   expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function), {
     isolationLevel: "Serializable",
+    maxWait: 10000,
+    timeout: 30000,
   })
   expect(db.auditoria.create).toHaveBeenCalledOnce()
 })

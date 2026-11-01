@@ -19,7 +19,12 @@ const decimal = z
         "Informe quantidade não negativa com até três casas decimais.",
       ),
   )
-const posicao = { idProduto: id, idLocalEstoque: id, idSetor: id }
+const posicao = {
+  idProduto: id,
+  idLocalEstoque: id,
+  idSetor: id,
+  idVariacao: id.optional(),
+}
 const observacao = z
   .string({ error: "Informe o motivo da movimentação." })
   .trim()
@@ -68,5 +73,5 @@ export type MovimentoInput = z.infer<typeof movimentoSchema>
 export type AjusteInput = z.infer<typeof ajusteSchema>
 export type Posicao = Pick<
   MovimentoInput,
-  "idProduto" | "idLocalEstoque" | "idSetor"
+  "idProduto" | "idLocalEstoque" | "idSetor" | "idVariacao"
 >

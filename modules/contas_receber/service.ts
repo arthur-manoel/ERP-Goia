@@ -61,7 +61,7 @@ function noDirectSettlement(
     requested !== current?.situacao
   )
     throw new ConflictError(
-      "Baixa exige pagamento, saldo e movimentação na mesma transação. Fluxo de recebimento ainda não disponível.",
+      "Baixa exige pagamento, saldo e movimentação na mesma transação. Use o fluxo de recebimentos do título.",
     )
 }
 

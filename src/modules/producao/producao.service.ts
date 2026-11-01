@@ -62,10 +62,32 @@ function resposta(ordem: Ordem) {
   return {
     ordem,
     perdaAplicada: false,
-    // Encerramento administrativo não executa reserva, baixa nem consumo efetivo.
+    // A conclusão confirma separadamente a existência das entradas no livro.
     baixaEstoque: "pendente" as const,
     disponibilidadeEstoque: "nao_verificada" as const,
   }
+}
+async function comprovacaoEstoque(
+  tx: Transaction,
+  ctx: Contexto,
+  ordem: Ordem,
+) {
+  if (ordem.status !== "CONCLUIDA") return "pendente" as const
+  const chaves = ordem.ordem_producao_item.map(
+    (item) => `op:${ordem.id}:item:${item.id}`,
+  )
+  const total = await tx.movimentacao_estoque.count({
+    where: {
+      id_empresa: ctx.idEmpresa,
+      origem_tipo: "ORDEM_PRODUCAO",
+      origem_id: ordem.id,
+      tipo: "ENTRADA_PRODUCAO",
+      chave_operacao: { in: chaves },
+    },
+  })
+  return chaves.length > 0 && total === chaves.length
+    ? ("efetivada" as const)
+    : ("pendente_regularizacao" as const)
 }
 async function finalizar(
   tx: Transaction,
@@ -78,6 +100,7 @@ async function finalizar(
   const snapshot = await fluxos.snapshot(tx, id)
   return {
     ...resposta(depois),
+    baixaEstoque: await comprovacaoEstoque(tx, ctx, depois),
     ...(snapshot
       ? { fluxoSnapshot: snapshot, etapas: await fluxos.etapas(tx, id) }
       : {}),
@@ -376,7 +399,7 @@ export async function encerrarOrdemNaTransacao(
       "Conclua a última etapa para encerrar esta ordem.",
     )
   validarApontamentoLegado(ordem)
-  await confirmarQuantidades(tx, ordem)
+  await confirmarQuantidades(tx, ordem, ctx)
   await atualizarEstado(tx, ctx, ordem, {
     status: "CONCLUIDA",
     data_conclusao: new Date(),
@@ -452,7 +475,7 @@ export async function executarEtapaNaTransacao(
         "Inicie a etapa atual antes de concluí-la e retome ordens pausadas.",
       )
     const ultima = atual.id === etapas[etapas.length - 1].id
-    if (ultima) await confirmarQuantidades(tx, ordem)
+    if (ultima) await confirmarQuantidades(tx, ordem, ctx)
     await fluxos.transicionarEtapa(tx, id, atual, false)
     // A etapa já tem lock e atualização condicional. Entre etapas não há
     // mudança no cabeçalho; evite depender da contagem de UPDATE sem alteração.
@@ -470,6 +493,7 @@ export function consultarOrdem(ctx: Contexto, id: number) {
     const snapshot = await fluxos.snapshot(tx, id)
     return {
       ...resposta(ordem),
+      baixaEstoque: await comprovacaoEstoque(tx, ctx, ordem),
       ...(snapshot
         ? { fluxoSnapshot: snapshot, etapas: await fluxos.etapas(tx, id) }
         : {}),

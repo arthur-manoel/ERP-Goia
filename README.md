@@ -44,20 +44,18 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Notas fiscais de entrada | ⬜ | `nota_fiscal`, `item_nota_fiscal` | [#36](https://github.com/arthur-manoel/ERP-Goia/issues/36) |
 | Produção | 🟨 | `ordem_producao`, `ordem_producao_item`, `ordem_producao_consumo_planejado`, `ordem_producao_fluxo_setor`, `ordem_producao_movimentacao_setor`, `ordem_producao_movimentacao_item`, `necessidade_producao`, `consumo_producao` | [#37](https://github.com/arthur-manoel/ERP-Goia/issues/37), [#38](https://github.com/arthur-manoel/ERP-Goia/issues/38) |
 | Vendas | 🟨 | `pedido_cliente`, `pedido_cliente_item`, `venda`, `item_venda` | [#39](https://github.com/arthur-manoel/ERP-Goia/issues/39); API de rascunhos e fechamento explícito após recebimento confirmado. Migration versionada; aprovação/aplicação compartilhada pendentes. |
-| Financeiro do pedido | 🟨 | `pedido_cliente_fechamento`, `contas_receber`, `pagamentos_receber`, `categoria_financeira`, `condicoes_pagamento` | Geração transacional de títulos, sem baixa automática. Decisão técnica/implantação: [#91](https://github.com/arthur-manoel/ERP-Goia/issues/91). |
+| Financeiro do pedido | 🟨 | `pedido_cliente_fechamento`, `contas_receber`, `pagamentos_receber`, `categoria_financeira`, `condicoes_pagamento` | Geração de títulos e recebimentos explícitos, com baixa parcial/total transacional. Decisão técnica/implantação: [#91](https://github.com/arthur-manoel/ERP-Goia/issues/91). |
 | Dashboard e relatórios | 🟨 | — | [#40](https://github.com/arthur-manoel/ERP-Goia/issues/40), [#41](https://github.com/arthur-manoel/ERP-Goia/issues/41) |
 
 O quadro acompanha os módulos e suas tabelas principais; a estrutura completa está em `prisma/schema.prisma`.
 
-Backend de ordens de produção: CRUD multiempresa, ciclo de vida, itens e apontamentos efetivos disponíveis em `/api/ordem_producao`, preservando os endpoints anteriores. Liberação de reservas e estornos de consumo/estoque permanecem pendentes; cancelamentos que dependem dessas integrações são bloqueados. Contrato e limites em [src/modules/producao/README.md](src/modules/producao/README.md).
+Backend de ordens de produção: CRUD multiempresa, ciclo de vida, itens e apontamentos efetivos disponíveis em `/api/ordem_producao`, preservando os endpoints anteriores. Reservas, consumo real, entrada ao concluir e liberação no cancelamento sem efeitos irreversíveis estão integrados ao serviço de estoque. Estornos permanecem em entrega própria. Contrato e limites em [src/modules/producao/README.md](src/modules/producao/README.md).
 
-### Interface de pedidos de venda
+### Interface de pedidos de venda, reservas, produção e recebimentos
 
-O formulário de novo pedido e edição em `/vendas/pedidos` possui seleção de cliente, produto, tamanho e cor, preço sugerido pelo cadastro, subtotais e total automático. A disponibilidade por variação considera o saldo, outros pedidos abertos e ordens planejadas ou em produção com conclusão até a entrega. Uma insuficiência gera aviso e permite salvar para planejamento.
+As telas `/vendas/pedidos`, `/producao/ordens`, `/estoque/reservas`, `/financeiro` e `/financeiro/contas-receber` executam as ações operacionais nos registros reais via JWT e empresa ativa. Reservas distinguem saldo físico, reservado e disponível por variação/local, com pendências explícitas para planejamento. Consumo real e entrada na fábrica usam o serviço oficial; envio e recebimento de transferência antecedem a disponibilidade na loja. Entregas consomem as reservas e baixam uma única vez; o fechamento gera as parcelas e a tela financeira registra recebimentos parciais/totais.
 
-As variações podem ser cadastradas nos produtos prontos do estoque (unidades ou peças) e selecionadas nas ordens de produção. Produtos sem grade continuam compatíveis. O saldo geral deve corresponder à soma das variações; uma variação vinculada não pode ser removida ou renomeada.
-
-**Status: front-end com adaptador temporário em memória.** Não cria reservas, não persiste após recarregar e não está conectado ao banco. Cadastros separados de cores/tamanhos, numeração automática e integração com as tabelas reais continuam pendentes. Nenhum dado de demonstração é carregado na aplicação.
+Cadastro e edição estrutural de pedidos e OPs usam os contratos das APIs existentes. Regras, limites, scripts DB-first e reprodução local dos três cards na mesma entrega: [operações integradas](docs/operacoes-integradas.md). A aplicação do DDL compartilhado/produção depende do responsável antes da implantação; a publicação da PR não altera o banco.
 
 ### Interface de clientes
 
@@ -490,6 +488,8 @@ A aprovação/aplicação no banco compartilhado segue pendente na
 [Contrato, implantação e testes locais](src/modules/pedido-recebiveis/README.md).
 
 ## Histórico
+
+- 01/11/2026: reservas, movimentações na entrega/conclusão e recebimentos integrados em uma entrega. Contrato e implantação DB-first em `docs/operacoes-integradas.md`.
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
