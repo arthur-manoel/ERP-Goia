@@ -19,6 +19,7 @@ import {
   DELETE as removeItem,
 } from "../../../src/app/api/ordem_producao/[id]/itens/[itemId]/route"
 import * as flowRepository from "../../../src/modules/fluxos/fluxos.repository"
+import * as efeitosProducao from "../../../src/modules/producao/producao.efeitos"
 import * as estoqueProducao from "../../../src/modules/reservas/fluxo.service"
 import { db } from "../../helpers/prisma"
 import { request, context } from "../../helpers/http"
@@ -88,6 +89,11 @@ beforeEach(() => {
   // Estes testes isolam roteamento e estados. O serviço de estoque e seus
   // efeitos indivisíveis são exercitados na integração HTTP com MariaDB real.
   vi.spyOn(estoqueProducao, "entradaConclusao").mockResolvedValue([99])
+  vi.spyOn(efeitosProducao, "lerEfeitosProducao").mockResolvedValue({
+    evento: "CONCLUSAO_PRODUCAO",
+    entradaProdutos: { situacao: "EFETIVADA", movimentos: [] },
+    consumoInsumos: { situacao: "CONFIRMADO", materiais: [], movimentos: [] },
+  })
   db.reserva_estoque.findMany.mockResolvedValue([])
   db.necessidade_producao.updateMany.mockResolvedValue({ count: 0 })
   resetRateLimitsForTests()

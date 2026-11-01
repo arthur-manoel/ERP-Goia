@@ -37,6 +37,8 @@ import {
   consumoSchema,
 } from "@/modules/reservas/reservas.schema"
 
+import { reservasParaConsumo } from "../consumo"
+
 type Origem = "PEDIDO" | "PRODUCAO" | "RESERVAS"
 type Variacao = {
   id: number
@@ -49,6 +51,7 @@ type Reserva = {
   id_variacao: number | null
   id_pedido_cliente_item: number | null
   id_ordem_producao: number | null
+  id_necessidade_producao: number | null
   id_local_estoque: number
   quantidade: string
   quantidade_consumida: string
@@ -119,6 +122,7 @@ type Ordem = Documento & {
     produtos: { nome: string; unidade: string }
   }[]
   necessidade_producao: {
+    id: number
     id_produto: number
     quantidade_necessaria: string
     quantidade_reservada: string
@@ -1018,6 +1022,12 @@ function DetalheDocumento({
           `Material ${r.id_produto}`,
         idItem: 0,
       }))
+  const reservasConsumo = ordem
+    ? reservasParaConsumo(reservas, ordem.necessidade_producao)
+    : []
+  const consumoSelecionado = reservasConsumo.find(
+    (r) => r.id === Number(reservaConsumo),
+  )
   async function reservar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
@@ -1279,8 +1289,11 @@ function DetalheDocumento({
           </div>
           <h3 className="font-semibold">Consumo real dos materiais</h3>
           <p>
-            Material não utilizado: informe zero, encerre o consumo e
-            justifique. A sobra será liberada sem saída física.
+            Para encerrar um consumo integral já registrado, selecione a reserva
+            atendida, informe zero, marque encerramento e justifique. Nenhuma
+            nova baixa será criada. Material não utilizado: informe zero,
+            encerre o consumo e justifique. A sobra será liberada sem saída
+            física.
           </p>
           {ordem.necessidade_producao.map((n) => (
             <p key={n.id_produto}>
@@ -1314,6 +1327,16 @@ function DetalheDocumento({
                 )
                 return
               }
+              if (
+                !consumoSelecionado ||
+                (consumoSelecionado.status !== "ATIVA" &&
+                  Number(validado.data.quantidade) > 0)
+              ) {
+                toast.error(
+                  "Esta reserva já foi consumida. Informe zero explicitamente para encerrar sem nova saída.",
+                )
+                return
+              }
               void enviar(
                 `/api/ordem_producao/${ordem.id}/consumos`,
                 validado.data,
@@ -1328,12 +1351,10 @@ function DetalheDocumento({
                 titulo="Reserva do material consumido"
                 valor={reservaConsumo}
                 alterar={setReservaConsumo}
-                opcoes={reservas
-                  .filter((r) => r.status === "ATIVA")
-                  .map((r) => ({
-                    value: String(r.id),
-                    label: `${r.nomeItem} · reserva ${r.id} · restante ${formatarQuantidade(saldoReserva(r))}`,
-                  }))}
+                opcoes={reservasConsumo.map((r) => ({
+                  value: String(r.id),
+                  label: `${r.nomeItem} · reserva ${r.id} · consumido ${formatarQuantidade(r.quantidade_consumida)} · restante ${formatarQuantidade(saldoReserva(r))}${r.status === "ATENDIDA" ? " · somente encerramento" : ""}`,
+                }))}
               />
               <Campo
                 nome="consumir-quantidade"
@@ -1352,13 +1373,13 @@ function DetalheDocumento({
               <Button
                 type="submit"
                 disabled={
-                  !reservas.some(
-                    (r) =>
-                      r.id === Number(reservaConsumo) && r.status === "ATIVA",
-                  )
+                  !consumoSelecionado ||
+                  !["EM_PRODUCAO", "PAUSADA"].includes(ordem.status)
                 }
               >
-                Registrar consumo e saída do material
+                {consumoSelecionado?.status === "ATENDIDA"
+                  ? "Encerrar consumo já realizado"
+                  : "Registrar consumo e saída do material"}
               </Button>
             </fieldset>
           </form>

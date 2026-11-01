@@ -42,9 +42,18 @@ export async function consumirMaterial(
   if (!reserva?.id_necessidade_producao)
     throw new NotFoundError("Reserva de material não encontrada na OP.")
   const q = new Prisma.Decimal(input.quantidade)
-  const n = await tx.necessidade_producao.findUniqueOrThrow({
-    where: { id: reserva.id_necessidade_producao },
+  const n = await tx.necessidade_producao.findFirst({
+    where: {
+      id: reserva.id_necessidade_producao,
+      id_ordem_producao: idOP,
+      id_produto: reserva.id_produto,
+      ordem_producao: { id_empresa: ctx.idEmpresa },
+    },
   })
+  if (!n)
+    throw new ConflictError(
+      "O material da reserva não corresponde à necessidade desta OP.",
+    )
   if (n.consumo_confirmado_em)
     throw new ConflictError("O consumo deste material já foi encerrado.")
   let consumo: Prisma.consumo_producaoGetPayload<object> | null = null

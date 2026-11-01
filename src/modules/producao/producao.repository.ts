@@ -2,6 +2,7 @@ import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { serializarJsonTextMysql } from "@/lib/limites-texto"
+import { lerEfeitosProducao } from "./producao.efeitos"
 import { conflitoPersistencia } from "./producao.errors"
 import { HttpError } from "@/lib/api/errors"
 
@@ -108,6 +109,10 @@ export async function auditar(
   antes: object | null,
   depois: { id: number } & object,
 ) {
+  const conclusao = "status" in depois && depois.status === "CONCLUIDA"
+  const estoque = conclusao
+    ? await lerEfeitosProducao(tx, ctx, depois.id)
+    : undefined
   await tx.auditoria.create({
     data: {
       id_empresa: ctx.idEmpresa,
@@ -122,7 +127,7 @@ export async function auditar(
         {
           ...depois,
           perdaAplicada: false,
-          baixaEstoque: "pendente",
+          ...(estoque ? { estoque } : {}),
         },
         (msg) => new ProducaoError(400, msg),
       ),

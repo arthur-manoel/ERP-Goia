@@ -199,6 +199,20 @@ function setup(overrides = {}) {
             return []
           },
         }
+      if (id === "./producao.efeitos")
+        return {
+          async lerEfeitosProducao() {
+            return {
+              evento: "CONCLUSAO_PRODUCAO",
+              entradaProdutos: { situacao: "EFETIVADA", movimentos: [] },
+              consumoInsumos: {
+                situacao: "CONFIRMADO",
+                materiais: [],
+                movimentos: [],
+              },
+            }
+          },
+        }
       if (id === "server-only") return {}
       if (id === "@/generated/prisma/client")
         return { Prisma: { ...runtime, sql: runtime.sqltag } }
@@ -1042,6 +1056,14 @@ test("Prisma 7: DriverAdapterError real e encapsulado são conflitos; schema/con
     { kind: "TransactionWriteConflict", originalCode: "1213" },
     {
       kind: "mysql",
+      code: 1020,
+      originalCode: "1020",
+      message:
+        "Record has changed since last read in table ordem_producao; try restarting transaction",
+      state: "HY000",
+    },
+    {
+      kind: "mysql",
       code: 1205,
       originalCode: "1205",
       message: "Lock timeout",
@@ -1070,6 +1092,13 @@ test("Prisma 7: DriverAdapterError real e encapsulado são conflitos; schema/con
     { kind: "ColumnNotFound", originalCode: "1054", column: "ausente" },
     { kind: "TableDoesNotExist", originalCode: "1146", table: "ausente" },
     { kind: "ConnectionClosed", originalCode: "2006" },
+    {
+      kind: "mysql",
+      code: 1644,
+      originalCode: "1644",
+      message: "Falha de trigger não concorrente",
+      state: "45000",
+    },
   ]) {
     const error = new DriverAdapterError(cause)
     prisma.$transaction = async () => {
