@@ -1,4 +1,5 @@
 import "server-only"
+import { HttpError } from "@/lib/api/errors"
 import type { z } from "zod"
 import { autorizar } from "./producao.authorization"
 import { ProducaoError } from "./producao.repository"
@@ -90,7 +91,7 @@ async function executar(
       headers: { "Cache-Control": "no-store" },
     })
   } catch (error) {
-    if (error instanceof ProducaoError)
+    if (error instanceof HttpError)
       return Response.json(
         { error: error.message },
         { status: error.status, headers: { "Cache-Control": "no-store" } },

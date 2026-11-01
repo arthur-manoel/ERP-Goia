@@ -31,7 +31,9 @@ import type {
  * - Recusa dados incoerentes (ex.: soma por status diferente do total).
  * - Converte falhas em ResultadoIndicador, sem vazar detalhes técnicos.
  *
- * Nenhuma função recebe idEmpresa: a empresa vem sempre da sessão, no servidor.
+ * Os indicadores reais ainda não têm consulta integrada. Quando forem
+ * implementados, o contexto deve vir do JWT e da empresa autorizada na
+ * requisição, seguindo os autorizadores dos módulos de API.
  */
 
 const MAX_PONTOS_EVOLUCAO = 31

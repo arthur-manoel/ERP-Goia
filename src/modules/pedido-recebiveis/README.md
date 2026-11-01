@@ -35,7 +35,6 @@ Faça login em `POST /api/auth/login` e envie `Authorization: Bearer <ACCESS_TOK
 e `X-Empresa-Id: <ID_EMPRESA>`. O header seleciona uma empresa autorizada; nunca
 concede acesso. Usuário, empresa e vínculo precisam estar ativos. Com apenas um
 vínculo ativo, o header pode ser omitido; com vários, é obrigatório.
-Não utiliza `getSessao()` nem `DEV_ID_*`.
 
 | Operação | Perfil JWT | Recurso e permissão |
 | --- | --- | --- |

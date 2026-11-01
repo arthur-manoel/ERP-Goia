@@ -1,69 +1,30 @@
 "use client"
 
 import Link from "next/link"
-import {
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-  Truck,
-} from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Pencil, Plus, Trash2, Truck } from "lucide-react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
+import { BarraFiltros } from "@/components/listagem/barra-filtros"
+import { Listagem } from "@/components/listagem/listagem"
+import { ConfirmarAcao } from "@/components/dialogos/confirmar-acao"
 import { PageHeader } from "@/components/layout/page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
-import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import {
   mensagemErro,
   useAutenticacao,
 } from "@/features/autenticacao/provedor-autenticacao"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
-import { filtrarFornecedores, formatarCnpj } from "../regras"
-import type { Fornecedor, RespostaPaginada } from "../tipos"
+import { useListagem } from "@/hooks/use-listagem"
+import { useObterJson } from "@/hooks/use-obter-json"
+import { endpointFornecedores, criarFonteFornecedores } from "../fonte"
+import { formatarCnpj } from "../regras"
+import type { Fornecedor } from "../tipos"
 import { FormularioFornecedor } from "./formulario-fornecedor"
 
-const endpoint = "/api/fornecedores"
 const limitePorPagina = 10
-// Máximo aceito pela API em uma única chamada.
-const limiteApi = 100
 
 function badgeStatus(status: string) {
   return (
@@ -73,128 +34,8 @@ function badgeStatus(status: string) {
   )
 }
 
-export function TelaFornecedores() {
-  const {
-    estado: estadoAutenticacao,
-    empresas,
-    empresa,
-    selecionarEmpresa,
-    requisitar,
-  } = useAutenticacao()
-  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
-  const [carregando, setCarregando] = useState(false)
-  const [erro, setErro] = useState("")
-  const [busca, setBusca] = useState("")
-  const [filtroStatus, setFiltroStatus] = useState("todos")
-  const [pagina, setPagina] = useState(0)
-  // "novo" abre o cadastro; um Fornecedor abre a edição dele; null fecha.
-  const [dialogo, setDialogo] = useState<"novo" | Fornecedor | null>(null)
-  const [inativando, setInativando] = useState<Fornecedor | null>(null)
-  const [inativandoRegistro, setInativandoRegistro] = useState(false)
-  const versaoRequisicao = useRef(0)
-
-  // A API de fornecedores filtra por igualdade (razão social / nome fantasia),
-  // não por "contém". Por isso carregamos todas as páginas da empresa (100 por
-  // chamada) e a busca por texto é feita aqui, no navegador.
-  const recarregar = useCallback(async () => {
-    if (!empresa) return
-    const versaoAtual = ++versaoRequisicao.current
-    setCarregando(true)
-    try {
-      const todos: Fornecedor[] = []
-      let paginaAtual = 1
-      let totalPaginas = 1
-      do {
-        const parametros = new URLSearchParams({
-          id_empresa: String(empresa.id),
-          page: String(paginaAtual),
-          limit: String(limiteApi),
-        })
-        if (filtroStatus !== "todos") parametros.set("status", filtroStatus)
-        const resposta = await requisitar(`${endpoint}?${parametros}`)
-        if (!resposta.ok) throw new Error(await mensagemErro(resposta))
-        const corpo = (await resposta.json()) as { data: RespostaPaginada }
-        todos.push(...corpo.data.rows)
-        totalPaginas = corpo.data.totalPages
-        paginaAtual += 1
-      } while (paginaAtual <= totalPaginas)
-      if (versaoAtual !== versaoRequisicao.current) return
-      setFornecedores(todos)
-      setErro("")
-    } catch (causa) {
-      if (versaoAtual !== versaoRequisicao.current) return
-      setErro(
-        causa instanceof Error
-          ? causa.message
-          : "Não foi possível carregar os fornecedores.",
-      )
-    } finally {
-      if (versaoAtual === versaoRequisicao.current) setCarregando(false)
-    }
-  }, [empresa, filtroStatus, requisitar])
-
-  useEffect(() => {
-    if (estadoAutenticacao !== "autenticado" || !empresa) return
-    void Promise.resolve().then(recarregar)
-  }, [empresa, estadoAutenticacao, recarregar])
-
-  const filtrados = useMemo(
-    () => filtrarFornecedores(fornecedores, busca),
-    [busca, fornecedores],
-  )
-
-  const totalPaginas = Math.max(
-    1,
-    Math.ceil(filtrados.length / limitePorPagina),
-  )
-  const paginaAtual = Math.min(pagina, totalPaginas - 1)
-  const visiveis = filtrados.slice(
-    paginaAtual * limitePorPagina,
-    (paginaAtual + 1) * limitePorPagina,
-  )
-  const possuiFiltros = busca || filtroStatus !== "todos"
-
-  const abrirNovo = () => setDialogo("novo")
-  const abrirEdicao = (item: Fornecedor) => setDialogo(item)
-
-  async function inativar() {
-    if (!inativando) return
-    setInativandoRegistro(true)
-    try {
-      const resposta = await requisitar(`${endpoint}/${inativando.id}`, {
-        method: "DELETE",
-      })
-      if (!resposta.ok) throw new Error(await mensagemErro(resposta))
-      toast.success("Fornecedor inativado.")
-      setInativando(null)
-      await recarregar()
-    } catch (causa) {
-      toast.error(
-        causa instanceof Error ? causa.message : "Não foi possível inativar.",
-      )
-    } finally {
-      setInativandoRegistro(false)
-    }
-  }
-
-  const seletorEmpresa =
-    empresas.length > 1 ? (
-      <SearchSelect
-        value={empresa ? String(empresa.id) : ""}
-        onValueChange={(valor) => {
-          setPagina(0)
-          selecionarEmpresa(Number(valor))
-        }}
-        label="Empresa ativa"
-        className="w-full sm:w-80"
-        options={empresas.map((item) => ({
-          value: String(item.id),
-          label: item.nome,
-        }))}
-      />
-    ) : null
-
-  const cabecalho = (
+function Cabecalho({ onNovo }: { onNovo?: () => void }) {
+  return (
     <PageHeader
       titulo="Fornecedores"
       descricao="Cadastre e consulte os fornecedores da empresa."
@@ -206,18 +47,36 @@ export function TelaFornecedores() {
           >
             Condições comerciais
           </Button>
-          <Button onClick={abrirNovo} disabled={!empresa}>
+          <Button onClick={onNovo} disabled={!onNovo}>
             <Plus /> Novo fornecedor
           </Button>
         </div>
       }
     />
   )
+}
 
-  if (estadoAutenticacao === "carregando")
+export function TelaFornecedores() {
+  const { estado, empresas, empresa, selecionarEmpresa } = useAutenticacao()
+
+  const seletorEmpresa =
+    empresas.length > 1 ? (
+      <SearchSelect
+        value={empresa ? String(empresa.id) : ""}
+        onValueChange={(valor) => selecionarEmpresa(Number(valor))}
+        label="Empresa ativa"
+        className="w-full sm:w-80"
+        options={empresas.map((item) => ({
+          value: String(item.id),
+          label: item.nome,
+        }))}
+      />
+    ) : null
+
+  if (estado === "carregando")
     return (
       <>
-        {cabecalho}
+        <Cabecalho />
         <Skeleton
           role="status"
           aria-label="Carregando fornecedores"
@@ -226,10 +85,10 @@ export function TelaFornecedores() {
       </>
     )
 
-  if (estadoAutenticacao === "anonimo")
+  if (estado === "anonimo")
     return (
       <>
-        {cabecalho}
+        <Cabecalho />
         <Alert>
           <AlertDescription>
             Entre na sua conta para gerenciar fornecedores.{" "}
@@ -244,7 +103,7 @@ export function TelaFornecedores() {
   if (!empresa)
     return (
       <>
-        {cabecalho}
+        <Cabecalho />
         <Alert>
           <AlertDescription>
             Selecione uma empresa para gerenciar fornecedores.
@@ -255,241 +114,178 @@ export function TelaFornecedores() {
     )
 
   return (
+    <ConteudoFornecedores
+      // Remonta ao trocar de empresa: descarta a lista, a busca e fecha
+      // qualquer diálogo aberto da empresa anterior.
+      key={empresa.id}
+      idEmpresa={empresa.id}
+      seletorEmpresa={seletorEmpresa}
+    />
+  )
+}
+
+function ConteudoFornecedores({
+  idEmpresa,
+  seletorEmpresa,
+}: {
+  idEmpresa: number
+  seletorEmpresa: React.ReactNode
+}) {
+  const { requisitar } = useAutenticacao()
+  const obter = useObterJson()
+  const fonte = useMemo(
+    () => criarFonteFornecedores(obter, idEmpresa),
+    [obter, idEmpresa],
+  )
+  const listagem = useListagem({ fonte, limite: limitePorPagina })
+  // "novo" abre o cadastro; um Fornecedor abre a edição dele; null fecha.
+  const [dialogo, setDialogo] = useState<"novo" | Fornecedor | null>(null)
+  const [inativando, setInativando] = useState<Fornecedor | null>(null)
+  const [inativandoRegistro, setInativandoRegistro] = useState(false)
+
+  async function inativar() {
+    if (!inativando) return
+    setInativandoRegistro(true)
+    try {
+      const resposta = await requisitar(
+        `${endpointFornecedores}/${inativando.id}`,
+        { method: "DELETE" },
+      )
+      if (!resposta.ok) throw new Error(await mensagemErro(resposta))
+      toast.success("Fornecedor inativado.")
+      setInativando(null)
+      listagem.recarregar()
+    } catch (causa) {
+      toast.error(
+        causa instanceof Error ? causa.message : "Não foi possível inativar.",
+      )
+    } finally {
+      setInativandoRegistro(false)
+    }
+  }
+
+  return (
     <>
-      {cabecalho}
+      <Cabecalho onNovo={() => setDialogo("novo")} />
       {seletorEmpresa}
 
-      {erro ? (
-        <Alert variant="destructive" role="alert">
-          <AlertDescription className="space-y-3">
-            <p>{erro}</p>
-            <Button variant="outline" onClick={() => void recarregar()}>
-              Tentar novamente
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-3">
-            <div className="relative min-w-0 flex-1 sm:max-w-md">
-              <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
-              <Input
-                aria-label="Buscar fornecedores"
-                className="pl-9"
-                placeholder="Buscar por razão social, fantasia, CNPJ ou e-mail..."
-                value={busca}
-                onChange={(evento) => {
-                  setBusca(evento.target.value)
-                  setPagina(0)
-                }}
-              />
-            </div>
-            <SearchSelect
-              value={filtroStatus}
-              onValueChange={(valor) => {
-                setFiltroStatus(valor || "todos")
-                setPagina(0)
-              }}
-              label="Filtrar por situação"
-              className="w-full sm:w-56"
-              options={[
-                { value: "todos", label: "Todas as situações" },
-                { value: "ATIVO", label: "Ativos" },
-                { value: "INATIVO", label: "Inativos" },
-              ]}
-            />
-            {possuiFiltros && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setBusca("")
-                  setFiltroStatus("todos")
-                  setPagina(0)
-                }}
-              >
-                Limpar filtros
-              </Button>
-            )}
-          </div>
+      <BarraFiltros
+        listagem={listagem}
+        rotuloBusca="Buscar fornecedores"
+        placeholderBusca="Buscar por razão social, fantasia, CNPJ ou e-mail..."
+        campos={[
+          {
+            tipo: "selecao",
+            chave: "status",
+            rotulo: "Filtrar por situação",
+            opcaoTodos: "Todas as situações",
+            opcoes: [
+              { valor: "ATIVO", rotulo: "Ativos" },
+              { valor: "INATIVO", rotulo: "Inativos" },
+            ],
+          },
+        ]}
+      />
 
-          <div className="overflow-hidden rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Razão social</TableHead>
-                  <TableHead>CNPJ</TableHead>
-                  <TableHead>Contato</TableHead>
-                  <TableHead>Cidade / UF</TableHead>
-                  <TableHead>Situação</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Ações</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {carregando ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="h-32 text-center text-muted-foreground"
-                    >
-                      Carregando fornecedores…
-                    </TableCell>
-                  </TableRow>
-                ) : visiveis.length ? (
-                  visiveis.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <div className="font-medium">{item.razao_social}</div>
-                        {item.nome_fantasia && (
-                          <div className="text-xs text-muted-foreground">
-                            {item.nome_fantasia}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs tabular-nums">
-                        {formatarCnpj(item.cnpj)}
-                      </TableCell>
-                      <TableCell>
-                        <div>{item.email || "—"}</div>
-                        {item.telefone && (
-                          <div className="text-xs text-muted-foreground">
-                            {item.telefone}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {[item.cidade, item.estado]
-                          .filter(Boolean)
-                          .join(" / ") || "—"}
-                      </TableCell>
-                      <TableCell>{badgeStatus(item.status)}</TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                aria-label={`Ações de ${item.razao_social}`}
-                              />
-                            }
-                          >
-                            <MoreHorizontal />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuGroup>
-                              <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                              <DropdownMenuItem
-                                onClick={() => abrirEdicao(item)}
-                              >
-                                <Pencil /> Editar
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                variant="destructive"
-                                disabled={item.status === "INATIVO"}
-                                onClick={() => setInativando(item)}
-                              >
-                                <Trash2 /> Inativar
-                              </DropdownMenuItem>
-                            </DropdownMenuGroup>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-40">
-                      <Empty>
-                        <EmptyHeader>
-                          <EmptyMedia variant="icon">
-                            <Truck />
-                          </EmptyMedia>
-                          <EmptyTitle>Nenhum fornecedor encontrado</EmptyTitle>
-                          <EmptyDescription>
-                            {possuiFiltros
-                              ? "Altere os filtros para visualizar outros fornecedores."
-                              : "Cadastre o primeiro fornecedor para começar."}
-                          </EmptyDescription>
-                        </EmptyHeader>
-                      </Empty>
-                    </TableCell>
-                  </TableRow>
+      <Listagem
+        listagem={listagem}
+        rotulo="Fornecedores"
+        substantivo={{ singular: "fornecedor", plural: "fornecedores" }}
+        chaveItem={(item) => item.id}
+        vazio={{
+          icone: <Truck />,
+          titulo: "Nenhum fornecedor encontrado",
+          descricao: "Cadastre o primeiro fornecedor para começar.",
+        }}
+        colunas={[
+          {
+            id: "razao-social",
+            cabecalho: "Razão social",
+            celula: (item) => (
+              <>
+                <div className="font-medium">{item.razao_social}</div>
+                {item.nome_fantasia && (
+                  <div className="text-xs text-muted-foreground">
+                    {item.nome_fantasia}
+                  </div>
                 )}
-              </TableBody>
-            </Table>
-          </div>
+              </>
+            ),
+          },
+          {
+            id: "cnpj",
+            cabecalho: "CNPJ",
+            className: "font-mono text-xs tabular-nums",
+            celula: (item) => formatarCnpj(item.cnpj),
+          },
+          {
+            id: "contato",
+            cabecalho: "Contato",
+            celula: (item) => (
+              <>
+                <div>{item.email || "—"}</div>
+                {item.telefone && (
+                  <div className="text-xs text-muted-foreground">
+                    {item.telefone}
+                  </div>
+                )}
+              </>
+            ),
+          },
+          {
+            id: "cidade",
+            cabecalho: "Cidade / UF",
+            celula: (item) =>
+              [item.cidade, item.estado].filter(Boolean).join(" / ") || "—",
+          },
+          {
+            id: "situacao",
+            cabecalho: "Situação",
+            celula: (item) => badgeStatus(item.status),
+          },
+        ]}
+        rotuloAcoesDe={(item) => `Ações de ${item.razao_social}`}
+        acoes={[
+          {
+            rotulo: "Editar",
+            icone: <Pencil />,
+            aoSelecionar: (item) => setDialogo(item),
+          },
+          {
+            rotulo: "Inativar",
+            icone: <Trash2 />,
+            destrutiva: true,
+            desabilitada: (item) => item.status === "INATIVO",
+            aoSelecionar: (item) => setInativando(item),
+          },
+        ]}
+      />
 
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <p className="text-sm text-muted-foreground" aria-live="polite">
-              {filtrados.length
-                ? `${paginaAtual * limitePorPagina + 1}–${Math.min((paginaAtual + 1) * limitePorPagina, filtrados.length)} de ${filtrados.length} fornecedores`
-                : "0 fornecedores"}
-            </p>
-            <div className="flex items-center gap-2">
-              <span className="mr-2 text-sm text-muted-foreground">
-                Página {paginaAtual + 1} de {totalPaginas}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={paginaAtual === 0 || carregando}
-                onClick={() => setPagina(paginaAtual - 1)}
-              >
-                Anterior
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={paginaAtual + 1 >= totalPaginas || carregando}
-                onClick={() => setPagina(paginaAtual + 1)}
-              >
-                Próxima
-              </Button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {dialogo && empresa && (
+      {dialogo && (
         <FormularioFornecedor
           fornecedor={dialogo === "novo" ? null : dialogo}
-          idEmpresa={empresa.id}
+          idEmpresa={idEmpresa}
           onClose={() => setDialogo(null)}
-          onSaved={recarregar}
+          onSaved={listagem.recarregar}
         />
       )}
 
-      <AlertDialog
-        open={!!inativando}
-        onOpenChange={(aberto) => {
-          if (!aberto && !inativandoRegistro) setInativando(null)
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Inativar fornecedor?</AlertDialogTitle>
-            <AlertDialogDescription>
-              “{inativando?.razao_social}” deixará de estar disponível para
-              novos cadastros. Os vínculos e o histórico serão preservados.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={inativandoRegistro}>
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={inativandoRegistro}
-              onClick={() => void inativar()}
-            >
-              {inativandoRegistro ? "Inativando…" : "Inativar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmarAcao
+        aberto={!!inativando}
+        titulo="Inativar fornecedor?"
+        descricao={
+          <>
+            “{inativando?.razao_social}” deixará de estar disponível para novos
+            cadastros. Os vínculos e o histórico serão preservados.
+          </>
+        }
+        rotuloConfirmar="Inativar"
+        rotuloOcupado="Inativando…"
+        destrutivo
+        ocupado={inativandoRegistro}
+        onConfirmar={() => void inativar()}
+        onFechar={() => setInativando(null)}
+      />
     </>
   )
 }

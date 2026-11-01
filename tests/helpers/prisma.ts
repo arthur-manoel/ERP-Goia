@@ -10,6 +10,8 @@ function model() {
     update: vi.fn(),
     delete: vi.fn(),
     updateMany: vi.fn(),
+    createMany: vi.fn(),
+    deleteMany: vi.fn(),
   }
 }
 export const db = {
@@ -43,6 +45,20 @@ export const db = {
   compras: model(),
   pedido_compra: model(),
   despesas: model(),
+  ordem_producao: model(),
+  ordem_producao_item: model(),
+  ordem_producao_consumo_planejado: model(),
+  ordem_producao_fluxo_setor: model(),
+  ordem_producao_movimentacao_setor: model(),
+  ordem_producao_apontamento: model(),
+  ordem_producao_snapshot: model(),
+  ficha_tecnica: model(),
+  reserva_estoque: model(),
+  consumo_producao: model(),
+  movimentacao_estoque: model(),
+  pedido_compra: model(),
+  necessidade_producao: model(),
+  $executeRaw: vi.fn(),
   movimentacoes_financeiras: model(),
   $transaction: vi.fn(),
 }

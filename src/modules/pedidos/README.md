@@ -42,7 +42,7 @@ O header só seleciona um vínculo autorizado. Usuário, empresa e vínculo prec
 estar ativos. Com um único vínculo ativo, o header pode ser omitido; com vários,
 é obrigatório. Perfis aceitos: ADMINISTRACAO e VENDAS. ADMIN global ou vínculo
 EMPRESA conserva a exceção existente, mas nunca dispensa vínculo ativo.
-Não usa `DEV_ID_*` nem autoriza pedidos pelas permissões de cadastros/estoque.
+Não autoriza pedidos pelas permissões de cadastros/estoque.
 
 | Método/rota | Permissão de PEDIDOS |
 | --- | --- |
