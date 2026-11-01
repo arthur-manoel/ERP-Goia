@@ -1,5 +1,11 @@
 # API de ordens de produção
 
+Os [apontamentos de produção/perdas](../apontamentos/README.md) usam rotas
+filhas de `/api/ordens-producao/{id}/apontamentos`, recurso ORDENS_PRODUCAO e
+histórico persistente, sem alterar automaticamente a quantidade final ou estoque.
+Setores e fluxos possuem recursos próprios SETORES e FLUXOS_PRODUCAO; veja a
+[matriz de autorização](../../../docs/permissoes-modulos.md).
+
 Rotas de backend com Bearer JWT. Todas as operações verificam usuário, empresa e vínculo ativos no banco. `X-Empresa-Id` seleciona a empresa quando há múltiplos vínculos; se enviado, deve corresponder a um vínculo ativo, inclusive para administradores. Empresa não autorizada retorna 403. Sem header e com múltiplos vínculos, retorna 400.
 
 Perfis aceitos: `ADMINISTRACAO` e `PRODUCAO`. Além do perfil do token, são exigidas permissões `ORDENS_PRODUCAO.pode_criar` para abertura ou `pode_editar` para outras operações, salvo usuário ADMIN ou vínculo com nível EMPRESA. O vínculo ativo continua obrigatório.

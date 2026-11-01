@@ -589,7 +589,6 @@ model item_requisicao_compra {
   @@index([id_produto], map: "fk_item_req_compra_produto")
 }
 
-
 model item_venda {
   id                     Int                  @id @default(autoincrement())
   id_venda               Int
@@ -767,6 +766,7 @@ model nota_fiscal {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model ordem_producao {
+  producao_apontamento_evento       producao_apontamento_evento[]
   ordem_producao_snapshot           ordem_producao_snapshot?
   id                                Int                                 @id @default(autoincrement())
   id_pedido_cliente                 Int?
@@ -798,6 +798,7 @@ model ordem_producao {
 
   pedido_cliente pedido_cliente? @relation(fields: [id_pedido_cliente], references: [id], onDelete: Restrict, map: "fk_ordem_producao_pedido_cliente")
 
+  @@unique([id_empresa, id], map: "uk_op_empresa_id")
   @@unique([id_empresa, numero], map: "uk_ordem_producao_empresa_numero")
   @@index([id_setor], map: "fk_op_setor")
   @@index([id_local_estoque], map: "fk_ordem_producao_local")
@@ -824,23 +825,26 @@ model ordem_producao_consumo_planejado {
 }
 
 model ordem_producao_fluxo_setor {
-  ordem_producao_apontamento ordem_producao_apontamento[]
-  status            ordem_producao_etapa_status @default(PENDENTE)
-  data_inicio       DateTime?                   @db.DateTime(3)
-  data_conclusao    DateTime?                   @db.DateTime(3)
-  id                Int                         @id @default(autoincrement())
-  id_ordem_producao Int
-  id_setor          Int
-  ordem             Int
-  ordem_producao    ordem_producao              @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_op_fluxo_ordem")
-  setores           setores                     @relation(fields: [id_setor], references: [id], map: "fk_op_fluxo_setor")
+  producao_apontamento_evento producao_apontamento_evento[]
+  ordem_producao_apontamento  ordem_producao_apontamento[]
+  status                      ordem_producao_etapa_status   @default(PENDENTE)
+  data_inicio                 DateTime?                     @db.DateTime(3)
+  data_conclusao              DateTime?                     @db.DateTime(3)
+  id                          Int                           @id @default(autoincrement())
+  id_ordem_producao           Int
+  id_setor                    Int
+  ordem                       Int
+  ordem_producao              ordem_producao                @relation(fields: [id_ordem_producao], references: [id], onDelete: Cascade, map: "fk_op_fluxo_ordem")
+  setores                     setores                       @relation(fields: [id_setor], references: [id], map: "fk_op_fluxo_setor")
 
+  @@unique([id_ordem_producao, id, id_setor], map: "uk_op_etapa_id_setor")
   @@unique([id_ordem_producao, ordem], map: "uk_op_fluxo_ordem")
   @@unique([id_ordem_producao, id_setor], map: "uk_op_fluxo_setor")
   @@index([id_setor], map: "fk_op_fluxo_setor")
 }
 
 model ordem_producao_item {
+  producao_apontamento_evento      producao_apontamento_evento[]
   ordem_producao_apontamento       ordem_producao_apontamento[]
   id                               Int                                @id @default(autoincrement())
   id_pedido_cliente_item           Int?
@@ -860,12 +864,12 @@ model ordem_producao_item {
 
   pedido_cliente_item pedido_cliente_item? @relation(fields: [id_pedido_cliente_item], references: [id], onDelete: Restrict, map: "fk_ordem_producao_item_pedido_item")
 
+  @@unique([id_ordem_producao, id], map: "uk_op_item_ordem_id")
   @@index([id_cor], map: "fk_op_item_cor")
   @@index([id_ordem_producao], map: "fk_op_item_ordem")
   @@index([id_produto], map: "fk_op_item_produto")
   @@index([id_tamanho], map: "fk_op_item_tamanho")
   @@index([id_pedido_cliente_item], map: "fk_ordem_producao_item_pedido_item")
-  @@unique([id_ordem_producao, id], map: "uk_op_item_ordem_id")
 }
 
 model ordem_producao_movimentacao_item {
@@ -1445,21 +1449,22 @@ model tipos_setor {
 }
 
 model usuario_empresa {
-  id                     Int                          @id @default(autoincrement())
-  id_usuario             Int
-  id_empresa             Int
-  id_cargo               Int
-  id_setor               Int?
-  nivel_acesso           usuario_empresa_nivel_acesso @default(USUARIO)
-  status                 usuario_empresa_status       @default(ATIVO)
-  data_vinculo           DateTime                     @default(now()) @db.Timestamp(0)
-  permissoes_usuario     permissoes_usuario[]
-  cargos                 cargos                       @relation(fields: [id_cargo], references: [id], map: "fk_usuario_empresa_cargo")
-  empresas               empresas                     @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_empresa")
-  setores                setores?                     @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_usuario_empresa_setor")
-  usuarios               usuarios                     @relation(fields: [id_usuario], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_usuario")
-  vendas                 venda[]                      @relation("venda_usuario_empresa")
-  venda_status_historico venda_status_historico[]
+  producao_apontamento_evento producao_apontamento_evento[]
+  id                          Int                           @id @default(autoincrement())
+  id_usuario                  Int
+  id_empresa                  Int
+  id_cargo                    Int
+  id_setor                    Int?
+  nivel_acesso                usuario_empresa_nivel_acesso  @default(USUARIO)
+  status                      usuario_empresa_status        @default(ATIVO)
+  data_vinculo                DateTime                      @default(now()) @db.Timestamp(0)
+  permissoes_usuario          permissoes_usuario[]
+  cargos                      cargos                        @relation(fields: [id_cargo], references: [id], map: "fk_usuario_empresa_cargo")
+  empresas                    empresas                      @relation(fields: [id_empresa], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_empresa")
+  setores                     setores?                      @relation(fields: [id_setor], references: [id], onDelete: Restrict, map: "fk_usuario_empresa_setor")
+  usuarios                    usuarios                      @relation(fields: [id_usuario], references: [id], onDelete: Cascade, map: "fk_usuario_empresa_usuario")
+  vendas                      venda[]                       @relation("venda_usuario_empresa")
+  venda_status_historico      venda_status_historico[]
 
   @@unique([id_usuario, id_empresa], map: "uk_usuario_empresa_usuario_empresa")
   @@unique([id, id_empresa], map: "uk_usuario_empresa_id_empresa")
@@ -2062,21 +2067,61 @@ enum ordem_producao_etapa_status {
 }
 
 model ordem_producao_apontamento {
-  id                         Int                        @id @default(autoincrement())
+  evento_origem              producao_apontamento_evento[] @relation("apontamento_novo")
+  evento_substituicao        producao_apontamento_evento[] @relation("apontamento_anterior")
+  id                         Int                           @id @default(autoincrement())
   id_ordem_producao          Int
   id_ordem_producao_item     Int
   id_setor                   Int
   id_usuario                 Int
-  data_apontamento           DateTime                   @db.Date
-  quantidade_produzida       Decimal                    @default(0.000) @db.Decimal(15, 3)
-  quantidade_perdida         Decimal                    @default(0.000) @db.Decimal(15, 3)
-  motivo_perda               String?                    @db.VarChar(255)
-  data_cadastro              DateTime                   @default(now())
-  ordem_producao_fluxo_setor ordem_producao_fluxo_setor @relation(fields: [id_ordem_producao, id_setor], references: [id_ordem_producao, id_setor], onUpdate: Restrict, map: "fk_op_apontamento_etapa")
-  ordem_producao_item        ordem_producao_item        @relation(fields: [id_ordem_producao, id_ordem_producao_item], references: [id_ordem_producao, id], onUpdate: Restrict, map: "fk_op_apontamento_item")
-  usuarios                   usuarios                   @relation(fields: [id_usuario], references: [id], onUpdate: Restrict, map: "fk_op_apontamento_usuario")
+  data_apontamento           DateTime                      @db.Date
+  quantidade_produzida       Decimal                       @default(0.000) @db.Decimal(15, 3)
+  quantidade_perdida         Decimal                       @default(0.000) @db.Decimal(15, 3)
+  motivo_perda               String?                       @db.VarChar(255)
+  data_cadastro              DateTime                      @default(now())
+  ordem_producao_fluxo_setor ordem_producao_fluxo_setor    @relation(fields: [id_ordem_producao, id_setor], references: [id_ordem_producao, id_setor], onUpdate: Restrict, map: "fk_op_apontamento_etapa")
+  ordem_producao_item        ordem_producao_item           @relation(fields: [id_ordem_producao, id_ordem_producao_item], references: [id_ordem_producao, id], onUpdate: Restrict, map: "fk_op_apontamento_item")
+  usuarios                   usuarios                      @relation(fields: [id_usuario], references: [id], onUpdate: Restrict, map: "fk_op_apontamento_usuario")
 
+  @@unique([id_ordem_producao, id_ordem_producao_item, id_setor, id], map: "uk_apontamento_ordem_item_setor_id")
   @@index([id_ordem_producao, id_setor, data_apontamento], map: "idx_op_apontamento_etapa_data")
   @@index([id_ordem_producao, id_ordem_producao_item], map: "idx_op_apontamento_item")
   @@index([id_usuario], map: "idx_op_apontamento_usuario")
+}
+
+// Introspectado do MariaDB local em 31/10; CHECKs e ascii_bin estão no SQL.
+model producao_apontamento_evento {
+  id                         Int                              @id @default(autoincrement())
+  id_empresa                 Int
+  id_ordem_producao          Int
+  id_etapa                   Int
+  id_ordem_producao_item     Int
+  id_setor                   Int
+  id_usuario                 Int
+  chave_idempotencia         String                           @db.VarChar(36)
+  hash_requisicao            String                           @db.Char(64)
+  tipo                       producao_apontamento_evento_tipo
+  id_apontamento_novo        Int?                             @unique(map: "uk_apontamento_evento_novo")
+  id_apontamento_anterior    Int?                             @unique(map: "uk_apontamento_evento_anterior")
+  motivo                     String?                          @db.VarChar(255)
+  data_cadastro              DateTime                         @default(now())
+  apontamento_anterior       ordem_producao_apontamento?      @relation("apontamento_anterior", fields: [id_ordem_producao, id_ordem_producao_item, id_setor, id_apontamento_anterior], references: [id_ordem_producao, id_ordem_producao_item, id_setor, id], onUpdate: Restrict, map: "fk_apontamento_evento_anterior")
+  apontamento_novo           ordem_producao_apontamento?      @relation("apontamento_novo", fields: [id_ordem_producao, id_ordem_producao_item, id_setor, id_apontamento_novo], references: [id_ordem_producao, id_ordem_producao_item, id_setor, id], onUpdate: Restrict, map: "fk_apontamento_evento_novo")
+  ordem_producao             ordem_producao                   @relation(fields: [id_empresa, id_ordem_producao], references: [id_empresa, id], onUpdate: Restrict, map: "fk_apontamento_evento_ordem")
+  ordem_producao_fluxo_setor ordem_producao_fluxo_setor       @relation(fields: [id_ordem_producao, id_etapa, id_setor], references: [id_ordem_producao, id, id_setor], onUpdate: Restrict, map: "fk_apontamento_evento_etapa")
+  ordem_producao_item        ordem_producao_item              @relation(fields: [id_ordem_producao, id_ordem_producao_item], references: [id_ordem_producao, id], onUpdate: Restrict, map: "fk_apontamento_evento_item")
+  usuario_empresa            usuario_empresa                  @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_apontamento_evento_usuario_empresa")
+
+  @@unique([id_empresa, chave_idempotencia], map: "uk_apontamento_evento_chave")
+  @@index([id_ordem_producao, id_ordem_producao_item, id_setor, id_apontamento_anterior], map: "fk_apontamento_evento_anterior")
+  @@index([id_ordem_producao, id_etapa, id_setor], map: "fk_apontamento_evento_etapa")
+  @@index([id_ordem_producao, id_ordem_producao_item, id_setor, id_apontamento_novo], map: "fk_apontamento_evento_novo")
+  @@index([id_usuario, id_empresa], map: "fk_apontamento_evento_usuario_empresa")
+  @@index([id_empresa, id_ordem_producao, data_cadastro], map: "idx_apontamento_evento_historico")
+}
+
+enum producao_apontamento_evento_tipo {
+  REGISTRO
+  CORRECAO
+  ESTORNO
 }

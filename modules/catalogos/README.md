@@ -2,13 +2,16 @@
 
 As rotas de produtos, cores e tamanhos usam o verificador Bearer existente em src/lib/authorize.ts. A validação de assinatura e expiração permanece no serviço de autenticação existente.
 
-O repository consulta usuario_empresa a cada requisição, exigindo usuário ATIVO, vínculo ATIVO, empresa ATIVA e permissão explícita da operação. Não há bypass por cargo ou nível administrativo.
+O repository consulta usuario_empresa a cada requisição, exigindo usuário ATIVO, vínculo ATIVO, empresa ATIVA e permissão explícita da operação. Preserva as exceções existentes para usuário global ADMIN e vínculo EMPRESA; cargo e perfil funcional do JWT não substituem essas verificações. Recurso ou ação ausente/inválido falha fechado.
 
 | Módulo | Recurso |
 | --- | --- |
 | Produtos | PRODUTOS |
 | Cores | CORES |
-| Tamanhos | PRODUTOS (conforme escolha do projeto) |
+| Tamanhos | TAMANHOS |
+| Tipos de produto | TIPOS_PRODUTO |
+| Fornecedores | FORNECEDORES |
+| Categorias | CATEGORIAS |
 
 | Método | Permissão |
 | --- | --- |
@@ -16,6 +19,11 @@ O repository consulta usuario_empresa a cada requisição, exigindo usuário ATI
 | POST | pode_criar |
 | PUT / PATCH | pode_editar |
 | DELETE | pode_excluir |
+
+POST/PUT/PATCH que inativam produtos, cores, tamanhos, tipos ou fornecedores
+exigem também `pode_excluir`. Categorias e financeiro mantêm a proteção própria
+equivalente. Header `X-Empresa-Id`, se presente, restringe o escopo autorizado.
+Veja a [matriz completa](../../docs/permissoes-modulos.md).
 
 As empresas autorizadas são passadas pelo servidor aos services e usadas nos filtros Prisma de leitura, contagem e escrita. id_empresa enviado pelo cliente é validado contra esse escopo. Escritas por ID incluem o escopo no próprio UPDATE; registros inacessíveis retornam 404. Cores legadas sem empresa e produtos sem produto_empresa não ficam públicos.
 

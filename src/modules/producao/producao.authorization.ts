@@ -1,6 +1,11 @@
 import "server-only"
 import { requireRole } from "@/lib/authorize"
 import {
+  recursoValido,
+  acaoValida,
+  type RecursoPermissao,
+} from "@/lib/permissoes"
+import {
   ProducaoError,
   vinculosAtivos,
   type Contexto,
@@ -9,10 +14,12 @@ import {
 export async function autorizar(
   request: Request,
   acao: "ler" | "criar" | "editar" | "excluir",
-  recurso: "ORDENS_PRODUCAO" | "PRODUTOS" = "ORDENS_PRODUCAO",
+  recurso: RecursoPermissao = "ORDENS_PRODUCAO",
 ): Promise<Contexto | Response> {
   const auth = await requireRole(request, ["ADMINISTRACAO", "PRODUCAO"])
   if (auth.error) return auth.error
+  if (!recursoValido(recurso) || !acaoValida(`pode_${acao}`))
+    throw new ProducaoError(403, "Recurso ou ação de produção inválido.")
   const idUsuario = Number(auth.user.id)
   if (!Number.isSafeInteger(idUsuario) || idUsuario <= 0)
     throw new ProducaoError(401, "Não autenticado.")

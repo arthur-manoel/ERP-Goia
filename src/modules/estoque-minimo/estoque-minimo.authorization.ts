@@ -27,7 +27,7 @@ function vinculosAtivos(idUsuario: number) {
     include: {
       empresas: { select: { razao_social: true } },
       usuarios: { select: { nome: true, email: true, nivel_acesso: true } },
-      permissoes_usuario: { where: { recurso: "ESTOQUE" } },
+      permissoes_usuario: true,
     },
   })
 }
@@ -38,7 +38,9 @@ function permissoes(
   const admin =
     vinculo.nivel_acesso === "EMPRESA" ||
     vinculo.usuarios.nivel_acesso === "ADMIN"
-  const permissao = vinculo.permissoes_usuario[0]
+  const permissao = vinculo.permissoes_usuario.find(
+    (item) => item.recurso === "ESTOQUE",
+  )
   return {
     podeLer: admin || permissao?.pode_ler === true,
     podeCriar: admin || permissao?.pode_criar === true,
@@ -63,7 +65,11 @@ export async function empresasParaEstoque(request: Request) {
   }
 }
 
-export async function autorizarEstoque(request: Request, acao: Acao) {
+export async function autorizarEstoque(
+  request: Request,
+  acao: Acao,
+  exigirRelatorio = false,
+) {
   const idUsuario = await usuarioAutenticado(request)
   if (idUsuario instanceof Response) return idUsuario
   const vinculos = await vinculosAtivos(idUsuario)
@@ -90,5 +96,16 @@ export async function autorizarEstoque(request: Request, acao: Acao) {
   const permitido = { ler: podeLer, criar: podeCriar, editar: podeEditar }
   if (!Object.hasOwn(permitido, acao) || permitido[acao] !== true)
     throw new EstoqueMinimoError(403, "Acesso negado ao estoque.")
+  const admin =
+    vinculo.nivel_acesso === "EMPRESA" ||
+    vinculo.usuarios.nivel_acesso === "ADMIN"
+  if (
+    exigirRelatorio &&
+    !admin &&
+    !vinculo.permissoes_usuario.some(
+      (item) => item.recurso === "RELATORIOS" && item.pode_ler === true,
+    )
+  )
+    throw new EstoqueMinimoError(403, "Acesso negado aos relatórios.")
   return { idUsuario, idEmpresa: vinculo.id_empresa, podeEditar }
 }

@@ -55,7 +55,11 @@ export function handler(tipo: Entidade, operacao: Operacao) {
       const ctx = await autorizar(
         request,
         acao,
-        associacao ? "PRODUTOS" : "ORDENS_PRODUCAO",
+        associacao
+          ? "PRODUTOS"
+          : tipo === "setor"
+            ? "SETORES"
+            : "FLUXOS_PRODUCAO",
       )
       if (ctx instanceof Response) {
         ctx.headers.set("Cache-Control", "no-store")
@@ -122,7 +126,11 @@ export function handler(tipo: Entidade, operacao: Operacao) {
               )
         // Inativação também exige permissão de exclusão, como no módulo de clientes.
         if (input.ativo === false) {
-          const autorizado = await autorizar(request, "excluir")
+          const autorizado = await autorizar(
+            request,
+            "excluir",
+            tipo === "setor" ? "SETORES" : "FLUXOS_PRODUCAO",
+          )
           if (autorizado instanceof Response) return autorizado
         }
         result = await service.salvar(

@@ -9,11 +9,12 @@ alteração de saldo ou nova tabela/migration.
 Faça login em `POST /api/auth/login` com `{ "email": "<EMAIL>", "password": "<SENHA>" }`.
 Envie `Authorization: Bearer <accessToken>` e `X-Empresa-Id: <ID_EMPRESA>`.
 O header seleciona a empresa; não concede acesso. A API reutiliza
-`autorizarEstoque(request, "ler")`, já utilizado pelo estoque mínimo:
+`autorizarEstoque(request, "ler", true)`, com a combinação obrigatória:
 
 - JWT válido com perfil reconhecido pelo backend;
 - usuário, empresa e vínculo ativos;
 - `permissoes_usuario.recurso = ESTOQUE` e `pode_ler = true`;
+- `RELATORIOS.pode_ler = true` no mesmo vínculo/empresa;
 - exceções existentes: vínculo com nível `EMPRESA` ou usuário global `ADMIN`,
   sempre com vínculo ativo na empresa selecionada.
 
