@@ -43,6 +43,8 @@ export async function transacao<T>(operation: (tx: Transaction) => Promise<T>) {
     // Não repetir automaticamente uma transação que perdeu a disputa de estado.
     return await prisma.$transaction(operation, {
       isolationLevel: "Serializable",
+      maxWait: 10000,
+      timeout: 30000,
     })
   } catch (error) {
     if (conflitoPersistencia(error))
@@ -54,6 +56,7 @@ export async function transacao<T>(operation: (tx: Transaction) => Promise<T>) {
   }
 }
 export async function buscarOrdem(tx: Transaction, ctx: Contexto, id: number) {
+  await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
   // Compartilhado pelos endpoints novos e legados: releitura após lock da ordem.
   await tx.$queryRaw`SELECT id FROM ordem_producao WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa} FOR UPDATE`
   const ordem = await tx.ordem_producao.findFirst({

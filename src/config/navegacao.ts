@@ -144,6 +144,11 @@ export const navegacao: GrupoNavegacao[] = [
     itens: [
       { titulo: "Lançamentos", href: "/financeiro", icone: BadgeDollarSign },
       {
+        titulo: "Contas a receber",
+        href: "/financeiro/contas-receber",
+        icone: BadgeDollarSign,
+      },
+      {
         titulo: "Fluxo de caixa",
         href: "/financeiro/fluxo-caixa",
         icone: Wallet,

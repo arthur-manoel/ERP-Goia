@@ -11,7 +11,7 @@ import {
 
 const headers = { "Cache-Control": "no-store" }
 
-async function lerJson(request: Request): Promise<unknown> {
+export async function lerJson(request: Request): Promise<unknown> {
   if (
     request.headers
       .get("Content-Type")

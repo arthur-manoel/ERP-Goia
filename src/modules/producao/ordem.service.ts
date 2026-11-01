@@ -1,4 +1,5 @@
 import "server-only"
+import { liberarReservasOP } from "@/modules/reservas/reservas.service"
 import { Prisma } from "@/generated/prisma/client"
 import type { z } from "zod"
 import * as repo from "./ordem.repository"
@@ -170,6 +171,7 @@ export function cancel(ctx: Contexto, id: number) {
     const before = await required(ctx, id, tx)
     if (["CONCLUIDA", "CANCELADA"].includes(before.status))
       conflict("Não é permitido cancelar ordens concluídas ou já canceladas.")
+    await liberarReservasOP(tx, ctx, id)
     const effects = await repo.operationalCounts(ctx, id, tx)
     const reasons = [
       "reservas ativas",
@@ -328,7 +330,35 @@ export function addItem(
       await repo.createStages(ctx, id, fluxo.setores, tx)
       await fluxos.gravarSnapshot(tx, id, fluxo)
     }
-    const item = await repo.createItem(ctx, id, input, tx)
+    const { id_variacao, ...dadosItem } = input
+    const variacao = id_variacao
+      ? await tx.produto_variacoes.findFirst({
+          where: {
+            id: id_variacao,
+            id_empresa: ctx.idEmpresa,
+            id_produto: input.id_produto,
+            status: "ATIVO",
+          },
+          include: { tamanhos: true },
+        })
+      : null
+    if (id_variacao && !variacao)
+      conflict("Variação inválida para este produto e empresa.")
+    const item = await repo.createItem(
+      ctx,
+      id,
+      {
+        ...dadosItem,
+        ...(variacao
+          ? {
+              id_cor: variacao.id_cor,
+              id_tamanho: variacao.id_tamanho,
+              tamanho: variacao.tamanhos?.nome ?? input.tamanho,
+            }
+          : {}),
+      },
+      tx,
+    )
     await repo.createPlan(
       ctx,
       id,

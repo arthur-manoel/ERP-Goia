@@ -1,7 +1,7 @@
 # API de movimentação e saldo de estoque
 
 Rotas finas em `src/app/api/estoque`; autorização, validação, regras e persistência
-em `src/modules/movimentacoes-estoque`. Usa o schema existente, sem DDL ou migrations.
+em `src/modules/movimentacoes-estoque`. A extensão operacional usa as migrations DB-first de [reservas/grade/recebimentos](../../../docs/operacoes-integradas.md); não há atualização paralela de saldos nos documentos.
 
 | Método | Rota | Permissão ESTOQUE |
 | --- | --- | --- |
@@ -115,10 +115,7 @@ identifica a abertura em `idMovimentacaoAbertura`. Sem prova completa ou havendo
 movimentos de outra origem, retorna 409 e não altera nada. Não é uma reconciliação
 genérica de históricos divergentes.
 
-Reservas não alteram o saldo físico e não são consumidas por esta API. A saída
-verifica o físico total, preservando `quantidade_reservada`. Liberação de reservas,
-transferência entre locais, criação de compras/vendas/OP e custeio ficam fora
-deste contrato. `valor_total` permanece no default existente, sem recalcular custos.
+Reservas não alteram o saldo físico e não são consumidas por esta API. A saída manual respeita o saldo reservado e a classificação da grade; não consome reservas operacionais. Os documentos usam `movimentarNaTransacao` dentro da transação original. Reservas, saída da entrega, entrada da produção e transferências são integradas nesta entrega, conforme [operações integradas](../../../docs/operacoes-integradas.md). Custeio permanece no contrato anterior. `valor_total` permanece no default existente, sem recalcular custos.
 
 ## Concorrência e erros
 

@@ -1,4 +1,5 @@
 import "server-only"
+import { entradaConclusao } from "@/modules/reservas/fluxo.service"
 import * as repo from "./ordem.repository"
 import {
   buscarOrdem,
@@ -73,7 +74,11 @@ export async function ready(ctx: Contexto, id: number, tx: Transaction) {
   return row
 }
 
-export async function confirmarQuantidades(tx: Transaction, ordem: Ordem) {
+export async function confirmarQuantidades(
+  tx: Transaction,
+  ordem: Ordem,
+  ctx: Contexto,
+) {
   // A conclusão não fabrica apontamentos nem copia a quantidade planejada.
   if (
     !ordem.ordem_producao_item.length ||
@@ -103,6 +108,7 @@ export async function confirmarQuantidades(tx: Transaction, ordem: Ordem) {
       409,
       "A data de início precisa anteceder a conclusão.",
     )
+  await entradaConclusao(tx, ctx, ordem.id)
 }
 
 /** Fluxo antigo não usa os estados de etapa do snapshot. */

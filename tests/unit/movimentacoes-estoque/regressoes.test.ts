@@ -16,6 +16,7 @@ const tx = {
   locais_estoque: { findFirst: vi.fn() },
   setores: { findFirst: vi.fn() },
   estoque: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+  estoque_variacao: { aggregate: vi.fn() },
   movimentacao_estoque: {
     groupBy: vi.fn(),
     create: vi.fn(),
@@ -87,6 +88,9 @@ function query() {
   )
 }
 beforeEach(() => {
+  tx.estoque_variacao.aggregate.mockResolvedValue({
+    _sum: { quantidade: null },
+  })
   vi.spyOn(console, "error").mockImplementation(() => {})
   db.usuario_empresa.findMany.mockResolvedValue([
     {
