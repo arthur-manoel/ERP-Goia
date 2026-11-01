@@ -124,8 +124,6 @@ test("API de estoque: banco isolado e HTTP autenticado de produção", async (t)
   )
   process.env.DATABASE_URL = databaseUrl
   process.env.ACCESS_TOKEN_SECRET = randomBytes(48).toString("hex")
-  delete process.env.DEV_ID_USUARIO
-  delete process.env.DEV_ID_EMPRESA
   const hooks = carregarTypescript()
   const empresas = [],
     usuarios = [],

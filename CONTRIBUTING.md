@@ -34,7 +34,7 @@ Faça uma vez só:
   git checkout develop
   ```
 
-- [ ] Crie o `.env.local` a partir do modelo e preencha `DATABASE_URL`, `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` (os ids vêm do seed, issue #8):
+- [ ] Crie o `.env.local` a partir do modelo e preencha `DATABASE_URL` e `ACCESS_TOKEN_SECRET`:
 
   ```bash
   cp .env.example .env.local
@@ -167,7 +167,6 @@ docs: atualizar status do módulo de compras
 | Commit recusado pelo `lint-staged` | Há erro de ESLint nos arquivos do commit. Rode `npm run lint` e corrija |
 | CI falhou em **Formatação** | Rode `npm run format` e faça commit |
 | CI falhou em **Tipos** | Rode `npm run typecheck` localmente e corrija os erros |
-| `Defina DEV_ID_USUARIO no .env.local...` | Preencha os ids no `.env.local` (seção 1) |
 | `DATABASE_URL deve apontar somente para joseev47_erp_dev` | Confira o nome do banco na URL do `.env.local` |
 | Erros de import de `@/generated/prisma` | Rode `npm run db:generate` |
 | Conflito no `package-lock.json` | Aceite a versão do `develop`, rode `npm install` e faça commit do lock gerado |

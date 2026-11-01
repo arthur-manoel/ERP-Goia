@@ -21,7 +21,6 @@ O header seleciona a empresa; não concede acesso. Com um único vínculo ativo,
 pode ser omitido; com mais de um, é obrigatório.
 As exceções existentes de usuário global ADMIN ou vínculo EMPRESA continuam
 exigindo vínculo ativo. Leitura, criação e edição são independentes.
-Não usa sessão provisória nem `DEV_ID_*`.
 
 Todas as respostas protegidas, incluindo erros, usam
 `Cache-Control: private, no-store`. Não há PATCH de saldo nem DELETE de posição.

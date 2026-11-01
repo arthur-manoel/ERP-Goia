@@ -179,13 +179,10 @@ Preencha o `.env.local` **antes** de instalar, porque o `postinstall` gera o Pri
 
 ```dotenv
 DATABASE_URL="mysql://USUARIO:SENHA@HOST:3306/joseev47_erp_dev"
-DEV_ID_USUARIO=1
-DEV_ID_EMPRESA=1
 ```
 
 - Credenciais do banco: peça ao time em mensagem privada e nunca as versione. Caracteres especiais no usuário ou na senha precisam de URL encoding (`@` vira `%40`).
-- `DEV_ID_USUARIO` e `DEV_ID_EMPRESA` alimentam a **sessão provisória** (`src/lib/sessao.ts`) até a autenticação ([#11](https://github.com/arthur-manoel/ERP-Goia/issues/11)) existir. Use ids que existam no banco (veja o seed, [#8](https://github.com/arthur-manoel/ERP-Goia/issues/8)).
-- O estoque mínimo não usa essa sessão provisória: suas telas fazem login real e chamam as rotas JSON com JWT e empresa ativa. Configure também `ACCESS_TOKEN_SECRET` no ambiente do servidor para o login; veja o [contrato da API](src/modules/estoque-minimo/README.md).
+- Configure `ACCESS_TOKEN_SECRET` no ambiente do servidor para o login; veja o [contrato da API](src/modules/estoque-minimo/README.md).
 
 ```bash
 npm install     # também gera o Prisma Client e ativa os hooks de commit
@@ -218,13 +215,13 @@ Fluxo para mudar a estrutura:
 
 O histórico antigo não representa todas as alterações DB-first de pedidos e financeiro. Não basta executar `migrate deploy` em um banco vazio para instalar o contrato atual. Para reproduzir o fechamento em banco local isolado, veja o [preparo controlado e a migration de recebíveis](src/modules/pedido-recebiveis/README.md#testes-locais-reproduzíveis). Nunca marque migrations como aplicadas sem validar que suas alterações já existem no alvo.
 
-**Uso no código.** O cliente é `server-only`. Use-o em Server Components, Server Actions e Route Handlers, sempre filtrando pela empresa da sessão. O padrão completo está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md#anatomia-de-um-módulo).
+**Uso no código.** O cliente é `server-only`. Use-o em Route Handlers autenticados, sempre filtrando pela empresa autorizada a partir do JWT e da seleção ativa. O padrão completo está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md#anatomia-de-um-módulo).
 
 ```ts
 import { prisma } from "@/lib/prisma"
-import { getEmpresaAtual } from "@/lib/sessao"
-
-const { idEmpresa } = await getEmpresaAtual()
+// O idEmpresa vem do contexto retornado pelo autorizador do módulo
+// (JWT + empresa ativa).
+const idEmpresa = contexto.idEmpresa
 const ativos = await prisma.produto_empresa.findMany({
   where: { id_empresa: idEmpresa, status: "ATIVO" },
   include: { produtos: true },
@@ -272,7 +269,7 @@ Qual componente usar em cada situação: [docs/ARQUITETURA.md → Interface](doc
 │   ├── features/            # lógica por entidade (queries, actions, schemas, components)
 │   ├── generated/prisma/    # Prisma Client gerado (ignorado pelo git)
 │   ├── hooks/
-│   └── lib/                 # prisma, sessao, formatacao, formulario, utils
+│   └── lib/                 # prisma, auth, formatacao, formulario, utils
 ├── CONTRIBUTING.md          # como contribuir
 └── .env.example             # modelo do .env.local
 ```
@@ -442,7 +439,6 @@ Sem `AUTH_TEST_DATABASE_URL` ou `--configured-db`, o teste de integração
 | Proteção de branches, branch padrão `develop`, merge só com merge commit | Depende de admin e de GitHub Pro para repositório privado: [#6](https://github.com/arthur-manoel/ERP-Goia/issues/6) |
 | Todos usam o mesmo usuário do banco, com acesso público na porta 3306 | [#7](https://github.com/arthur-manoel/ERP-Goia/issues/7) |
 | Banco de desenvolvimento vazio | Seed: [#8](https://github.com/arthur-manoel/ERP-Goia/issues/8) |
-| Sessão provisória (`src/lib/sessao.ts`) lê ids do `.env.local` e é bloqueada em produção | Substituída por [#11](https://github.com/arthur-manoel/ERP-Goia/issues/11) e [#12](https://github.com/arthur-manoel/ERP-Goia/issues/12) |
 | Enum de recursos de `permissoes_usuario` não cobre compras, vendas, fornecedores... | Decisão em [#13](https://github.com/arthur-manoel/ERP-Goia/issues/13) |
 | `compras.id_pedido_compra_legado` sugere que `compras` substitui `pedido_compra` | Decisão em [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Check constraint `chk_ordem_producao_status_quantidade`: `quantidade_planejada > 0`, exceto nos status PLANEJADA e CANCELADA | O Prisma não a representa. Validar no zod e tratar o erro ([#37](https://github.com/arthur-manoel/ERP-Goia/issues/37)) |
