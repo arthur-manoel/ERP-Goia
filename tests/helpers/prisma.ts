@@ -15,6 +15,7 @@ function model() {
   }
 }
 export const db = {
+  usuarios: model(),
   usuario_empresa: model(),
   tamanhos: model(),
   cores: model(),
