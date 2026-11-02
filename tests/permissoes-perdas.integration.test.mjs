@@ -872,7 +872,7 @@ test("Permissões e perdas: persistência, constraints, concorrência e contrato
       },
     )
     await t.test(
-      "unidade histórica protegida; estoque e quantidade final não são alterados",
+      "unidade histórica e estoque protegidos; projeção acompanha eventos válidos finais",
       async () => {
         const { updateProduto } = await import("../modules/produtos/service.ts")
         await assert.rejects(
@@ -885,15 +885,24 @@ test("Permissões e perdas: persistência, constraints, concorrência e contrato
           "UN",
         )
         assert.deepEqual(await contagens(), estoqueAntes)
-        assert.equal(
-          await prisma.ordem_producao_item.count({
-            where: {
-              ordem_producao: { id_empresa: empresas[0] },
-              quantidade_produzida: { not: "0" },
-            },
-          }),
-          0,
-        )
+        // A revisão combinada passa a projetar a última etapa. Legados que
+        // nunca receberam evento continuam intactos até reconciliação explícita.
+        const finais = await prisma.$queryRaw`
+          SELECT i.id,i.quantidade_produzida,
+            COALESCE((SELECT SUM(a.quantidade_produzida)
+              FROM ordem_producao_apontamento a
+              WHERE a.id_ordem_producao_item=i.id AND a.id_setor=s.id_setor
+                AND NOT EXISTS(SELECT 1 FROM producao_apontamento_evento e WHERE e.id_apontamento_anterior=a.id)),0) AS valida
+          FROM ordem_producao_item i
+          JOIN ordem_producao o ON o.id=i.id_ordem_producao
+          JOIN ordem_producao_fluxo_setor s ON s.id_ordem_producao=o.id
+          WHERE o.id_empresa=${empresas[0]}
+            AND s.ordem=(SELECT MAX(ultima.ordem) FROM ordem_producao_fluxo_setor ultima WHERE ultima.id_ordem_producao=o.id)
+            AND EXISTS(SELECT 1 FROM producao_apontamento_evento e WHERE e.id_ordem_producao_item=i.id AND e.id_setor=s.id_setor)
+        `
+        assert.ok(finais.length > 0)
+        for (const item of finais)
+          assert.ok(item.quantidade_produzida.eq(item.valida))
         const api = await call(`/api/ordens-producao/${o.id}/apontamentos`)
         assert.equal(api.status, 200)
         assert.equal(api.body.totais[0].planejada, "10.000")

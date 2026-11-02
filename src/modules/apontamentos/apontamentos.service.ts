@@ -9,6 +9,11 @@ import {
 } from "@/modules/producao/producao.repository"
 import * as repository from "./apontamentos.repository"
 import {
+  fonteProducao,
+  validarProjecao,
+  protegerEfeitosFisicos,
+} from "../producao/producao.contabilizacao"
+import {
   validarData,
   validarDisponibilidade,
   validarEstornoLegado,
@@ -128,6 +133,34 @@ export function gravar(
         .minus(anterior?.quantidade_perdida ?? 0)
         .plus(novos?.quantidadePerdida ?? 0),
     }
+    const ultima = etapa.id === etapas.at(-1)?.id
+    if (operacao.tipo !== "REGISTRO" || ultima)
+      await protegerEfeitosFisicos(tx, ctx, ordemId, ordem.status)
+    if (ultima) {
+      const fonte = await fonteProducao(
+        tx,
+        ordemId,
+        itemId,
+        etapa.id_setor,
+        item.quantidade_produzida,
+      )
+      if (
+        operacao.tipo === "REGISTRO" &&
+        (fonte.manual ||
+          fonte.semOrigem ||
+          (!item.quantidade_produzida.isZero() &&
+            !item.quantidade_produzida.eq(fonte.total)))
+      )
+        throw new ProducaoError(
+          409,
+          "Produção final já registrada pela confirmação ou por fluxo legado. Corrija ou estorne o registro identificado; não reapresente a mesma produção como novo apontamento.",
+        )
+      validarProjecao(
+        item.quantidade_produzida,
+        fonte.total,
+        revisado.produzida,
+      )
+    }
     const posteriores = [
       ...totais.filter((t) => t.id_setor !== etapa.id_setor),
       revisado,
@@ -173,6 +206,11 @@ export function gravar(
       id_apontamento_anterior: anterior?.id ?? null,
       motivo,
     })
+    if (ultima)
+      await tx.ordem_producao_item.update({
+        where: { id: itemId },
+        data: { quantidade_produzida: revisado.produzida },
+      })
     await tx.auditoria.create({
       data: {
         id_empresa: ctx.idEmpresa,
@@ -187,7 +225,16 @@ export function gravar(
             )
           : null,
         dados_novos: serializarJsonTextMysql(
-          { evento, apontamento: novo ? serializar(novo) : null },
+          {
+            evento,
+            apontamento: novo ? serializar(novo) : null,
+            totalFinal: ultima
+              ? {
+                  anterior: item.quantidade_produzida.toFixed(3),
+                  atual: revisado.produzida.toFixed(3),
+                }
+              : null,
+          },
           (msg) => new ProducaoError(400, msg),
         ),
       },

@@ -2,6 +2,20 @@ import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import type { z } from "zod"
 import * as repo from "./ordem.repository"
+import { allowedCompanies } from "../../../modules/catalogos/repository"
+import {
+  fonteProducao,
+  validarProjecao,
+  protegerEfeitosFisicos,
+  identidadeConfirmacao,
+  confirmacaoPorChave,
+  registrarConfirmacao,
+} from "./producao.contabilizacao"
+import {
+  totais,
+  etapas as etapasApontadas,
+} from "../apontamentos/apontamentos.repository"
+import { validarDisponibilidade } from "../apontamentos/apontamentos.regras"
 import {
   relationships,
   ready,
@@ -347,8 +361,31 @@ export function recordProduction(
   id: number,
   itemId: number,
   input: z.output<typeof apontarSchema>,
+  chave?: string,
 ) {
+  const identidade = identidadeConfirmacao(
+    ctx,
+    id,
+    itemId,
+    input.quantidade_produzida,
+    input.quantidade_esperada,
+    chave,
+  )
   return repo.write(ctx, async (tx) => {
+    if (
+      !(
+        await allowedCompanies(
+          ctx.idUsuario,
+          "ORDENS_PRODUCAO",
+          "pode_editar",
+          tx,
+        )
+      ).includes(ctx.idEmpresa)
+    )
+      throw new ProducaoError(
+        403,
+        "Sem permissão de edição da produção nesta empresa.",
+      )
     const row = await required(ctx, id, tx)
     if (row.status !== "EM_PRODUCAO")
       conflict("Apontamentos exigem ordem em produção.")
@@ -368,38 +405,140 @@ export function recordProduction(
         return conflict("Registre a produção na última etapa em execução.")
       sector = stage.id_setor
     } else {
-      validarApontamentoLegado(await buscarOrdem(tx, ctx, id))
+      const legado = await buscarOrdem(tx, ctx, id)
+      validarApontamentoLegado(legado)
+      const ultima = legado.ordem_producao_fluxo_setor.at(-1)
+      // A ausência de snapshot não autoriza ignorar fatos detalhados existentes.
+      if (
+        ultima &&
+        (
+          await fonteProducao(
+            tx,
+            id,
+            itemId,
+            ultima.id_setor,
+            item.quantidade_produzida,
+          )
+        ).detalhado
+      )
+        sector = ultima.id_setor
     }
     const total = new Prisma.Decimal(input.quantidade_produzida)
-    if (item.quantidade_produzida.eq(total)) return item
-    if (!item.quantidade_produzida.eq(input.quantidade_esperada))
-      conflict("A quantidade produzida mudou. Recarregue o item.")
-    const delta = total.minus(item.quantidade_produzida)
-    if (delta.lte(0))
-      conflict("Reduções de produção exigem um fluxo de ajuste ou estorno.")
+    const fonte = await fonteProducao(
+      tx,
+      id,
+      itemId,
+      sector,
+      item.quantidade_produzida,
+    )
+    const existente = await confirmacaoPorChave(
+      tx,
+      ctx.idEmpresa,
+      identidade.chave,
+    )
+    if (existente) {
+      if (
+        existente.id_usuario !== ctx.idUsuario ||
+        existente.hash_requisicao !== identidade.requisicao
+      )
+        conflict(
+          "Chave de idempotência já utilizada com outro conteúdo ou autor.",
+        )
+      if (existente.hash_estado !== fonte.hash)
+        conflict(
+          "Confirmação superada por outro registro, correção ou estorno. Consulte o estado atual e use uma nova chave para uma nova operação.",
+        )
+      return item
+    }
+    await protegerEfeitosFisicos(tx, ctx, id, row.status)
+    let delta = new Prisma.Decimal(0)
+    let apontamento: number | null = null
+    let registrarDelta = false
+    let tipo: "CONFIRMACAO" | "REGISTRO" | "LEGADO" =
+      sector === null ? "LEGADO" : "CONFIRMACAO"
+    if (sector !== null && fonte.detalhado) {
+      if (fonte.semOrigem || fonte.manual)
+        conflict(
+          "Histórico misto sem vínculo inequívoco. Reconcilie os apontamentos antes de confirmar a produção.",
+        )
+      if (!total.eq(fonte.total))
+        conflict(
+          "A confirmação deve corresponder à produção válida da etapa final. Corrija ou estorne o apontamento identificado para alterar esse total.",
+        )
+      validarProjecao(item.quantidade_produzida, fonte.total, total)
+    } else {
+      if (sector !== null && !item.quantidade_produzida.eq(fonte.total))
+        conflict(
+          "Total do item diverge dos apontamentos. Reconcilie o histórico antes de registrar produção final.",
+        )
+      delta = total.minus(item.quantidade_produzida)
+      if (delta.lt(0))
+        conflict("Reduções de produção exigem um fluxo de ajuste ou estorno.")
+      if (delta.gt(0)) {
+        if (!item.quantidade_produzida.eq(input.quantidade_esperada))
+          conflict("A quantidade produzida mudou. Recarregue o item.")
+        if (sector !== null) {
+          const etapas = await etapasApontadas(tx, id)
+          const acumulados = await totais(tx, id, itemId)
+          // Sem detalhamento anterior, preserva o contrato acumulado já existente.
+          // Havendo detalhamento, não inventa disponibilidade nas etapas intermediárias.
+          if (fonte.temDetalhamento || etapas.length === 1)
+            validarDisponibilidade(etapas, item.quantidade, [
+              ...acumulados.filter((t) => t.id_setor !== sector),
+              {
+                id_setor: sector,
+                produzida: total,
+                perdida:
+                  acumulados.find((t) => t.id_setor === sector)?.perdida ??
+                  new Prisma.Decimal(0),
+              },
+            ])
+          registrarDelta = true
+          tipo = "REGISTRO"
+        }
+      }
+    }
     if (
+      !item.quantidade_produzida.eq(total) &&
       (
         await repo.produced(
           ctx,
           id,
           itemId,
           item.quantidade_produzida,
-          input.quantidade_produzida,
+          total.toFixed(3),
           tx,
         )
       ).count !== 1
     )
       conflict("Apontamento concorrente. Recarregue o item.")
-    // A FK de apontamento exige etapa. O fluxo legado registra o delta na
-    // auditoria, junto ao total persistido, sem inventar uma etapa histórica.
-    if (sector !== null)
-      await repo.registerProduction(ctx, id, itemId, sector, delta, tx)
+    if (registrarDelta && sector !== null)
+      apontamento = (
+        await repo.registerProduction(ctx, id, itemId, sector, delta, tx)
+      ).id
+    const estado = await fonteProducao(tx, id, itemId, sector, total)
+    await registrarConfirmacao(
+      tx,
+      ctx,
+      id,
+      itemId,
+      sector,
+      identidade,
+      estado.hash,
+      tipo,
+      total,
+      input.quantidade_esperada,
+      apontamento,
+    )
     const after = await repo.item(ctx, id, itemId, tx)
     const audit = {
       id,
       item: after,
       apontamento: {
         fluxo: snapshot ? "SNAPSHOT" : "LEGADO",
+        tipo,
+        chave: identidade.chave,
+        id_apontamento_novo: apontamento,
         id_item: itemId,
         id_setor: row.id_setor,
         quantidade_anterior: item.quantidade_produzida.toString(),

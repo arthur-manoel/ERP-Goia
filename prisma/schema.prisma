@@ -766,6 +766,7 @@ model nota_fiscal {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model ordem_producao {
+  producao_confirmacao              producao_confirmacao[]
   producao_apontamento_evento       producao_apontamento_evento[]
   ordem_producao_snapshot           ordem_producao_snapshot?
   id                                Int                                 @id @default(autoincrement())
@@ -825,6 +826,7 @@ model ordem_producao_consumo_planejado {
 }
 
 model ordem_producao_fluxo_setor {
+  producao_confirmacao        producao_confirmacao[]
   producao_apontamento_evento producao_apontamento_evento[]
   ordem_producao_apontamento  ordem_producao_apontamento[]
   status                      ordem_producao_etapa_status   @default(PENDENTE)
@@ -844,6 +846,7 @@ model ordem_producao_fluxo_setor {
 }
 
 model ordem_producao_item {
+  producao_confirmacao             producao_confirmacao[]
   producao_apontamento_evento      producao_apontamento_evento[]
   ordem_producao_apontamento       ordem_producao_apontamento[]
   id                               Int                                @id @default(autoincrement())
@@ -1449,6 +1452,7 @@ model tipos_setor {
 }
 
 model usuario_empresa {
+  producao_confirmacao        producao_confirmacao[]
   producao_apontamento_evento producao_apontamento_evento[]
   id                          Int                           @id @default(autoincrement())
   id_usuario                  Int
@@ -2067,6 +2071,7 @@ enum ordem_producao_etapa_status {
 }
 
 model ordem_producao_apontamento {
+  producao_confirmacao       producao_confirmacao[]
   evento_origem              producao_apontamento_evento[] @relation("apontamento_novo")
   evento_substituicao        producao_apontamento_evento[] @relation("apontamento_anterior")
   id                         Int                           @id @default(autoincrement())
@@ -2124,4 +2129,40 @@ enum producao_apontamento_evento_tipo {
   REGISTRO
   CORRECAO
   ESTORNO
+}
+
+
+model producao_confirmacao {
+  id                         Int                         @id @default(autoincrement())
+  id_empresa                 Int
+  id_ordem_producao          Int
+  id_ordem_producao_item     Int
+  id_setor                   Int?
+  id_usuario                 Int
+  chave_idempotencia         String                      @db.VarChar(128)
+  hash_requisicao            String                      @db.Char(64)
+  hash_estado                String                      @db.Char(64)
+  tipo                       producao_confirmacao_tipo
+  quantidade_produzida       Decimal                     @db.Decimal(15, 3)
+  quantidade_esperada        Decimal                     @db.Decimal(15, 3)
+  id_apontamento_novo        Int?                        @unique(map: "uk_producao_confirmacao_apontamento")
+  data_cadastro              DateTime                    @default(now())
+  ordem_producao_apontamento ordem_producao_apontamento? @relation(fields: [id_ordem_producao, id_ordem_producao_item, id_setor, id_apontamento_novo], references: [id_ordem_producao, id_ordem_producao_item, id_setor, id], onUpdate: Restrict, map: "fk_producao_confirmacao_apontamento")
+  ordem_producao_item        ordem_producao_item         @relation(fields: [id_ordem_producao, id_ordem_producao_item], references: [id_ordem_producao, id], onUpdate: Restrict, map: "fk_producao_confirmacao_item")
+  ordem_producao             ordem_producao              @relation(fields: [id_empresa, id_ordem_producao], references: [id_empresa, id], onUpdate: Restrict, map: "fk_producao_confirmacao_ordem")
+  ordem_producao_fluxo_setor ordem_producao_fluxo_setor? @relation(fields: [id_ordem_producao, id_setor], references: [id_ordem_producao, id_setor], onUpdate: Restrict, map: "fk_producao_confirmacao_setor")
+  usuario_empresa            usuario_empresa             @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_producao_confirmacao_usuario")
+
+  @@unique([id_empresa, chave_idempotencia], map: "uk_producao_confirmacao_chave")
+  @@index([id_ordem_producao, id_ordem_producao_item, id_setor, id_apontamento_novo], map: "fk_producao_confirmacao_apontamento")
+  @@index([id_empresa, id_ordem_producao], map: "fk_producao_confirmacao_ordem")
+  @@index([id_ordem_producao, id_setor], map: "fk_producao_confirmacao_setor")
+  @@index([id_usuario, id_empresa], map: "fk_producao_confirmacao_usuario")
+  @@index([id_ordem_producao, id_ordem_producao_item], map: "idx_producao_confirmacao_item")
+}
+
+enum producao_confirmacao_tipo {
+  REGISTRO
+  CONFIRMACAO
+  LEGADO
 }

@@ -501,8 +501,11 @@ A [API de apontamentos](src/modules/apontamentos/README.md) persiste produção,
 perda, motivo e ocorrência por item/etapa, com idempotência, auditoria transacional,
 correção/estorno rastreável e limites entre etapas. Preserva a tabela existente
 ordem_producao_apontamento e acrescenta eventos na migration
-`20261031000000_eventos_apontamentos_producao`. Não movimenta estoque nem altera
-a quantidade final da OP. Não inclui implementação de frontend.
+`20261031000000_eventos_apontamentos_producao`. A revisão acrescenta confirmações
+em `20261102000000_confirmacoes_producao`: a soma válida da última etapa alimenta
+a quantidade produzida do item; confirmar esse total não cria outra produção.
+Correções/estornos mantêm a projeção e o histórico coerentes. Não movimenta
+estoque nem inclui implementação de frontend.
 
 SQL e integração são validados em MySQL/MariaDB local e isolado; aplicação no
 banco compartilhado/produção cabe ao responsável após conferência/aprovação.

@@ -436,6 +436,9 @@ test(
             produtos.length ||
             tipos.length
           ) {
+            await prisma.producao_confirmacao.deleteMany({
+              where: { id_empresa: { in: empresas } },
+            })
             await prisma.ordem_producao_apontamento.deleteMany({
               where: {
                 ordem_producao_item: {

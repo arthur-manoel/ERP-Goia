@@ -1,3 +1,4 @@
+import { disputaPersistencia } from "@/lib/prisma-concorrencia"
 import { Prisma } from "@/generated/prisma/client"
 
 function registro(value: unknown): value is Record<string, unknown> {
@@ -26,6 +27,7 @@ function conflitoAdapter(error: unknown): boolean {
 // consultas raw, ou dentro de meta.driverAdapterError. Não classificar falhas
 // de schema/conexão como conflito de negócio.
 export function conflitoPersistencia(error: unknown): boolean {
+  if (disputaPersistencia(error)) return true
   if (conflitoAdapter(error)) return true
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
   if (["P2002", "P2003", "P2004", "P2025", "P2034"].includes(error.code))

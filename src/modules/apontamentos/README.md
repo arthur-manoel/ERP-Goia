@@ -102,9 +102,9 @@ disponibilidade, correção incompatível ou chave em conflito, 413 corpo >64 Ki
 ## Estados, datas e quantidades
 
 A OP precisa estar EM_PRODUCAO, PAUSADA ou CONCLUIDA; etapa EM_PRODUCAO ou
-CONCLUIDA, com início real preenchido. É permitido registrar ocorrência tardia
-em etapa já concluída, inclusive OP concluída, para regularização auditada; isso
-não reabre nem avança o fluxo. Planejadas, liberadas e canceladas não recebem
+CONCLUIDA, com início real preenchido. Ocorrências tardias em etapas anteriores concluídas podem ser registradas
+sem reabrir o fluxo. Alterar a etapa final ou corrigir/estornar após encerrar a OP
+exige compensação e retorna 409 enquanto esse processo não estiver disponível. Planejadas, liberadas e canceladas não recebem
 apontamento. Correção/estorno conserva essas condições de estado.
 
 Data real entre o início da etapa e o dia atual no fuso **America/Sao_Paulo**,
@@ -139,8 +139,56 @@ impede mudança de unidade depois de qualquer apontamento, inclusive estornado,
 e participa dos mesmos locks de empresa/produto para proteger o primeiro registro.
 Alterações SQL diretas por administrador do banco devem preservar essa regra.
 
-Apontamento não movimenta estoque, não prova consumo de matéria-prima, não altera
-`ordem_producao_item.quantidade_produzida`, não transfere peças e não conclui etapas.
+Apontamento não movimenta estoque, não prova consumo de matéria-prima, não transfere
+peças e não conclui etapas. Na última etapa, registro/correção/estorno atualiza
+`ordem_producao_item.quantidade_produzida` dentro da mesma transação.
+
+## Relação com a confirmação final da OP
+
+A fonte da produção final é a soma dos apontamentos **válidos da última etapa**.
+Etapas anteriores representam a passagem das mesmas peças; não são somadas ao
+produto final. Perdas são somadas separadamente. Dois fatos independentes de 3
+peças somam 6; igualdade de quantidade não identifica duplicação.
+
+O PUT `/api/ordem_producao/{id}/itens/{itemId}/producao` recebe um total acumulado,
+nunca um incremento. Depois de um REGISTRO detalhado na última etapa, o PUT
+apenas confirma o total válido: apontar 6 e confirmar 6 conserva uma linha de 6.
+Um total diferente retorna 409; utilize corrigir/estornar pelo ID do fato.
+Essa regra também vale em OP sem snapshot quando existem fatos detalhados na
+última etapa; a ausência do snapshot não permite ignorar esse histórico.
+Correção de 6 para 4 substitui a contribuição original por 4, sem apagar o
+original. Estorno exclui aquela contribuição válida uma única vez e preserva
+os outros fatos. Essas operações atualizam a projeção do item e a auditoria.
+
+Sem REGISTRO detalhado na etapa final, o PUT preserva o fluxo acumulado anterior:
+registra somente o delta positivo, com vínculo explícito entre confirmação e
+apontamento. Se depois for enviado um REGISTRO detalhado para o mesmo item/etapa,
+retorna 409 sem efeitos, pois o contrato não identifica se seria outra produção
+ou a reapresentação das mesmas peças. Corrigir/estornar o ID explícito continua
+permitido. Havendo detalhamento anterior, o delta respeita a disponibilidade
+entre etapas; não se inventa saída em etapas ausentes. O modo acumulado sem
+qualquer detalhamento preserva o contrato anterior de avanço da OP.
+
+A nova tabela `producao_confirmacao` guarda autor, escopo, chave, hash do comando,
+hash do estado produtivo e vínculo opcional com o fato novo. O PUT aceita
+`Idempotency-Key` opcional (8–128 caracteres ASCII visíveis sem espaços).
+Sem header, deriva uma identidade estável do autor, OP, item e decimais
+normalizados, mantendo clientes anteriores. A mesma chave com outro conteúdo ou
+autor retorna 409. Replay sobre estado alterado por registro/correção/estorno
+retorna 409 mesmo se os números voltarem ao valor antigo (ABA). Para uma nova
+produção intencional, consulte o estado atual e envie uma nova chave explícita.
+Um replay válido não cria apontamento, confirmação ou auditoria adicional.
+
+As duas APIs calculam e gravam sob os mesmos locks de empresa/OP e transação
+Serializable. A confirmação revalida ORDENS_PRODUCAO.pode_editar usando o mesmo
+TransactionClient. Conflitos, inclusive MariaDB 1020, retornam 409; o PUT não
+repete automaticamente a transação. Na API detalhada permanece o limite de três
+tentativas. Falha em evento, confirmação, projeção ou auditoria reverte tudo.
+
+Históricos antigos mistos, sem vínculo inequívoco, retornam 409: não são
+apagados ou deduplicados por quantidade. Reconciliar explicitamente os IDs.
+OP encerrada ou com movimentação física nas origens oficiais bloqueia alteração
+dos totais sem compensação; nenhuma dessas rotas ajusta estoque silenciosamente.
 
 ## Aplicação do banco em outro ambiente
 
@@ -151,7 +199,10 @@ Se existir apenas `producao_apontamento` com outro contrato, conciliar primeiro;
 não aplicar esta extensão presumindo que seja a mesma tabela.
 
 Ordem: estrutura base atual do ERP, enum `20261022000000` se ainda faltar,
-apontamentos `20261023000000` se ainda faltar, e extensão `20261031000000`.
+apontamentos `20261023000000` se ainda faltar, extensão `20261031000000`,
+e incremento `20261102000000_confirmacoes_producao`. Este último cria somente
+`producao_confirmacao`, com FKs de escopo/autor/fato, chave ASCII única por empresa
+e CHECKs de tipo/quantidade; preserva todas as linhas e quantidades existentes.
 Não repetir SQL/índice já aplicado e não executar reset, db push ou adoção cega
 de migrations. Preservar dados e conferir nulabilidade, precisão, índices,
 CHECKs, FKs RESTRICT e ascii_bin após aplicação aprovada. Introspectar com
@@ -164,7 +215,8 @@ habilitar essas APIs no ambiente; a PR não aplica SQL remoto.
 
 `scripts/preparar-permissoes-perdas-test.mjs` aceita somente host local, banco
 com sufixo `_test` e vazio. Reconstrói o snapshot fixo da develop e aplica o SQL
-canônico dos apontamentos e a extensão. Recusa bases existentes, não remove dados
+canônico dos apontamentos, eventos e confirmações. Arquivos locais de inspeção
+ficam em um diretório próprio por execução, sem sobrescrever registros anteriores. Recusa bases existentes, não remove dados
 e não usa a URL remota. Não é uma ferramenta de implantação/reconciliação.
 O baseline sintético não representa expressões geradas ou todos os CHECKs dos
 outros módulos. Para MariaDB, somente nele, as duas FKs antigas de item_venda para
@@ -189,6 +241,7 @@ npm run format:check
 npm run typecheck
 npm run build
 node tests/permissoes-perdas.integration.test.mjs --http
+node tests/producao-combinada.integration.test.mjs
 ```
 
 A suíte de banco usa fixtures próprias, constraints efetivas, concorrência e um
@@ -211,3 +264,10 @@ Para integrar o frontend depois: substituir useErp/estado temporário por estas
 rotas, usar IDs reais da ordem/item/etapa, strings decimais e chave estável, tratar
 perda total, conflitos e paginação, e recarregar histórico/totais após gravação.
 Não enviar empresa/usuário no corpo e não transformar apontamento em movimentação.
+
+A suíte combinada exige o build atual e login real via `/api/auth/login`; cria
+OP, item e início pelas rotas reais, com permissões explícitas e fixtures locais
+próprias. Mantém fixtures no banco dedicado para inspeção. Usa trigger temporário
+para comprovar rollback e o remove ao terminar. Opcionalmente, PR120_HTTP_LOG
+aponta para um arquivo **local ignorado** com requisições, estados e auditorias,
+sem tokens ou credenciais. Resultados observados ficam na descrição da PR.

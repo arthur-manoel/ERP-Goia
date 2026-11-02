@@ -43,6 +43,11 @@ Apontamentos usam ordem_producao_apontamento e a extensão de eventos
 o limite da seguinte; ausência de histórico não restaura o planejado. Correção
 e estorno de apontamento preservam os originais e revalidam sucessoras. Não são
 estornos de estoque/financeiro, não comprovam consumo e não concluem etapas.
+A produção válida da última etapa alimenta o total produzido do item; a confirmação
+final não duplica os fatos já apontados. O incremento
+`20261102000000_confirmacoes_producao` identifica comandos e fatos novos, rejeita
+replays superados e preserva o histórico. Ordem encerrada/efeitos físicos impedem
+ajustes sem compensação.
 [Contrato, unidades, datas e implantação](../src/modules/apontamentos/README.md).
 
 DDL testado localmente não significa DDL aplicado no banco compartilhado ou em

@@ -1,8 +1,9 @@
+import type { RecursoPermissao } from "@/lib/permissoes"
 import { requireRole, type Role } from "../../src/lib/authorize"
 import { HttpError } from "../../src/lib/api/errors"
 import { handleRequest, readJson } from "../../src/lib/api/http"
 import { enforceRateLimit, type RateLimit } from "../../src/lib/api/rate-limit"
-import { allowedCompanies, type Resource, type Action } from "./repository"
+import { allowedCompanies, type Action } from "./repository"
 export type CatalogActor = { idUsuario: number }
 export function assertCompany(id: number | undefined, companies: number[]) {
   if (id !== undefined && !companies.includes(id))
@@ -10,7 +11,7 @@ export function assertCompany(id: number | undefined, companies: number[]) {
 }
 export function catalogRequest<T>(
   request: Request,
-  resource: Resource,
+  resource: RecursoPermissao,
   action: Action,
   operation: (companies: number[], actor: CatalogActor) => Promise<T>,
   status = 200,

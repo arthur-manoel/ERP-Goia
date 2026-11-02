@@ -25,11 +25,17 @@ try {
     0,
     "Use outro banco local vazio; não apaga nem altera uma base existente.",
   )
+  const directory = path.resolve(
+    ".local",
+    "permissoes-perdas",
+    `${database}-${Date.now()}`,
+  )
+  mkdirSync(directory, { recursive: true })
   const base = "cba9097b36b45fe742c1f118a0c1333b4295ecdf"
   const schema = execFileSync("git", ["show", `${base}:prisma/schema.prisma`], {
     encoding: "utf8",
   })
-  const temp = path.resolve(".local/permissoes-perdas-base.prisma")
+  const temp = path.join(directory, "baseline.prisma")
   mkdirSync(path.dirname(temp), { recursive: true })
   writeFileSync(temp, schema)
   let sql = execFileSync(
@@ -96,7 +102,7 @@ try {
   ]) {
     const rows = await connection.query(`SHOW CREATE TABLE \`${table}\``)
     writeFileSync(
-      path.resolve(`.local/show-create-${table}-antes.sql`),
+      path.join(directory, `show-create-${table}-antes.sql`),
       String(Object.values(rows[0])[1]),
     )
   }
@@ -106,8 +112,21 @@ try {
       "utf8",
     ),
   )
+  await connection.query(
+    readFileSync(
+      "prisma/migrations/20261102000000_confirmacoes_producao/migration.sql",
+      "utf8",
+    ),
+  )
+  for (const table of ["producao_apontamento_evento", "producao_confirmacao"]) {
+    const rows = await connection.query(`SHOW CREATE TABLE ${table}`)
+    writeFileSync(
+      path.join(directory, `show-create-${table}-depois.sql`),
+      String(Object.values(rows[0])[1]),
+    )
+  }
   console.log(
-    "Banco local dedicado preparado; SQL original e extensão aplicados. Nenhuma concessão criada.",
+    "Banco local dedicado preparado; apontamentos, eventos e confirmações aplicados. Nenhuma concessão criada.",
   )
 } finally {
   await connection.end()
