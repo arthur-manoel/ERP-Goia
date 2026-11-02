@@ -193,6 +193,7 @@ DATABASE_URL="mysql://USUARIO:SENHA@HOST:3306/joseev47_erp_dev"
 
 - Credenciais do banco: peça ao time em mensagem privada e nunca as versione. Caracteres especiais no usuário ou na senha precisam de URL encoding (`@` vira `%40`).
 - Configure `ACCESS_TOKEN_SECRET` no ambiente do servidor para o login; veja o [contrato da API](src/modules/estoque-minimo/README.md).
+- Para criar um backup lógico do MySQL com `mysqldump`, consulte [Backup diário do MySQL](docs/backup-mysql.md) (`npm run db:backup`).
 
 ```bash
 npm install     # também gera o Prisma Client e ativa os hooks de commit

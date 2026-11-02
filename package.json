@@ -15,7 +15,8 @@
     "db:pull": "prisma db pull && prisma generate",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:backup": "node scripts/backup-mysql.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
