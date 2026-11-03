@@ -673,6 +673,37 @@ try {
       },
     )
     await t.test(
+      "perdas na primeira etapa limitam confirmação final de OP sem snapshot",
+      async () => {
+        const f = await fixture(2)
+        await apontar(f, "6", randomUUID(), 201, "4", 0)
+        await call(
+          f,
+          `/api/ordem_producao/${f.op}/etapas/${f.etapas[0].id}/concluir`,
+          "POST",
+          undefined,
+          200,
+        )
+        await call(
+          f,
+          `/api/ordem_producao/${f.op}/etapas/${f.etapas[1].id}/iniciar`,
+          "POST",
+          undefined,
+          200,
+        )
+        await prisma.ordem_producao_snapshot.delete({
+          where: { id_ordem_producao: f.op },
+        })
+        await semEfeito(f, () => confirmar(f, "10", "0", randomUUID(), 409))
+        const chave = randomUUID()
+        await confirmar(f, "6", "0", chave)
+        await semEfeito(f, () => confirmar(f, "6", "0", chave))
+        const e = await total(f, "6")
+        assert.equal(e.confirmacoes.length, 1)
+        assert.equal(e.pontos.length, 2)
+      },
+    )
+    await t.test(
       "OP sem snapshot também confirma os fatos detalhados e rejeita produção superada",
       async () => {
         const f = await fixture()

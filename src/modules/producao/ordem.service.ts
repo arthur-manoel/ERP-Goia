@@ -408,20 +408,22 @@ export function recordProduction(
       const legado = await buscarOrdem(tx, ctx, id)
       validarApontamentoLegado(legado)
       const ultima = legado.ordem_producao_fluxo_setor.at(-1)
-      // A ausência de snapshot não autoriza ignorar fatos detalhados existentes.
-      if (
-        ultima &&
-        (
-          await fonteProducao(
-            tx,
-            id,
-            itemId,
-            ultima.id_setor,
-            item.quantidade_produzida,
-          )
-        ).detalhado
-      )
-        sector = ultima.id_setor
+      // Havendo histórico quantitativo, o legado também usa a última etapa
+      // para registrar a produção final e validar a disponibilidade anterior.
+      if (ultima) {
+        const fonteLegada = await fonteProducao(
+          tx,
+          id,
+          itemId,
+          ultima.id_setor,
+          item.quantidade_produzida,
+        )
+        if (
+          fonteLegada.temDetalhamento ||
+          fonteLegada.temApontamentosAnteriores
+        )
+          sector = ultima.id_setor
+      }
     }
     const total = new Prisma.Decimal(input.quantidade_produzida)
     const fonte = await fonteProducao(
@@ -482,7 +484,11 @@ export function recordProduction(
           const acumulados = await totais(tx, id, itemId)
           // Sem detalhamento anterior, preserva o contrato acumulado já existente.
           // Havendo detalhamento, não inventa disponibilidade nas etapas intermediárias.
-          if (fonte.temDetalhamento || etapas.length === 1)
+          if (
+            fonte.temDetalhamento ||
+            fonte.temApontamentosAnteriores ||
+            etapas.length === 1
+          )
             validarDisponibilidade(etapas, item.quantidade, [
               ...acumulados.filter((t) => t.id_setor !== sector),
               {

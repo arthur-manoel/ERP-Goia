@@ -71,6 +71,9 @@ export async function fonteProducao(
     manual: finais.some((f) => f.confirmacao !== null),
     semOrigem: validos.some((f) => f.evento === null && f.confirmacao === null),
     temDetalhamento: fatos.some((f) => f.registro !== null),
+    temApontamentosAnteriores: fatos.some(
+      (f) => f.id_setor !== setor && f.substituicao === null,
+    ),
     hash: hash({
       projecao: projecao.toFixed(3),
       fatos: fatos.map((f) => ({
