@@ -75,6 +75,7 @@ export async function cancelamentosHandler(
 ) {
   let ctx: Contexto | undefined
   let id: number | undefined
+  let iniciouExecucao = false
   try {
     const autorizado = await autorizar(request, [])
     if (autorizado instanceof Response) {
@@ -233,6 +234,7 @@ export async function cancelamentosHandler(
             )
           }
           case "executar":
+            iniciouExecucao = true
             return json(await efeitos.executarEstorno(tx, ctx!, id!))
           case "devolucoes":
             return json(
@@ -311,11 +313,17 @@ export async function cancelamentosHandler(
       { status: result.criado ? 201 : 200, headers },
     )
   } catch (erro) {
+    const conhecido = erro instanceof HttpError || erro instanceof PedidoError
+    const conflito =
+      disputaPersistencia(erro) ||
+      (erro instanceof Prisma.PrismaClientKnownRequestError &&
+        ["P2003", "P2025"].includes(erro.code))
     if (
-      op === "executar" &&
+      iniciouExecucao &&
       ctx &&
       id &&
-      !(erro instanceof HttpError && erro.status === 403)
+      (erro instanceof efeitos.ReavaliacaoNecessaria ||
+        (!conhecido && !conflito))
     ) {
       try {
         await prisma.$transaction(
@@ -353,11 +361,6 @@ export async function cancelamentosHandler(
         await notificacoes.distribuir(ctx)
       } catch {}
     }
-    const conhecido = erro instanceof HttpError || erro instanceof PedidoError
-    const conflito =
-      disputaPersistencia(erro) ||
-      (erro instanceof Prisma.PrismaClientKnownRequestError &&
-        ["P2003", "P2025"].includes(erro.code))
     if (!conhecido && !conflito)
       console.error(
         "Falha na operação de cancelamento; transação não confirmada.",

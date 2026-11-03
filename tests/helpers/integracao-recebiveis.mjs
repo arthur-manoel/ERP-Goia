@@ -299,6 +299,7 @@ export async function ambienteRecebiveis() {
     assert.equal(
       response.headers.get("Cache-Control"),
       rota.startsWith("/api/clientes/") ||
+        (method === "PATCH" && /^\/api\/contas_receber\/\d+$/.test(rota)) ||
         /^\/api\/estoque\/(entradas|saidas|ajustes|saldo)(?:\?|$)/.test(rota) ||
         (rota.startsWith("/api/ordem_producao") &&
           !/\/(consumos|operacao)(?:\?|$)/.test(rota))

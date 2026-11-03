@@ -67,6 +67,81 @@ test("Cancelamentos HTTP e MariaDB: etapas, efeitos, permissões, concorrência 
   }
   try {
     await t.test(
+      "execução inválida mantém aprovação e permite corrigir o envio",
+      async () => {
+        const p = await a.novo()
+        const c = await a.solicitar(p)
+        const antes = await prisma.pedido_cancelamento.findUniqueOrThrow({
+          where: { id: c.id },
+        })
+        const efeitosAntes = await snapshot()
+        assert.equal(antes.status, "AGUARDANDO_EXECUCAO")
+        for (const [body, headers] of [
+          [{}, {}],
+          [{ invalido: true }, { chave: randomUUID() }],
+        ]) {
+          const resposta = await a.chamar(
+            op(c, "executar"),
+            "POST",
+            body,
+            headers,
+          )
+          assert.equal(resposta.status, 400, JSON.stringify(resposta.body))
+          assert.deepEqual(
+            await prisma.pedido_cancelamento.findUniqueOrThrow({
+              where: { id: c.id },
+            }),
+            antes,
+          )
+          assert.equal(await snapshot(), efeitosAntes)
+        }
+        await a.executar(c)
+        assert.ok((await a.detalhe(c)).executadoEm)
+      },
+    )
+    await t.test(
+      "editar descrição de título com crédito preserva saldo e permite receber",
+      async () => {
+        const p = await a.novo({
+          quantidade: "2.000",
+          valor: "45.00",
+          frete: "10.00",
+        })
+        const r = await a.reservar(p, "2.000")
+        const e = await a.entregar(p, r, "1.000")
+        await a.entregar(p, r, "1.000")
+        await a.fechar(p)
+        const [titulo] = await a.titulos(p)
+        assert.equal(titulo.valor_final.toFixed(2), "100.00")
+        const c = await a.solicitar(p, "ENTREGA", e.idEntrega)
+        await a.executar(c)
+        const antes = await prisma.contas_receber.findUniqueOrThrow({
+          where: { id: titulo.id },
+        })
+        assert.equal(antes.saldo.toFixed(2), "50.00")
+        const descricao = "Descrição atualizada após cancelamento parcial"
+        const resposta = await a.chamar(
+          "/api/contas_receber/" + titulo.id,
+          "PATCH",
+          { descricao },
+        )
+        assert.equal(resposta.status, 200, JSON.stringify(resposta.body))
+        const depois = await prisma.contas_receber.findUniqueOrThrow({
+          where: { id: titulo.id },
+        })
+        assert.equal(depois.descricao, descricao)
+        assert.equal(depois.valor_final.toFixed(2), "100.00")
+        assert.equal(depois.saldo.toFixed(2), "50.00")
+        assert.equal(depois.situacao, antes.situacao)
+        await a.pagar(titulo, "50.00")
+        const quitado = await prisma.contas_receber.findUniqueOrThrow({
+          where: { id: titulo.id },
+        })
+        assert.equal(quitado.saldo.toFixed(2), "0.00")
+        assert.equal(quitado.situacao, "PAGO")
+      },
+    )
+    await t.test(
       "solicitação e rejeição não alteram saldo, títulos ou extrato",
       async () => {
         const { p } = await completo()

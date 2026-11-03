@@ -1,5 +1,7 @@
 "use client"
 
+import { lerRespostaOperacao } from "@/features/erp/resposta-operacao"
+
 import Link from "next/link"
 import {
   useCallback,
@@ -363,13 +365,12 @@ function Conteudo({
         },
         body: JSON.stringify(tentativa.body),
       })
-      const value = await resposta.json()
+      const value = await lerRespostaOperacao(resposta, () => {
+        sessionStorage.removeItem(chaveStorage)
+        window.dispatchEvent(new Event("storage"))
+        setRevisao((r) => r + 1)
+      })
       if (!resposta.ok) {
-        if ([400, 404, 409, 413, 415, 422].includes(resposta.status)) {
-          sessionStorage.removeItem(chaveStorage)
-          window.dispatchEvent(new Event("storage"))
-          setRevisao((r) => r + 1)
-        }
         throw new Error(
           value.error ?? "Confirmação interrompida; repita a mesma tentativa.",
         )

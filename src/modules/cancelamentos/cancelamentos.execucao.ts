@@ -173,6 +173,8 @@ async function ajustarFinanceiro(tx: Tx, ctx: Contexto, id: number, p: Plano) {
     })
   }
 }
+export class ReavaliacaoNecessaria extends ConflictError {}
+
 export async function executarEstorno(tx: Tx, ctx: Contexto, id: number) {
   const row = await buscar(tx, ctx, id)
   const a = await acesso(tx, ctx)
@@ -195,11 +197,11 @@ export async function executarEstorno(tx: Tx, ctx: Contexto, id: number) {
     ...(row.id_entrega ? { idEntrega: row.id_entrega } : {}),
   })
   if (p.hashEstado !== row.hash_estado)
-    throw new ConflictError(
+    throw new ReavaliacaoNecessaria(
       "O pedido, estoque ou financeiro mudou. Reavalie a solicitação e obtenha nova aprovação quando exigida.",
     )
   if (p.efeitos.inconsistencias.length)
-    throw new ConflictError(
+    throw new ReavaliacaoNecessaria(
       "Há inconsistências históricas. Regularize a origem e reavalie antes de executar.",
     )
   if (

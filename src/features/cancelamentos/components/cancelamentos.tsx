@@ -1,4 +1,6 @@
 "use client"
+
+import { lerRespostaOperacao } from "@/features/erp/resposta-operacao"
 import Link from "next/link"
 import {
   useCallback,
@@ -292,12 +294,11 @@ function Conteudo({
         },
         body: JSON.stringify(tentativa.body),
       })
-      const v = await r.json()
+      const v = await lerRespostaOperacao(r, () => {
+        sessionStorage.removeItem(storage)
+        setPendente(undefined)
+      })
       if (!r.ok) {
-        if ([400, 403, 404, 409, 413, 415, 422].includes(r.status)) {
-          sessionStorage.removeItem(storage)
-          setPendente(undefined)
-        }
         if (r.status === 409) {
           try {
             await carregar()

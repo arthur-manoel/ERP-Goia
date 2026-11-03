@@ -1,5 +1,7 @@
 "use client"
 
+import { lerRespostaOperacao } from "@/features/erp/resposta-operacao"
+
 import Link from "next/link"
 import {
   useCallback,
@@ -438,12 +440,11 @@ function DetalhesRecebimento({
           body: JSON.stringify(envio.dados),
         },
       )
-      const json = await resposta.json()
+      const json = await lerRespostaOperacao(resposta, () => {
+        sessionStorage.removeItem(chaveStorage)
+        atualizarTentativa()
+      })
       if (!resposta.ok) {
-        if ([400, 404, 409, 413, 415, 422].includes(resposta.status)) {
-          sessionStorage.removeItem(chaveStorage)
-          atualizarTentativa()
-        }
         throw new Error(
           json.error ?? "Confirmação não comprovada. Repita a mesma tentativa.",
         )
