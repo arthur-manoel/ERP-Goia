@@ -1,5 +1,6 @@
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { SeletorEmpresa } from "@/features/autenticacao/components/seletor-empresa"
 import { ThemeToggle } from "./theme-toggle"
 import { MenuUsuario } from "@/features/autenticacao/components/menu-usuario"
 import type { UsuarioLogado } from "@/features/autenticacao/types"
@@ -10,6 +11,7 @@ export function AppHeader({ usuario }: { usuario: UsuarioLogado | null }) {
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="my-4" />
       <div className="ml-auto flex items-center gap-2">
+        <SeletorEmpresa />
         <ThemeToggle />
         <MenuUsuario usuario={usuario} />
       </div>

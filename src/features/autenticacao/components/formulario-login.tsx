@@ -40,8 +40,12 @@ export function FormularioLogin({ retorno = "/" }: { retorno?: string }) {
         try {
           await entrar(usuario, senha)
           router.replace(retornoSeguro(retorno))
-        } catch {
-          setErro("Usuário ou senha incorretos.")
+        } catch (causa) {
+          setErro(
+            causa instanceof Error
+              ? causa.message
+              : "Não foi possível entrar. Tente novamente.",
+          )
           form.resetField("senha")
           setMostrarSenha(false)
         }

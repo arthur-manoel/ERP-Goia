@@ -24,9 +24,11 @@ let renovacao: Promise<string | null> | null = null
 export function renovarToken() {
   renovacao ??= comBloqueioSessao(async () => {
     const response = await fetch("/api/auth/refresh", { method: "POST" })
-    if (!response.ok) return null
+    if (response.status === 401) return null
+    if (!response.ok) throw new Error("Não foi possível renovar a sessão.")
     const body: { accessToken?: string } = await response.json()
-    return body.accessToken ?? null
+    if (!body.accessToken) throw new Error("Resposta de sessão inválida.")
+    return body.accessToken
   }).finally(() => {
     renovacao = null
   })

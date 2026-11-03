@@ -35,7 +35,7 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | --- | :---: | --- | --- |
 | Infraestrutura e esqueleto | ✅ | — | PRs [#3](https://github.com/arthur-manoel/ERP-Goia/pull/3), [#4](https://github.com/arthur-manoel/ERP-Goia/pull/4), [#5](https://github.com/arthur-manoel/ERP-Goia/pull/5) |
 | Base compartilhada | ⬜ | `sequencias_automaticas` | [#6](https://github.com/arthur-manoel/ERP-Goia/issues/6) a [#10](https://github.com/arthur-manoel/ERP-Goia/issues/10), [#15](https://github.com/arthur-manoel/ERP-Goia/issues/15) |
-| Acesso e segurança | ⬜ | `usuarios`, `refresh_tokens`, `administradores_gerais`, `usuario_empresa`, `permissoes_usuario`, `auditoria` | [#11](https://github.com/arthur-manoel/ERP-Goia/issues/11) a [#14](https://github.com/arthur-manoel/ERP-Goia/issues/14), [#19](https://github.com/arthur-manoel/ERP-Goia/issues/19) |
+| Acesso e segurança | 🟨 | `usuarios`, `refresh_tokens`, `administradores_gerais`, `usuario_empresa`, `permissoes_usuario`, `auditoria` | [#11](https://github.com/arthur-manoel/ERP-Goia/issues/11) a [#14](https://github.com/arthur-manoel/ERP-Goia/issues/14), [#19](https://github.com/arthur-manoel/ERP-Goia/issues/19) |
 | Administração | ⬜ | `empresas`, `setores`, `tipos_setor`, `permissoes_setor`, `cargos` | [#16](https://github.com/arthur-manoel/ERP-Goia/issues/16) a [#18](https://github.com/arthur-manoel/ERP-Goia/issues/18) |
 | Cadastros | 🟨 | `clientes`, `fornecedores`, `empresa_fornecedor`, `categorias`, `cores`, `tamanhos`, `tipos_produto` | [#20](https://github.com/arthur-manoel/ERP-Goia/issues/20) a [#25](https://github.com/arthur-manoel/ERP-Goia/issues/25) |
 | Produtos e ficha técnica | ⬜ | `produtos`, `produto_empresa`, `produto_variacoes`, `produto_fornecedor`, `ficha_tecnica`, `ficha_tecnica_item` | [#26](https://github.com/arthur-manoel/ERP-Goia/issues/26) a [#28](https://github.com/arthur-manoel/ERP-Goia/issues/28) |
@@ -53,6 +53,13 @@ Associações empresa–fornecedor: backend e tela disponíveis em `/cadastros/e
 
 Backend de ordens de produção: CRUD multiempresa, ciclo de vida, itens e apontamentos efetivos disponíveis em `/api/ordem_producao`, preservando os endpoints anteriores. Liberação de reservas e estornos de consumo/estoque permanecem pendentes; cancelamentos que dependem dessas integrações são bloqueados. Contrato e limites em [src/modules/producao/README.md](src/modules/producao/README.md).
 
+### Descoberta de empresas da sessão — issue #12
+
+Autenticação consulta `/api/auth/empresas` antes de selecionar empresa. A lista
+usa vínculos ativos, sem permissões de módulo; seleção válida é lembrada por
+usuário. Não há alteração de schema ou concessão automática. Contrato e comandos
+de teste em [src/modules/auth/README.md](src/modules/auth/README.md).
+
 ### Interface de pedidos de venda
 
 O formulário de novo pedido e edição em `/vendas/pedidos` possui seleção de cliente, produto, tamanho e cor, preço sugerido pelo cadastro, subtotais e total automático. A disponibilidade por variação considera o saldo, outros pedidos abertos e ordens planejadas ou em produção com conclusão até a entrega. Uma insuficiência gera aviso e permite salvar para planejamento.
@@ -67,7 +74,7 @@ A tela `/cadastros/clientes` consulta `/api/clientes` com busca por nome, CPF/CN
 
 Somente nome/razão social é obrigatório. O formulário compartilha a validação da API para CPF/CNPJ (inclusive alfanumérico), UF e CEP; opcionais vazios são enviados como `null`. A edição envia apenas campos alterados, preservando documentos legados não modificados. A troca de empresa reinicia a tela e cancela consultas pendentes.
 
-O contexto `/api/auth/contexto` fornece os vínculos ativos para seleção de empresa, sem exigir acesso a estoque. A autorização de `CLIENTES` permanece no servidor por operação. Nenhum schema, migration, permissão ou dado de demonstração foi adicionado ao fluxo real. A tela de fornecedores continua na sua implementação própria.
+A rota `/api/auth/empresas` fornece os vínculos ativos para seleção de empresa, sem exigir acesso a estoque. A escolha é associada ao usuário; ausência de vínculo e falhas têm estados próprios. O contrato está em [src/modules/auth/README.md](src/modules/auth/README.md). A autorização de `CLIENTES` permanece no servidor por operação. Nenhum schema, migration, permissão ou dado de demonstração foi adicionado ao fluxo real. A tela de fornecedores continua na sua implementação própria.
 
 ### Interface de categorias
 
@@ -501,6 +508,7 @@ A aprovação/aplicação no banco compartilhado segue pendente na
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-11-02 | Maria | `feature/auth-empresas-usuario` | Issue #12: descoberta em `/api/auth/empresas`, vínculos ativos sem permissão de módulo, preferência por usuário, seletor comum e proteção contra respostas atrasadas. Sem migration ou concessão automática. |
 | 2026-10-31 | — | `feature/21-vincular-fornecedores-empresas` | Backend e interface de associações empresa–fornecedor, condições comerciais independentes e elegibilidade de globais integrada a Compras. Sem alteração de schema ou histórico financeiro. |
 | 2026-10-31 | Alexsander Gabriel | `feature/integracao-api-categorias` | Integração da tela de categorias do PR #102 à API do PR #110, com busca, paginação, cadastro, edição e situação por empresa. Sem alterações no schema ou migrations. |
 | 2026-10-30 | — | Backend de ordens de produção | CRUD, ciclo de vida, itens e apontamentos em `/api/ordem_producao`, com isolamento multiempresa, permissões, rate limiting, auditoria e concorrência. Schema preservado; estornos e liberação de reservas indisponíveis bloqueiam cancelamentos dependentes. |
