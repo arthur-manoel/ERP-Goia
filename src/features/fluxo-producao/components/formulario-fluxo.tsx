@@ -1,13 +1,10 @@
 "use client"
 
-import { useState } from "react"
-import { z } from "zod"
-import { useFieldArray, useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { toast } from "sonner"
+import { useState, type FormEvent } from "react"
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react"
+import { toast } from "sonner"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -16,172 +13,190 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FieldError, FieldLabel } from "@/components/ui/field"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
-import { useErp } from "@/features/erp/components/provedor"
+import { Field, FieldError, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  mensagemErro,
+  useAutenticacao,
+} from "@/features/autenticacao/provedor-autenticacao"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
-import type { Setor } from "@/features/setores/schemas"
-import { fluxoProducaoSchema, type FluxoProducao } from "../schemas"
+import {
+  formularioVazio,
+  moverSetor,
+  paraFormulario,
+  setoresParaAdicionar,
+  validarFormulario,
+} from "../regras-api"
+import type { Fluxo, FormularioFluxo as Formulario, Setor } from "../tipos"
 
-// O schema tem `.transform()` na descrição, então entrada e saída têm tipos
-// levemente diferentes (ver mesmo comentário em formulario-setor.tsx).
-type ValoresFormulario = z.input<typeof fluxoProducaoSchema>
-type ValoresSalvas = z.output<typeof fluxoProducaoSchema>
+const endpoint = "/api/fluxos-producao"
 
 export function FormularioFluxo({
-  initial,
-  setoresDisponiveis,
+  fluxo,
+  setores,
   onClose,
-  returnFocus,
+  onSaved,
 }: {
-  initial?: FluxoProducao
-  /** Todos os setores da empresa (ativos e inativos), para exibir corretamente etapas já existentes. */
-  setoresDisponiveis: Setor[]
+  /** Fluxo em edição; `null` cadastra um novo. */
+  fluxo: Fluxo | null
+  /** Todos os setores da empresa (ativos e inativos). */
+  setores: Setor[]
   onClose: () => void
-  returnFocus: () => void
+  onSaved: () => Promise<void>
 }) {
-  const { save } = useErp()
-  const [setorParaAdicionar, setSetorParaAdicionar] = useState("")
-  const form = useForm<ValoresFormulario, unknown, ValoresSalvas>({
-    resolver: zodResolver(fluxoProducaoSchema),
-    defaultValues: {
-      name: initial?.name ?? "",
-      description: initial?.description ?? "",
-      status: initial?.status ?? "Ativo",
-      steps: initial?.steps ?? [],
-    },
-  })
-  const { fields, append, remove, move } = useFieldArray({
-    control: form.control,
-    name: "steps",
-  })
-  const pendente = form.formState.isSubmitting
-
-  const idsSelecionados = new Set(fields.map((field) => field.sectorId))
-  const setoresPorId = new Map(
-    setoresDisponiveis.map((setor) => [setor.id, setor]),
+  const { requisitar } = useAutenticacao()
+  const [formulario, setFormulario] = useState<Formulario>(
+    fluxo ? paraFormulario(fluxo) : formularioVazio,
   )
-  const opcoesDisponiveis = setoresDisponiveis
-    .filter(
-      (setor) => setor.status === "Ativo" && !idsSelecionados.has(setor.id),
-    )
-    .map((setor) => ({ value: setor.id, label: setor.name }))
+  const [novoSetor, setNovoSetor] = useState("")
+  const [erro, setErro] = useState("")
+  const [salvando, setSalvando] = useState(false)
 
-  function adicionarEtapa() {
-    if (!setorParaAdicionar) return
-    append({ sectorId: setorParaAdicionar })
-    setSetorParaAdicionar("")
-    form.clearErrors("steps")
+  // Para mostrar o nome de setores do próprio fluxo mesmo que a lista de
+  // setores não os traga (ex.: removidos), usamos o fluxo como reserva.
+  const porId = new Map<number, Setor>([
+    ...(fluxo?.setores ?? []).map((s) => [s.id, s] as const),
+    ...setores.map((s) => [s.id, s] as const),
+  ])
+  const opcoes = setoresParaAdicionar(setores, formulario.setores).map(
+    (setor) => ({ value: String(setor.id), label: setor.nome }),
+  )
+
+  function alterar<K extends keyof Formulario>(campo: K, valor: Formulario[K]) {
+    setFormulario((atual) => ({ ...atual, [campo]: valor }))
   }
 
-  async function salvar(valores: ValoresSalvas) {
+  function adicionar() {
+    if (!novoSetor) return
+    alterar("setores", [...formulario.setores, Number(novoSetor)])
+    setNovoSetor("")
+    setErro("")
+  }
+
+  async function salvar(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault()
+    setErro("")
+    const resultado = validarFormulario(formulario, setores)
+    if (!resultado.ok) {
+      setErro(resultado.erro)
+      return
+    }
+
+    setSalvando(true)
     try {
-      await save("productionFlows", valores, initial?.id)
+      const resposta = await requisitar(
+        fluxo ? `${endpoint}/${fluxo.id}` : endpoint,
+        {
+          method: fluxo ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(resultado.payload),
+        },
+      )
+      if (!resposta.ok) throw new Error(await mensagemErro(resposta))
+      await onSaved()
       toast.success(
-        initial
+        fluxo
           ? "Fluxo de produção atualizado."
           : "Fluxo de produção cadastrado.",
       )
       onClose()
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Não foi possível salvar."
-      form.setError("root.server", { message })
-      toast.error(message)
+    } catch (causa) {
+      setErro(causa instanceof Error ? causa.message : "Falha ao salvar.")
+    } finally {
+      setSalvando(false)
     }
   }
 
   return (
     <Dialog
       open
-      onOpenChange={(open) => {
-        if (!open && !pendente) onClose()
+      onOpenChange={(aberto) => {
+        if (!aberto && !salvando) onClose()
       }}
     >
-      <DialogContent
-        className="sm:max-w-2xl"
-        finalFocus={() => {
-          returnFocus()
-          return false
-        }}
-      >
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {initial ? "Editar fluxo de produção" : "Novo fluxo de produção"}
+            {fluxo ? "Editar fluxo de produção" : "Novo fluxo de produção"}
           </DialogTitle>
           <DialogDescription>
-            Defina a sequência de setores pela qual a peça deve passar. Ex.:
-            Corte → Costura → Acabamento → Revisão → Embalagem.
+            Monte a sequência de setores pela qual a peça passa. Ex.: Sublimação
+            → Corte → Costura → Aprontamento.
           </DialogDescription>
         </DialogHeader>
 
-        <form
-          noValidate
-          onSubmit={form.handleSubmit(salvar)}
-          className="space-y-5"
-        >
-          <fieldset disabled={pendente} className="space-y-5">
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field data-invalid={!!form.formState.errors.name}>
-                <FieldLabel htmlFor="fluxo-nome">Nome *</FieldLabel>
-                <Input
-                  id="fluxo-nome"
-                  placeholder="Ex.: Camiseta Básica"
-                  aria-invalid={!!form.formState.errors.name}
-                  {...form.register("name")}
-                />
-                {form.formState.errors.name && (
-                  <FieldError>{form.formState.errors.name.message}</FieldError>
-                )}
-              </Field>
+        <form onSubmit={salvar} noValidate className="space-y-5">
+          <fieldset disabled={salvando} className="space-y-5">
+            <Field>
+              <FieldLabel htmlFor="fluxo-nome">Nome *</FieldLabel>
+              <Input
+                id="fluxo-nome"
+                placeholder="Ex.: Camiseta sublimada"
+                value={formulario.nome}
+                onChange={(e) => alterar("nome", e.target.value)}
+                maxLength={100}
+                autoFocus
+              />
+            </Field>
 
-              <Field data-invalid={!!form.formState.errors.description}>
-                <FieldLabel htmlFor="fluxo-descricao">
-                  Descrição (opcional)
-                </FieldLabel>
-                <Input
-                  id="fluxo-descricao"
-                  placeholder="Para que produtos este fluxo serve"
-                  {...form.register("description")}
-                />
-              </Field>
-            </div>
+            <Field>
+              <FieldLabel htmlFor="fluxo-descricao">
+                Descrição (opcional)
+              </FieldLabel>
+              <Textarea
+                id="fluxo-descricao"
+                placeholder="Para quais produtos este fluxo serve"
+                rows={2}
+                value={formulario.descricao}
+                onChange={(e) => alterar("descricao", e.target.value)}
+                maxLength={255}
+              />
+            </Field>
 
-            <Field data-invalid={!!form.formState.errors.steps}>
-              <FieldLabel>Etapas do fluxo *</FieldLabel>
-
+            <Field>
+              <FieldLabel>Sequência de setores *</FieldLabel>
               <div className="space-y-2 rounded-lg border p-3">
-                {fields.length === 0 && (
+                {formulario.setores.length === 0 && (
                   <Empty className="border-0 py-4">
-                    <EmptyTitle>Nenhuma etapa adicionada</EmptyTitle>
+                    <EmptyTitle>Nenhum setor na sequência</EmptyTitle>
                     <EmptyDescription>
-                      Selecione um setor abaixo e clique em &quot;Adicionar
-                      etapa&quot; para montar a sequência.
+                      Escolha um setor abaixo e clique em &quot;Adicionar&quot;
+                      para montar o caminho da produção.
                     </EmptyDescription>
                   </Empty>
                 )}
-
-                {fields.map((field, indice) => {
-                  const setor = setoresPorId.get(field.sectorId)
+                {formulario.setores.map((id, indice) => {
+                  const setor = porId.get(id)
+                  const total = formulario.setores.length
                   return (
                     <div
-                      key={field.id}
+                      key={id}
                       className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2"
                     >
                       <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
                         {indice + 1}
                       </span>
                       <span className="flex-1 truncate text-sm font-medium">
-                        {setor?.name ?? "Setor não encontrado"}
+                        {setor?.nome ?? "Setor não encontrado"}
                       </span>
+                      {(!setor || !setor.ativo) && (
+                        <Badge variant="destructive">Inativo</Badge>
+                      )}
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        aria-label="Mover para cima"
+                        aria-label={`Mover ${setor?.nome ?? "setor"} para cima`}
                         disabled={indice === 0}
-                        onClick={() => move(indice, indice - 1)}
+                        onClick={() =>
+                          alterar(
+                            "setores",
+                            moverSetor(formulario.setores, indice, indice - 1),
+                          )
+                        }
                       >
                         <ArrowUp />
                       </Button>
@@ -189,9 +204,14 @@ export function FormularioFluxo({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        aria-label="Mover para baixo"
-                        disabled={indice === fields.length - 1}
-                        onClick={() => move(indice, indice + 1)}
+                        aria-label={`Mover ${setor?.nome ?? "setor"} para baixo`}
+                        disabled={indice === total - 1}
+                        onClick={() =>
+                          alterar(
+                            "setores",
+                            moverSetor(formulario.setores, indice, indice + 1),
+                          )
+                        }
                       >
                         <ArrowDown />
                       </Button>
@@ -199,8 +219,13 @@ export function FormularioFluxo({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        aria-label="Remover etapa"
-                        onClick={() => remove(indice)}
+                        aria-label={`Remover ${setor?.nome ?? "setor"}`}
+                        onClick={() =>
+                          alterar(
+                            "setores",
+                            formulario.setores.filter((_, i) => i !== indice),
+                          )
+                        }
                       >
                         <Trash2 />
                       </Button>
@@ -209,67 +234,58 @@ export function FormularioFluxo({
                 })}
               </div>
 
-              {form.formState.errors.steps && (
-                <FieldError>{form.formState.errors.steps.message}</FieldError>
-              )}
-
               <div className="flex items-end gap-2 pt-1">
-                <div className="flex-1 space-y-1.5">
-                  <FieldLabel htmlFor="fluxo-adicionar-setor">
-                    Adicionar setor ao fluxo
-                  </FieldLabel>
+                <div className="flex-1">
                   <SearchSelect
                     id="fluxo-adicionar-setor"
-                    label="Adicionar setor ao fluxo"
-                    value={setorParaAdicionar}
-                    onValueChange={setSetorParaAdicionar}
-                    options={opcoesDisponiveis}
+                    label="Adicionar setor à sequência"
+                    value={novoSetor}
+                    onValueChange={setNovoSetor}
+                    options={opcoes}
+                    disabled={opcoes.length === 0}
                     placeholder={
-                      opcoesDisponiveis.length
+                      opcoes.length
                         ? "Escolha um setor..."
                         : "Nenhum setor ativo disponível"
                     }
-                    disabled={opcoesDisponiveis.length === 0}
                   />
                 </div>
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!setorParaAdicionar}
-                  onClick={adicionarEtapa}
+                  disabled={!novoSetor}
+                  onClick={adicionar}
                 >
-                  <Plus /> Adicionar etapa
+                  <Plus /> Adicionar
                 </Button>
               </div>
-              {setoresDisponiveis.every(
-                (setor) => setor.status !== "Ativo",
-              ) && (
+              {setores.every((setor) => !setor.ativo) && (
                 <p className="text-xs text-muted-foreground">
-                  Cadastre setores ativos em Administração → Setores antes de
-                  montar um fluxo.
+                  Nenhum setor ativo cadastrado. Cadastre os setores (ex.:
+                  Sublimação, Corte, Costura, Aprontamento) antes de montar o
+                  fluxo.
                 </p>
               )}
             </Field>
 
-            {form.formState.errors.root?.server && (
-              <Alert variant="destructive">
-                <AlertDescription>
-                  {form.formState.errors.root.server.message}
-                </AlertDescription>
-              </Alert>
-            )}
+            <div className="flex items-center gap-3">
+              <Switch
+                id="fluxo-ativo"
+                checked={formulario.ativo}
+                onCheckedChange={(valor) => alterar("ativo", valor)}
+              />
+              <FieldLabel htmlFor="fluxo-ativo">
+                {formulario.ativo ? "Fluxo ativo" : "Fluxo inativo"}
+              </FieldLabel>
+            </div>
+
+            {erro && <FieldError role="alert">{erro}</FieldError>}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancelar
               </Button>
-              <Button type="submit">
-                {pendente
-                  ? "Salvando…"
-                  : initial
-                    ? "Salvar alterações"
-                    : "Cadastrar fluxo"}
-              </Button>
+              <Button type="submit">{salvando ? "Salvando…" : "Salvar"}</Button>
             </DialogFooter>
           </fieldset>
         </form>
