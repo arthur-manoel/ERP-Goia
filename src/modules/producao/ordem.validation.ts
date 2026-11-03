@@ -1,4 +1,5 @@
 import "server-only"
+import { Prisma } from "@/generated/prisma/client"
 import * as repo from "./ordem.repository"
 import { totaisDaOrdem } from "../apontamentos/apontamentos.repository"
 import {
@@ -110,15 +111,30 @@ export async function validarQuantidadesLegadas(tx: Transaction, ordem: Ordem) {
 
 export async function confirmarQuantidades(tx: Transaction, ordem: Ordem) {
   // A conclusão não fabrica apontamentos nem copia a quantidade planejada.
+  const itens = ordem.ordem_producao_item
+  const semProducao = itens.filter((item) => !item.quantidade_produzida?.gt(0))
+  const etapas = ordem.ordem_producao_fluxo_setor
+  const acumulados =
+    semProducao.length && etapas.length ? await totaisDaOrdem(tx, ordem.id) : []
   if (
-    !ordem.ordem_producao_item.length ||
-    ordem.ordem_producao_item.some(
-      (item) => !item.quantidade_produzida || item.quantidade_produzida.lte(0),
-    )
+    !itens.length ||
+    semProducao.some((item) => {
+      if (!item.quantidade_produzida?.isZero() || !item.quantidade.gt(0))
+        return true
+      const totais = acumulados.filter(
+        (total) => total.id_ordem_producao_item === item.id,
+      )
+      const resumo = validarDisponibilidade(etapas, item.quantidade, totais)
+      const perdas = resumo.reduce(
+        (soma, etapa) => soma.plus(etapa.perdida),
+        new Prisma.Decimal(0),
+      )
+      return resumo.at(-1)?.produzida !== "0.000" || !perdas.eq(item.quantidade)
+    })
   )
     throw new ProducaoError(
       409,
-      "Registre a quantidade efetivamente produzida de cada item antes de concluir.",
+      "Registre a produção efetiva ou comprove a perda integral de cada item antes de concluir.",
     )
   if (
     (

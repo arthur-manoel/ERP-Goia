@@ -16,6 +16,7 @@ export function identidadeConfirmacao(
   produzida: string,
   esperada: string,
   chave?: string,
+  motivoAjusteLegado?: string,
 ) {
   if (chave !== undefined && !/^[\x21-\x7e]{8,128}$/.test(chave))
     throw new ProducaoError(
@@ -28,6 +29,7 @@ export function identidadeConfirmacao(
     item,
     produzida: new Prisma.Decimal(produzida).toFixed(3),
     esperada: new Prisma.Decimal(esperada).toFixed(3),
+    ...(motivoAjusteLegado === undefined ? {} : { motivoAjusteLegado }),
   })
   return { chave: chave ?? `final:${requisicao}`, requisicao }
 }
@@ -67,6 +69,7 @@ export async function fonteProducao(
   )
   return {
     total,
+    temHistoricoFinal: finais.length > 0,
     detalhado: finais.some((f) => f.registro !== null),
     manual: finais.some((f) => f.confirmacao !== null),
     semOrigem: validos.some((f) => f.evento === null && f.confirmacao === null),
@@ -110,7 +113,8 @@ export async function protegerEfeitosFisicos(
     where: {
       id_empresa: ctx.idEmpresa,
       origem_id: ordem,
-      origem_tipo: { in: ["ORDEM_PRODUCAO", "PRODUCAO", "CONSUMO_PRODUCAO"] },
+      // A saída de insumos pode anteceder a medição da produção final.
+      origem_tipo: { in: ["ORDEM_PRODUCAO", "PRODUCAO"] },
     },
     select: { id: true },
   })

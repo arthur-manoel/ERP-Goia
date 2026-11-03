@@ -788,6 +788,132 @@ try {
       },
     )
     await t.test(
+      "confirmação legada de 6 permite confirmar 8 quando a etapa anterior comprova 10",
+      async () => {
+        const f = await fixtureLegada()
+        await avancarLegado(f)
+        await confirmar(f, "6", "0", randomUUID())
+        await apontar(f, "10", randomUUID(), 201, "0", 0)
+        const chave = randomUUID()
+        await confirmar(f, "8", "6", chave)
+        await semEfeito(f, () => confirmar(f, "8", "6", chave))
+        const e = await total(f, "8")
+        assert.equal(e.confirmacoes.length, 2)
+        assert.equal(e.pontos.length, 2)
+        assert.equal((await encerrarLegado(f)).ordem.status, "CONCLUIDA")
+      },
+    )
+    await t.test(
+      "ajuste explícito preserva a confirmação anterior e permite apontar as perdas reais",
+      async () => {
+        const f = await fixtureLegada()
+        await avancarLegado(f)
+        await confirmar(f, "10", "0", randomUUID())
+        await semEfeito(f, () => confirmar(f, "6", "10", randomUUID(), 409))
+        const chave = randomUUID()
+        const ajustar = () =>
+          call(
+            f,
+            `/api/ordem_producao/${f.op}/itens/${f.item}/producao`,
+            "PUT",
+            {
+              quantidade_produzida: "6",
+              quantidade_esperada: "10",
+              motivo_ajuste_legado:
+                "Contagem física corrigida antes do fechamento",
+            },
+            200,
+            chave,
+          )
+        await ajustar()
+        await semEfeito(f, ajustar)
+        await apontar(f, "6", randomUUID(), 201, "4", 0)
+        await confirmar(f, "6", "6", randomUUID())
+        const e = await total(f, "6")
+        assert.equal(e.confirmacoes.length, 3)
+        assert.equal(
+          e.confirmacoes[0].quantidade_produzida.toFixed(3),
+          "10.000",
+        )
+        assert.ok(
+          e.auditoria.some((a) =>
+            a.dados_novos?.includes("Contagem física corrigida"),
+          ),
+        )
+        assert.equal((await encerrarLegado(f)).ordem.status, "CONCLUIDA")
+      },
+    )
+    await t.test(
+      "zero produzido só conclui com perda integral comprovada",
+      async () => {
+        const f = await fixture()
+        const rota = `/api/ordem_producao/${f.op}/etapas/${f.etapas[0].id}/concluir`
+        await semEfeito(f, () => call(f, rota, "POST", undefined, 409))
+        await apontar(f, "0", randomUUID(), 201, "10", 0)
+        const op = await call(f, rota, "POST")
+        assert.equal(op.status, "CONCLUIDA")
+        await total(f, "0", "10")
+      },
+    )
+    await t.test(
+      "saída de insumo não bloqueia o primeiro apontamento final",
+      async () => {
+        const f = await fixture()
+        const material =
+          await prisma.ordem_producao_consumo_planejado.findFirstOrThrow({
+            where: { id_ordem_producao: f.op },
+          })
+        const saida = await prisma.movimentacao_estoque.create({
+          data: {
+            id_empresa: f.empresa,
+            id_produto: material.id_materia_prima,
+            id_usuario: f.usuario,
+            tipo: "SAIDA_PRODUCAO",
+            quantidade: "0.750",
+            origem_tipo: "CONSUMO_PRODUCAO",
+            origem_id: f.op,
+          },
+        })
+        await apontar(f, "6")
+        await confirmar(f, "6", "6", randomUUID())
+        await total(f, "6")
+        const concluida = await call(
+          f,
+          `/api/ordem_producao/${f.op}/etapas/${f.etapas[0].id}/concluir`,
+          "POST",
+        )
+        assert.equal(concluida.status, "CONCLUIDA")
+        assert.deepEqual(
+          await prisma.movimentacao_estoque.findMany({
+            where: { id_empresa: f.empresa, origem_id: f.op },
+          }),
+          [saida],
+        )
+      },
+    )
+    await t.test(
+      "leitura de produtos permite o seletor sem liberar o catálogo de tipos",
+      async () => {
+        const f = await fixture()
+        await prisma.permissoes_usuario.create({
+          data: {
+            id_usuario_empresa: f.vinculo,
+            recurso: "PRODUTOS",
+            pode_ler: true,
+            pode_criar: true,
+          },
+        })
+        await call(f, "/api/tipos_produto", "GET", undefined, 403)
+        const tipos = await call(f, "/api/produtos/tipos")
+        assert.ok(tipos.rows.length)
+        assert.deepEqual(Object.keys(tipos.rows[0]).sort(), [
+          "id",
+          "nome",
+          "status",
+        ])
+      },
+    )
+    await t.test(
       "OP sem snapshot também confirma os fatos detalhados e rejeita produção superada",
       async () => {
         const f = await fixture()

@@ -165,6 +165,7 @@ export const apontarSchema = z
   .object({
     quantidade_produzida: decimalSchema,
     quantidade_esperada: decimalSchema,
+    motivo_ajuste_legado: z.string().trim().min(1).max(255).optional(),
   })
   .strict()
 export type OrdemInput = z.output<typeof createOrdemSchema>

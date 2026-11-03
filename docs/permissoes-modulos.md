@@ -58,6 +58,7 @@ novos recursos. As suítes próprias indicadas cobrem operações e regras adici
 | `/tamanhos/{id}` | PUT, PATCH; DELETE | TAMANHOS / E; X | C | A | I, unit/catalogos |
 | `/tipos_produto`, `/tipos_produto/{id}` | GET | TIPOS_PRODUTO / L | C, global | A | I, M, B, unit/tipos_produto |
 | `/tipos_produto` | POST | TIPOS_PRODUTO / C | C, global | A | I, unit/tipos_produto |
+| `/produtos/tipos` | GET | PRODUTOS / L | C, seletor de tipos ativos | A | I, unit/tipos_produto |
 | `/tipos_produto/{id}` | PUT, PATCH; DELETE | TIPOS_PRODUTO / E; X | C, global | A | I, unit/tipos_produto |
 | `/fornecedores`, `/fornecedores/{id}` | GET | FORNECEDORES / L | C | A | I, M, B, unit/fornecedores |
 | `/fornecedores` | POST | FORNECEDORES / C | C | A | I, unit/fornecedores |

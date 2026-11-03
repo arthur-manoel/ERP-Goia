@@ -370,6 +370,7 @@ export function recordProduction(
     input.quantidade_produzida,
     input.quantidade_esperada,
     chave,
+    input.motivo_ajuste_legado,
   )
   return repo.write(ctx, async (tx) => {
     if (
@@ -420,7 +421,8 @@ export function recordProduction(
         )
         if (
           fonteLegada.temDetalhamento ||
-          fonteLegada.temApontamentosAnteriores
+          fonteLegada.temApontamentosAnteriores ||
+          fonteLegada.temHistoricoFinal
         )
           sector = ultima.id_setor
       }
@@ -453,9 +455,15 @@ export function recordProduction(
       return item
     }
     await protegerEfeitosFisicos(tx, ctx, id, row.status)
+    const legadoSemFato =
+      !snapshot && !fonte.temHistoricoFinal && item.quantidade_produzida.gt(0)
+    if (input.motivo_ajuste_legado && !legadoSemFato)
+      conflict(
+        "Ajuste legado exige produção já confirmada sem apontamento final.",
+      )
     let delta = new Prisma.Decimal(0)
     let apontamento: number | null = null
-    let registrarDelta = false
+    let quantidadeApontamento = new Prisma.Decimal(0)
     let tipo: "CONFIRMACAO" | "REGISTRO" | "LEGADO" =
       sector === null ? "LEGADO" : "CONFIRMACAO"
     if (sector !== null && fonte.detalhado) {
@@ -469,14 +477,20 @@ export function recordProduction(
         )
       validarProjecao(item.quantidade_produzida, fonte.total, total)
     } else {
-      if (sector !== null && !item.quantidade_produzida.eq(fonte.total))
+      if (
+        sector !== null &&
+        !legadoSemFato &&
+        !item.quantidade_produzida.eq(fonte.total)
+      )
         conflict(
           "Total do item diverge dos apontamentos. Reconcilie o histórico antes de registrar produção final.",
         )
       delta = total.minus(item.quantidade_produzida)
-      if (delta.lt(0))
-        conflict("Reduções de produção exigem um fluxo de ajuste ou estorno.")
-      if (delta.gt(0)) {
+      if (delta.lt(0) && !(legadoSemFato && input.motivo_ajuste_legado))
+        conflict(
+          "Reduções exigem correção do apontamento ou motivo de ajuste legado.",
+        )
+      if (!delta.isZero() || (sector !== null && legadoSemFato)) {
         if (!item.quantidade_produzida.eq(input.quantidade_esperada))
           conflict("A quantidade produzida mudou. Recarregue o item.")
         if (sector !== null) {
@@ -499,8 +513,10 @@ export function recordProduction(
                   new Prisma.Decimal(0),
               },
             ])
-          registrarDelta = true
-          tipo = "REGISTRO"
+          // A confirmação substitui a projeção sem origem quantitativa.
+          // O histórico de confirmações permanece registrado para auditoria.
+          quantidadeApontamento = legadoSemFato ? total : delta
+          if (quantidadeApontamento.gt(0)) tipo = "REGISTRO"
         }
       }
     }
@@ -518,9 +534,16 @@ export function recordProduction(
       ).count !== 1
     )
       conflict("Apontamento concorrente. Recarregue o item.")
-    if (registrarDelta && sector !== null)
+    if (quantidadeApontamento.gt(0) && sector !== null)
       apontamento = (
-        await repo.registerProduction(ctx, id, itemId, sector, delta, tx)
+        await repo.registerProduction(
+          ctx,
+          id,
+          itemId,
+          sector,
+          quantidadeApontamento,
+          tx,
+        )
       ).id
     const estado = await fonteProducao(tx, id, itemId, sector, total)
     await registrarConfirmacao(
@@ -550,6 +573,10 @@ export function recordProduction(
         quantidade_anterior: item.quantidade_produzida.toString(),
         quantidade_produzida: total.toString(),
         delta: delta.toString(),
+        ...(legadoSemFato ? { conciliacaoLegada: true } : {}),
+        ...(input.motivo_ajuste_legado
+          ? { motivoAjusteLegado: input.motivo_ajuste_legado }
+          : {}),
       },
     }
     await auditar(tx, ctx, { id, item }, audit)

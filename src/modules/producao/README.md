@@ -87,6 +87,14 @@ Apontamento é o total acumulado efetivamente produzido, com valor esperado para
 { "quantidade_produzida": "7.125", "quantidade_esperada": "0" }
 ```
 
+Em ordens sem snapshot com quantidade confirmada apenas no item, use
+`motivo_ajuste_legado` para reduzir o total de forma auditável. Envie a quantidade
+atual em `quantidade_esperada`. Quando houver apontamentos anteriores, o total
+declarado respeita a disponibilidade comprovada e passa a ser vinculado ao
+apontamento final. Se já existir um apontamento final, use correção ou estorno
+pelo ID do apontamento. A perda integral comprovada permite concluir o item com
+zero peças boas.
+
 Com snapshot e apontamentos detalhados na etapa final, esse PUT **confirma** a
 soma válida daquela etapa, sem criar outro apontamento. Registro/correção/estorno
 atualiza a projeção do item atomicamente; produção e perda são independentes.
