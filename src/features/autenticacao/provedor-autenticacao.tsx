@@ -72,6 +72,11 @@ export function ProvedorAutenticacao({
   const usuarioAtual = useRef<UsuarioSessao | null>(null)
   const empresaAtual = useRef<EmpresaSessao | null>(null)
   const versaoSessao = useRef(0)
+  const versaoEmpresa = useRef(0)
+  const renovacaoAcesso = useRef<{
+    versao: number
+    resultado: Promise<boolean | null>
+  } | null>(null)
   const consulta = useRef<AbortController | null>(null)
 
   const esvaziar = useCallback(() => {
@@ -100,12 +105,16 @@ export function ProvedorAutenticacao({
     setEstado("erro")
   }, [])
   const carregarAcesso = useCallback(
-    async (accessToken: string, versao: number, silencioso = false) => {
+    async (
+      accessToken: string,
+      versao: number,
+      silencioso = false,
+      idUsuarioEsperado?: number,
+    ) => {
       if (versaoSessao.current !== versao) return false
       consulta.current?.abort()
       const controller = new AbortController()
       consulta.current = controller
-      token.current = accessToken
       if (!silencioso) {
         setEstado("carregando")
         setErroAcesso(null)
@@ -127,9 +136,18 @@ export function ProvedorAutenticacao({
         const { data: body }: { data: EmpresasSessao } = await response.json()
         if (controller.signal.aborted || versaoSessao.current !== versao)
           return false
+        if (
+          idUsuarioEsperado !== undefined &&
+          body.usuario.id !== idUsuarioEsperado
+        ) {
+          limpar()
+          return false
+        }
         const escolhida =
           body.empresas.find((e) => e.id === preferida(body.usuario.id)) ??
           (body.empresas.length === 1 ? body.empresas[0] : null)
+        if (empresaAtual.current?.id !== escolhida?.id) versaoEmpresa.current++
+        token.current = accessToken
         usuarioAtual.current = body.usuario
         empresaAtual.current = escolhida
         lembrar(body.usuario.id, escolhida?.id ?? null)
@@ -149,19 +167,36 @@ export function ProvedorAutenticacao({
     [falhaAcesso, limpar],
   )
 
-  const restaurar = useCallback(() => {
-    const versao = versaoSessao.current
-    return renovarToken().then(
-      async (accessToken) => {
-        if (versaoSessao.current !== versao) return
-        if (!accessToken) return limpar()
-        await carregarAcesso(accessToken, versao)
-      },
-      () => {
-        if (versaoSessao.current === versao) falhaAcesso()
-      },
-    )
-  }, [carregarAcesso, falhaAcesso, limpar])
+  const restaurar = useCallback(
+    (silencioso = false) => {
+      const versao = versaoSessao.current
+      const emCurso = renovacaoAcesso.current
+      if (emCurso?.versao === versao) return emCurso.resultado
+      const idUsuario = usuarioAtual.current?.id
+      const resultado = renovarToken()
+        .then(
+          async (accessToken) => {
+            if (versaoSessao.current !== versao) return false
+            if (!accessToken) {
+              limpar()
+              return null
+            }
+            return carregarAcesso(accessToken, versao, silencioso, idUsuario)
+          },
+          () => {
+            if (versaoSessao.current === versao) falhaAcesso()
+            return false
+          },
+        )
+        .finally(() => {
+          if (renovacaoAcesso.current?.resultado === resultado)
+            renovacaoAcesso.current = null
+        })
+      renovacaoAcesso.current = { versao, resultado }
+      return resultado
+    },
+    [carregarAcesso, falhaAcesso, limpar],
+  )
   useEffect(() => {
     void restaurar()
     return () => {
@@ -179,17 +214,17 @@ export function ProvedorAutenticacao({
   }, [limpar])
 
   const recarregarAcesso = useCallback(async () => {
-    const versao = ++versaoSessao.current
+    versaoSessao.current++
     setEstado("carregando")
     setErroAcesso(null)
     consulta.current?.abort()
-    if (token.current) await carregarAcesso(token.current, versao)
-    else await restaurar()
-  }, [carregarAcesso, restaurar])
+    await restaurar()
+  }, [restaurar])
   const selecionarEmpresa = useCallback(
     (id: number) => {
       const escolhida = empresas.find((e) => e.id === id)
       if (!escolhida || !usuarioAtual.current) return
+      if (empresaAtual.current?.id !== id) versaoEmpresa.current++
       lembrar(usuarioAtual.current.id, id)
       empresaAtual.current = escolhida
       setEmpresa(escolhida)
@@ -255,6 +290,7 @@ export function ProvedorAutenticacao({
       if (!empresaAtual.current)
         throw new Error("Selecione uma empresa para continuar.")
       const idEmpresa = empresaAtual.current.id
+      const selecao = versaoEmpresa.current
       const idUsuario = usuarioAtual.current?.id
       const header = new Headers(init.headers).get("X-Empresa-Id")
       if (header !== null && header !== String(idEmpresa))
@@ -262,6 +298,7 @@ export function ProvedorAutenticacao({
       const conferir = () => {
         if (
           versaoSessao.current !== versao ||
+          versaoEmpresa.current !== selecao ||
           usuarioAtual.current?.id !== idUsuario ||
           empresaAtual.current?.id !== idEmpresa
         )
@@ -273,31 +310,32 @@ export function ProvedorAutenticacao({
         headers.set("X-Empresa-Id", String(idEmpresa))
         return fetch(url, { ...init, cache: "no-store", headers })
       }
-      let response = await executar(token.current)
+      const emCurso = renovacaoAcesso.current
+      if (emCurso?.versao === versao) {
+        await emCurso.resultado
+        conferir()
+      }
+      const enviado = token.current!
+      let response = await executar(enviado)
       conferir()
       if (response.status === 401) {
-        let novoToken: string | null
-        try {
-          novoToken = await renovarToken()
-        } catch {
+        if (enviado === token.current) {
+          const resultado = await restaurar(true)
+          if (resultado === null) return response
           conferir()
-          falhaAcesso()
-          throw new Error("Não foi possível renovar a sessão. Tente novamente.")
+          if (!resultado)
+            throw new Error(
+              "Não foi possível renovar a sessão. Tente novamente.",
+            )
         }
         conferir()
-        if (!novoToken) {
-          limpar()
-          return response
-        }
-        await carregarAcesso(novoToken, versao, true)
-        conferir()
-        response = await executar(novoToken)
+        response = await executar(token.current!)
         conferir()
         if (response.status === 401) limpar()
       }
       return response
     },
-    [carregarAcesso, falhaAcesso, limpar],
+    [limpar, restaurar],
   )
   return (
     <AutenticacaoContexto.Provider

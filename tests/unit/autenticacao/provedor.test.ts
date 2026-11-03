@@ -368,8 +368,83 @@ it("refresh de outra pessoa não repete operação antiga, mesmo na mesma empres
       name: "AbortError",
     })
   })
-  expect(ctx.usuario?.id).toBe(2)
+  expect(ctx.usuario).toBeNull()
+  expect(ctx.estado).toBe("anonimo")
   expect(
     chamadas.mock.calls.filter(([url]) => url === "/api/teste"),
   ).toHaveLength(1)
+})
+
+it("não envia operação de A com o token de B enquanto os vínculos de B estão sendo consultados", async () => {
+  await montar()
+  const consultaB = pendente<void>()
+  const empresasB = pendente<Response>()
+  refresh = "token-2"
+  resposta = async () => {
+    consultaB.resolve()
+    return empresasB.promise
+  }
+  chamadas.mockImplementationOnce(async () =>
+    Response.json({}, { status: 401 }),
+  )
+  let tokenAntesDaDescoberta: string | null = null
+  await act(async () => {
+    const original = ctx.requisitar("/api/original").catch(() => null)
+    await consultaB.promise
+    expect(ctx.usuario?.id).toBe(1)
+    const segunda = ctx
+      .requisitar("/api/segunda-operacao", { method: "POST" })
+      .catch(() => null)
+    await Promise.resolve()
+    const post = chamadas.mock.calls.find(
+      ([url]) => url === "/api/segunda-operacao",
+    )
+    tokenAntesDaDescoberta = new Headers(post?.[1]?.headers).get(
+      "Authorization",
+    )
+    empresasB.resolve(json(2))
+    await Promise.all([original, segunda])
+  })
+  expect(tokenAntesDaDescoberta).not.toBe("Bearer token-2")
+})
+
+it("descarta operação de A depois de trocar para B e retornar para A", async () => {
+  resposta = async () =>
+    json(1, [
+      { id: 10, nome: "A" },
+      { id: 20, nome: "B" },
+    ])
+  await montar()
+  await act(async () => ctx.selecionarEmpresa(10))
+  const original = pendente<Response>()
+  chamadas.mockImplementationOnce(() => original.promise)
+  const operacao = ctx
+    .requisitar("/api/escrita-antiga", { method: "POST" })
+    .catch((erro) => erro)
+  await act(async () => ctx.selecionarEmpresa(20))
+  await act(async () => ctx.selecionarEmpresa(10))
+  let resultado: unknown
+  await act(async () => {
+    original.resolve(Response.json({}, { status: 401 }))
+    resultado = await operacao
+  })
+  expect(
+    chamadas.mock.calls.filter(([url]) => url === "/api/escrita-antiga"),
+  ).toHaveLength(1)
+  expect(resultado).toMatchObject({ name: "AbortError" })
+})
+
+it("tentar novamente renova antes de descobrir empresas com token expirado", async () => {
+  await montar()
+  refresh = "token-renovado"
+  resposta = async (token) =>
+    token === "Bearer token-renovado"
+      ? json()
+      : Response.json({}, { status: 401 })
+  await act(async () => ctx.recarregarAcesso())
+  expect(ctx.estado).toBe("autenticado")
+  expect(ctx.usuario?.id).toBe(1)
+  expect(
+    new Headers(chamadas.mock.calls.at(-1)?.[1]?.headers).get("Authorization"),
+  ).toBe("Bearer token-renovado")
 })
