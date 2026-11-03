@@ -1,5 +1,10 @@
 import "server-only"
 import * as repo from "./ordem.repository"
+import { totaisDaOrdem } from "../apontamentos/apontamentos.repository"
+import {
+  incluirProducaoFinalLegada,
+  validarDisponibilidade,
+} from "../apontamentos/apontamentos.regras"
 import {
   buscarOrdem,
   ProducaoError,
@@ -73,6 +78,36 @@ export async function ready(ctx: Contexto, id: number, tx: Transaction) {
   return row
 }
 
+export async function validarQuantidadesLegadas(tx: Transaction, ordem: Ordem) {
+  const etapas = ordem.ordem_producao_fluxo_setor
+  const final = etapas.at(-1)
+  if (!final) return
+
+  const totais = await totaisDaOrdem(tx, ordem.id)
+  for (const item of ordem.ordem_producao_item) {
+    const acumulados = totais.filter(
+      (total) => total.id_ordem_producao_item === item.id,
+    )
+    const apontado = acumulados.find(
+      (total) => total.id_setor === final.id_setor,
+    )
+    if (apontado && !item.quantidade_produzida.eq(apontado.produzida))
+      fail(
+        "Total do item diverge dos apontamentos finais. Reconcilie o histórico antes de encerrar.",
+      )
+    if (acumulados.some((total) => total.id_setor !== final.id_setor))
+      validarDisponibilidade(
+        etapas,
+        item.quantidade,
+        incluirProducaoFinalLegada(
+          acumulados,
+          final.id_setor,
+          item.quantidade_produzida,
+        ),
+      )
+  }
+}
+
 export async function confirmarQuantidades(tx: Transaction, ordem: Ordem) {
   // A conclusão não fabrica apontamentos nem copia a quantidade planejada.
   if (
@@ -105,7 +140,31 @@ export async function confirmarQuantidades(tx: Transaction, ordem: Ordem) {
     )
 }
 
-/** Fluxo antigo não usa os estados de etapa do snapshot. */
+/** No legado, a chegada em cada setor comprova o início da etapa. */
+export function inicioEtapaLegada(ordem: Ordem, setor: number): Date | null {
+  const fluxo = ordem.ordem_producao_fluxo_setor
+  const destino = fluxo.findIndex((etapa) => etapa.id_setor === setor)
+  const atual = fluxo.findIndex((etapa) => etapa.id_setor === ordem.id_setor)
+  if (!ordem.data_inicio || destino < 0 || destino > atual) return null
+
+  let ultimoId = 0
+  let inicio: Date | null = null
+  for (let index = 0; index <= destino; index++) {
+    const movimento = ordem.ordem_producao_movimentacao_setor.find(
+      (mov) =>
+        mov.id > ultimoId &&
+        mov.status === "ENTREGUE" &&
+        mov.data_recebimento &&
+        mov.id_setor_destino === fluxo[index].id_setor &&
+        mov.id_setor_origem === (fluxo[index - 1]?.id_setor ?? null),
+    )
+    if (!movimento) return null
+    ultimoId = movimento.id
+    inicio = movimento.data_recebimento
+  }
+  return inicio
+}
+
 export function validarApontamentoLegado(ordem: Ordem) {
   if (!ordem.data_inicio || ordem.data_inicio > new Date())
     fail(
@@ -124,22 +183,7 @@ export function validarApontamentoLegado(ordem: Ordem) {
         409,
         "Percorra todos os setores antes de encerrar.",
       )
-    let ultimoId = 0
-    for (let index = 0; index < fluxo.length; index++) {
-      const movimento = ordem.ordem_producao_movimentacao_setor.find(
-        (mov) =>
-          mov.id > ultimoId &&
-          mov.status === "ENTREGUE" &&
-          mov.data_recebimento &&
-          mov.id_setor_destino === fluxo[index].id_setor &&
-          mov.id_setor_origem === (fluxo[index - 1]?.id_setor ?? null),
-      )
-      if (!movimento)
-        throw new ProducaoError(
-          409,
-          "O histórico não comprova a passagem por todos os setores.",
-        )
-      ultimoId = movimento.id
-    }
+    if (!inicioEtapaLegada(ordem, ordem.id_setor))
+      fail("O histórico não comprova a passagem por todos os setores.")
   }
 }

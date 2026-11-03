@@ -26,6 +26,7 @@ import {
   ready,
   confirmarQuantidades,
   validarApontamentoLegado,
+  validarQuantidadesLegadas,
 } from "./ordem.validation"
 
 const limite = new Prisma.Decimal("999999999999.999")
@@ -377,6 +378,7 @@ export async function encerrarOrdemNaTransacao(
     )
   validarApontamentoLegado(ordem)
   await confirmarQuantidades(tx, ordem)
+  await validarQuantidadesLegadas(tx, ordem)
   await atualizarEstado(tx, ctx, ordem, {
     status: "CONCLUIDA",
     data_conclusao: new Date(),

@@ -163,6 +163,35 @@ async function fixture(numeroEtapas = 1) {
   })
   return f
 }
+async function fixtureLegada() {
+  const f = await fixture(2)
+  // Reproduz os valores padrão da migração, preservando o início e a movimentação da OP.
+  await prisma.ordem_producao_snapshot.delete({
+    where: { id_ordem_producao: f.op },
+  })
+  await prisma.ordem_producao_fluxo_setor.updateMany({
+    where: { id_ordem_producao: f.op },
+    data: { status: "PENDENTE", data_inicio: null, data_conclusao: null },
+  })
+  return f
+}
+const avancarLegado = (f) =>
+  call(f, `/api/ordens-producao/${f.op}/avancar`, "POST", {
+    statusEsperado: "EM_PRODUCAO",
+    setorEsperado: f.etapas[0].id_setor,
+    statusDestino: "EM_PRODUCAO",
+  })
+const encerrarLegado = (f, esperado = 200) =>
+  call(
+    f,
+    `/api/ordens-producao/${f.op}/encerrar`,
+    "POST",
+    {
+      statusEsperado: "EM_PRODUCAO",
+      setorEsperado: f.etapas[1].id_setor,
+    },
+    esperado,
+  )
 async function call(
   f,
   path,
@@ -701,6 +730,61 @@ try {
         const e = await total(f, "6")
         assert.equal(e.confirmacoes.length, 1)
         assert.equal(e.pontos.length, 2)
+      },
+    )
+    await t.test(
+      "etapas legadas pendentes aceitam apontamento somente após a chegada comprovada",
+      async () => {
+        const f = await fixtureLegada()
+        await semEfeito(f, () => apontar(f, "6", randomUUID(), 409))
+        await apontar(f, "6", randomUUID(), 201, "4", 0)
+        await avancarLegado(f)
+        await apontar(f, "6")
+        await total(f, "6")
+        assert.equal((await encerrarLegado(f)).ordem.status, "CONCLUIDA")
+      },
+    )
+    await t.test(
+      "confirmação legada anterior impede apontamento que inviabiliza a produção final",
+      async () => {
+        const f = await fixtureLegada()
+        await avancarLegado(f)
+        await confirmar(f, "10", "0", randomUUID())
+        await semEfeito(f, () => apontar(f, "6", randomUUID(), 409, "4", 0))
+        const gravado = await estado(f)
+        assert.equal(gravado.item, "10.000")
+        assert.equal(gravado.pontos.length, 0)
+        assert.equal(gravado.confirmacoes.length, 1)
+        // Um registro retroativo compatível continua permitido.
+        await apontar(f, "10", randomUUID(), 201, "0", 0)
+        assert.equal((await encerrarLegado(f)).ordem.status, "CONCLUIDA")
+      },
+    )
+    await t.test(
+      "encerramento legado bloqueia saldo final já divergente do histórico",
+      async () => {
+        const f = await fixtureLegada()
+        await avancarLegado(f)
+        await confirmar(f, "10", "0", randomUUID())
+        // Estado inconsistente que a revisão anterior podia deixar persistido.
+        await prisma.ordem_producao_apontamento.create({
+          data: {
+            id_ordem_producao: f.op,
+            id_ordem_producao_item: f.item,
+            id_setor: f.etapas[0].id_setor,
+            id_usuario: f.usuario,
+            quantidade_produzida: "6",
+            quantidade_perdida: "4",
+            motivo_perda: "Perda documentada",
+            data_apontamento: new Date(),
+          },
+        })
+        await semEfeito(f, () => encerrarLegado(f, 409))
+        const ordem = await prisma.ordem_producao.findUniqueOrThrow({
+          where: { id: f.op },
+        })
+        assert.equal(ordem.status, "EM_PRODUCAO")
+        assert.equal(ordem.data_conclusao, null)
       },
     )
     await t.test(

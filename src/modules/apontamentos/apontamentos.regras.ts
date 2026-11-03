@@ -13,6 +13,24 @@ export type Total = {
   produzida: Prisma.Decimal
   perdida: Prisma.Decimal
 }
+// Confirmações legadas podem existir somente no item. Use esse valor para
+// validar disponibilidade, sem materializar um apontamento que não ocorreu.
+export function incluirProducaoFinalLegada(
+  totais: Total[],
+  setorFinal: number,
+  produzida: Prisma.Decimal,
+) {
+  if (
+    produzida.isZero() ||
+    totais.some((total) => total.id_setor === setorFinal)
+  )
+    return totais
+  return [
+    ...totais,
+    { id_setor: setorFinal, produzida, perdida: new Prisma.Decimal(0) },
+  ]
+}
+
 export function diaOperacional(data: Date) {
   const partes = new Intl.DateTimeFormat("en", {
     timeZone: "America/Sao_Paulo",

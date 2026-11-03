@@ -3,17 +3,21 @@ import { createHash } from "node:crypto"
 import { Prisma } from "@/generated/prisma/client"
 import { serializarJsonTextMysql } from "@/lib/limites-texto"
 import {
+  buscarOrdem,
   ProducaoError,
   type Contexto,
   type Transaction,
 } from "@/modules/producao/producao.repository"
 import * as repository from "./apontamentos.repository"
+import { snapshot } from "../fluxos/fluxos.repository"
+import { inicioEtapaLegada } from "../producao/ordem.validation"
 import {
   fonteProducao,
   validarProjecao,
   protegerEfeitosFisicos,
 } from "../producao/producao.contabilizacao"
 import {
+  incluirProducaoFinalLegada,
   validarData,
   validarDisponibilidade,
   validarEstornoLegado,
@@ -100,11 +104,21 @@ export function gravar(
         : etapas.find((e) => e.id_setor === anterior!.id_setor)
     if (!etapa)
       throw new ProducaoError(404, "Etapa não encontrada nesta ordem.")
-    if (!["EM_PRODUCAO", "CONCLUIDA"].includes(etapa.status))
-      throw new ProducaoError(
-        409,
-        "A etapa deve ter sido iniciada para receber apontamentos.",
-      )
+    let inicio = etapa.data_inicio
+    if (!["EM_PRODUCAO", "CONCLUIDA"].includes(etapa.status)) {
+      inicio =
+        etapa.status === "PENDENTE" && !inicio && !(await snapshot(tx, ordemId))
+          ? inicioEtapaLegada(
+              await buscarOrdem(tx, ctx, ordemId),
+              etapa.id_setor,
+            )
+          : null
+      if (!inicio)
+        throw new ProducaoError(
+          409,
+          "A etapa deve ter sido iniciada para receber apontamentos.",
+        )
+    }
     const itemId =
       operacao.tipo === "REGISTRO"
         ? operacao.dados.idItem
@@ -117,7 +131,7 @@ export function gravar(
     // Evita que a unidade mude enquanto o primeiro apontamento é gravado.
     await tx.$queryRaw`SELECT id FROM produtos WHERE id=${item.id_produto} FOR UPDATE`
     const novos = operacao.tipo === "ESTORNO" ? null : operacao.dados
-    if (novos) validarData(novos.dataApontamento, etapa.data_inicio, new Date())
+    if (novos) validarData(novos.dataApontamento, inicio, new Date())
     const totais = await repository.totais(tx, ordemId, itemId)
     const atual = totais.find((t) => t.id_setor === etapa.id_setor) ?? {
       id_setor: etapa.id_setor,
@@ -133,7 +147,8 @@ export function gravar(
         .minus(anterior?.quantidade_perdida ?? 0)
         .plus(novos?.quantidadePerdida ?? 0),
     }
-    const ultima = etapa.id === etapas.at(-1)?.id
+    const etapaFinal = etapas.at(-1)!
+    const ultima = etapa.id === etapaFinal.id
     if (operacao.tipo !== "REGISTRO" || ultima)
       await protegerEfeitosFisicos(tx, ctx, ordemId, ordem.status)
     if (ultima) {
@@ -161,16 +176,33 @@ export function gravar(
         revisado.produzida,
       )
     }
-    const posteriores = [
+    let anteriores = totais
+    let posteriores = [
       ...totais.filter((t) => t.id_setor !== etapa.id_setor),
       revisado,
     ]
+    if (
+      !ultima &&
+      item.quantidade_produzida.gt(0) &&
+      !(await snapshot(tx, ordemId))
+    ) {
+      anteriores = incluirProducaoFinalLegada(
+        anteriores,
+        etapaFinal.id_setor,
+        item.quantidade_produzida,
+      )
+      posteriores = incluirProducaoFinalLegada(
+        posteriores,
+        etapaFinal.id_setor,
+        item.quantidade_produzida,
+      )
+    }
     try {
       validarDisponibilidade(etapas, item.quantidade, posteriores)
     } catch (error) {
       if (!(error instanceof ProducaoError) || operacao.tipo !== "ESTORNO")
         throw error
-      validarEstornoLegado(etapas, item.quantidade, totais, posteriores)
+      validarEstornoLegado(etapas, item.quantidade, anteriores, posteriores)
     }
     const novo = novos
       ? await tx.ordem_producao_apontamento.create({
