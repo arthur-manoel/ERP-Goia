@@ -336,7 +336,8 @@ it("permite apenas metadados de título fechado e não recalcula valores do plan
     observacao: "Conferido",
   })
   expect(data).not.toHaveProperty("valor_final")
-  expect(data.saldo.toString()).toBe("97")
+  expect(data).not.toHaveProperty("saldo")
+  expect(data).not.toHaveProperty("situacao")
   expect(
     (
       await item.DELETE(

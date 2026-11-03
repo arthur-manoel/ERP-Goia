@@ -44,6 +44,8 @@ model cargos {
   usuario_empresa usuario_empresa[]
 
   @@unique([id_empresa, nome], map: "uk_cargo_empresa_nome")
+
+  aprova_cancelamento Boolean           @default(false)
 }
 
 model categoria_financeira {
@@ -252,9 +254,13 @@ model consumo_producao {
   @@index([id_reserva_estoque], map: "fk_consumo_reserva")
   @@index([id_setor], map: "fk_consumo_setor")
   @@index([id_usuario], map: "fk_consumo_usuario")
+  id_movimentacao_estoque Int?                  @unique(map: "uk_consumo_movimento")
+  movimentacao_estoque    movimentacao_estoque? @relation(fields: [id_movimentacao_estoque], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_consumo_movimento")
+
 }
 
 model contas_bancarias {
+  pagamentos_receber        pagamentos_receber[]
   id                        Int                         @id @default(autoincrement())
   id_empresa                Int
   nome                      String                      @db.VarChar(100)
@@ -269,7 +275,10 @@ model contas_bancarias {
   movimentacoes_financeiras movimentacoes_financeiras[]
 
   @@unique([id_empresa, nome], map: "uk_conta_bancaria_empresa_nome")
+  @@unique([id, id_empresa], map: "uk_conta_bancaria_id_empresa")
   @@index([id_empresa], map: "idx_conta_bancaria_empresa")
+
+  pedido_reembolso          pedido_reembolso[]
 }
 
 model contas_pagar {
@@ -304,6 +313,7 @@ model contas_pagar {
 }
 
 model contas_receber {
+  pagamentos_na_empresa     pagamentos_receber[] @relation("recebimento_titulo_empresa")
   id                        Int                         @id @default(autoincrement())
   id_empresa                Int
   id_venda                  Int
@@ -330,12 +340,15 @@ model contas_receber {
   pedido_cliente_fechamento pedido_cliente_fechamento?  @relation(fields: [id_fechamento, id_empresa, id_venda, id_categoria], references: [id, id_empresa, id_venda, id_categoria], onDelete: Restrict, onUpdate: Restrict, map: "fk_conta_receber_fechamento")
 
   @@unique([id_fechamento, numero_parcela], map: "uk_conta_receber_fechamento_parcela")
+  @@unique([id, id_empresa], map: "uk_recebivel_id_empresa")
   @@index([id_fechamento, id_empresa, id_venda, id_categoria], map: "idx_conta_receber_fechamento")
   @@index([id_empresa], map: "idx_contas_receber_empresa")
   @@index([id_venda], map: "idx_contas_receber_venda")
   @@index([id_categoria], map: "idx_contas_receber_categoria")
   @@index([data_vencimento], map: "idx_contas_receber_vencimento")
   @@index([situacao], map: "idx_contas_receber_situacao")
+
+  pedido_credito_receber    pedido_credito_receber[]
 }
 
 model cores {
@@ -478,6 +491,8 @@ model estoque {
   @@index([id_local_estoque], map: "fk_estoque_local")
   @@index([id_produto], map: "fk_estoque_produto")
   @@index([id_setor], map: "fk_estoque_setor")
+  estoque_variacao     estoque_variacao[]
+  @@unique([id, id_empresa, id_produto], map: "uk_estoque_identidade_empresa_produto")
 }
 
 model ficha_tecnica {
@@ -660,6 +675,9 @@ model locais_estoque {
 
   @@unique([id_empresa, nome], map: "uk_local_estoque_empresa_nome")
   @@unique([id_empresa, id], map: "idx_local_estoque_empresa_id")
+  transferencia_estoque_transferencia_estoque_id_empresa_id_local_destinoTolocais_estoque transferencia_estoque[] @relation("transferencia_estoque_id_empresa_id_local_destinoTolocais_estoque")
+  transferencia_estoque_transferencia_estoque_id_empresa_id_local_origemTolocais_estoque  transferencia_estoque[] @relation("transferencia_estoque_id_empresa_id_local_origemTolocais_estoque")
+
 }
 
 model movimentacao_estoque {
@@ -688,6 +706,19 @@ model movimentacao_estoque {
   @@index([id_produto], map: "fk_mov_estoque_produto")
   @@index([id_setor], map: "fk_mov_estoque_setor")
   @@index([id_usuario], map: "fk_mov_estoque_usuario")
+  id_variacao                                                                            Int?
+  chave_operacao                                                                         String?                   @db.VarChar(128)
+  consumo_producao                                                                       consumo_producao?
+  produto_variacoes                                                                      produto_variacoes?        @relation(fields: [id_variacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onUpdate: Restrict, map: "fk_movimento_variacao")
+  transferencia_estoque_transferencia_estoque_id_movimento_entradaTomovimentacao_estoque transferencia_estoque?    @relation("transferencia_estoque_id_movimento_entradaTomovimentacao_estoque")
+  transferencia_estoque_transferencia_estoque_id_movimento_saidaTomovimentacao_estoque   transferencia_estoque?    @relation("transferencia_estoque_id_movimento_saidaTomovimentacao_estoque")
+  @@unique([id_empresa, chave_operacao], map: "uk_movimento_empresa_operacao")
+  @@index([id_variacao, id_empresa, id_produto], map: "fk_movimento_variacao")
+
+  pedido_devolucao_destinacao_pedido_devolucao_destinacao_id_movimento_entrada_id_empresaTomovimentacao_estoque pedido_devolucao_destinacao[] @relation("pedido_devolucao_destinacao_id_movimento_entrada_id_empresaTomovimentacao_estoque")
+  pedido_devolucao_destinacao_pedido_devolucao_destinacao_id_movimento_saida_id_empresaTomovimentacao_estoque   pedido_devolucao_destinacao[] @relation("pedido_devolucao_destinacao_id_movimento_saida_id_empresaTomovimentacao_estoque")
+  pedido_devolucao_linha                                                                                        pedido_devolucao_linha[]
+  @@unique([id, id_empresa], map: "uk_movimento_id_empresa")
 }
 
 model movimentacoes_financeiras {
@@ -712,6 +743,11 @@ model movimentacoes_financeiras {
   @@index([id_empresa], map: "idx_movimentacao_financeira_empresa")
   @@index([id_conta_bancaria], map: "idx_movimentacao_financeira_conta")
   @@index([data_movimentacao], map: "idx_movimentacao_financeira_data")
+
+
+  id_pedido_reembolso  Int?                             @unique(map: "uk_movimento_financeiro_reembolso")
+  pedido_reembolso     pedido_reembolso?                @relation(fields: [id_pedido_reembolso, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_movimento_financeiro_reembolso")
+  @@index([id_pedido_reembolso, id_empresa], map: "fk_movimento_financeiro_reembolso")
 }
 
 model necessidade_producao {
@@ -729,6 +765,8 @@ model necessidade_producao {
 
   @@unique([id_ordem_producao, id_produto], map: "uk_necessidade_op_produto")
   @@index([id_produto], map: "fk_necessidade_produto")
+  consumo_confirmado_em DateTime?
+
 }
 
 model nota_fiscal {
@@ -926,6 +964,14 @@ model pagamentos_pagar {
 }
 
 model pagamentos_receber {
+  id_usuario                Int?
+  id_conta_bancaria          Int?
+  chave_idempotencia         String? @db.VarChar(128)
+  hash_requisicao            String? @db.Char(64)
+  referencia                String? @db.VarChar(100)
+  contas_bancarias           contas_bancarias? @relation(fields: [id_conta_bancaria, id_empresa], references: [id, id_empresa], onDelete: Restrict, onUpdate: Restrict, map: "fk_pagamento_receber_banco_empresa")
+  titulo_na_empresa          contas_receber @relation("recebimento_titulo_empresa", fields: [id_conta_receber, id_empresa], references: [id, id_empresa], onDelete: Restrict, onUpdate: Restrict, map: "fk_pagamento_receber_titulo_empresa")
+  usuario_empresa           usuario_empresa? @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onDelete: Restrict, onUpdate: Restrict, map: "fk_pagamento_receber_usuario_empresa")
   id                        Int                         @id @default(autoincrement())
   id_empresa                Int
   id_conta_receber          Int
@@ -941,6 +987,10 @@ model pagamentos_receber {
 
   @@index([id_empresa], map: "idx_pagamentos_receber_empresa")
   @@index([id_conta_receber], map: "idx_pagamentos_receber_conta")
+  @@unique([id_empresa, chave_idempotencia], map: "uk_pagamento_receber_empresa_chave")
+  @@index([id_conta_bancaria, id_empresa], map: "idx_pagamento_receber_banco_empresa")
+  @@index([id_conta_receber, id_empresa], map: "idx_pagamento_receber_titulo_empresa")
+  @@index([id_usuario, id_empresa], map: "idx_pagamento_receber_usuario_empresa")
   @@index([data_pagamento], map: "idx_pagamentos_receber_data")
 }
 
@@ -1005,6 +1055,9 @@ model pedido_cliente {
   @@index([id_empresa, status], map: "idx_pedido_cliente_empresa_status")
   @@index([id_empresa, data_pedido], map: "idx_pedido_cliente_empresa_data")
   @@index([id_empresa, data_previsao_entrega], map: "idx_pedido_cliente_previsao")
+
+  pedido_cancelamento       pedido_cancelamento[]
+  @@unique([id, id_empresa], map: "uk_pedido_id_empresa")
 }
 
 model pedido_cliente_fechamento {
@@ -1037,6 +1090,10 @@ model pedido_cliente_fechamento {
   @@index([id_venda, id_empresa, id_cliente, id_pedido_cliente], map: "idx_fechamento_venda")
   @@index([id_categoria, id_empresa], map: "idx_fechamento_categoria")
   @@index([id_usuario], map: "idx_fechamento_usuario")
+
+  pedido_cancelamento       pedido_cancelamento[]
+  pedido_fechamento_estorno pedido_fechamento_estorno[]
+  @@unique([id, id_empresa, id_pedido_cliente], map: "uk_fechamento_id_empresa_pedido")
 }
 
 model pedido_cliente_entrega {
@@ -1066,6 +1123,9 @@ model pedido_cliente_entrega {
   @@unique([id, id_pedido_cliente], map: "uk_pedido_entrega_id_pedido")
   @@index([id_usuario], map: "fk_pedido_entrega_usuario")
   @@index([id_pedido_cliente, status], map: "idx_pedido_entrega_status")
+
+  pedido_cancelamento          pedido_cancelamento[]
+  pedido_entrega_estorno       pedido_entrega_estorno[]
 }
 
 model pedido_cliente_entrega_item {
@@ -1133,6 +1193,8 @@ model pedido_cliente_item {
   @@index([id_cor], map: "fk_pedido_item_cor")
   @@index([id_tamanho], map: "fk_pedido_item_tamanho")
   @@index([id_variacao], map: "fk_pedido_item_variacao")
+  reserva_estoque             reserva_estoque[]
+
 }
 
 model pedido_compra {
@@ -1249,6 +1311,11 @@ model produto_variacoes {
   @@index([id_cor], map: "fk_produto_variacao_cor")
   @@index([id_produto], map: "fk_produto_variacao_produto")
   @@index([id_tamanho], map: "fk_produto_variacao_tamanho")
+  estoque_variacao      estoque_variacao[]
+  movimentacao_estoque  movimentacao_estoque[]
+  reserva_estoque       reserva_estoque[]
+  transferencia_estoque transferencia_estoque[]
+  @@unique([id, id_empresa, id_produto], map: "uk_variacao_identidade_empresa_produto")
 }
 
 model produtos {
@@ -1366,6 +1433,15 @@ model reserva_estoque {
   @@index([id_setor], map: "fk_reserva_setor")
   @@index([id_usuario], map: "fk_reserva_usuario")
   @@index([id_venda], map: "fk_reserva_venda")
+  id_pedido_cliente_item  Int?
+  id_variacao             Int?
+  quantidade_consumida    Decimal                     @default(0.000) @db.Decimal(15, 3)
+  quantidade_liberada     Decimal                     @default(0.000) @db.Decimal(15, 3)
+  protocolo_integrado     Boolean                     @default(false)
+  pedido_cliente_item     pedido_cliente_item?        @relation(fields: [id_pedido_cliente_item], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_reserva_pedido_item")
+  produto_variacoes       produto_variacoes?          @relation(fields: [id_variacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onUpdate: Restrict, map: "fk_reserva_variacao")
+  @@index([id_pedido_cliente_item], map: "fk_reserva_pedido_item")
+  @@index([id_variacao, id_empresa, id_produto], map: "fk_reserva_variacao")
 }
 
 model sequencias_automaticas {
@@ -1445,6 +1521,7 @@ model tipos_setor {
 }
 
 model usuario_empresa {
+  pagamentos_receber     pagamentos_receber[]
   id                     Int                          @id @default(autoincrement())
   id_usuario             Int
   id_empresa             Int
@@ -1466,6 +1543,19 @@ model usuario_empresa {
   @@index([id_cargo], map: "fk_usuario_empresa_cargo")
   @@index([id_empresa], map: "fk_usuario_empresa_empresa")
   @@index([id_setor], map: "fk_usuario_empresa_setor")
+  operacao_erp           operacao_erp[]
+  transferencia_estoque  transferencia_estoque[]
+
+
+  notificacao_interna                                                                notificacao_interna[]
+  pedido_cancelamento_pedido_cancelamento_id_decisor_id_empresaTousuario_empresa     pedido_cancelamento[]          @relation("pedido_cancelamento_id_decisor_id_empresaTousuario_empresa")
+  pedido_cancelamento_pedido_cancelamento_id_solicitante_id_empresaTousuario_empresa pedido_cancelamento[]          @relation("pedido_cancelamento_id_solicitante_id_empresaTousuario_empresa")
+  pedido_credito_receber                                                             pedido_credito_receber[]
+  pedido_devolucao_destinacao                                                        pedido_devolucao_destinacao[]
+  pedido_devolucao_recebimento                                                       pedido_devolucao_recebimento[]
+  pedido_entrega_estorno                                                             pedido_entrega_estorno[]
+  pedido_fechamento_estorno                                                          pedido_fechamento_estorno[]
+  pedido_reembolso                                                                   pedido_reembolso[]
 }
 
 model usuarios {
@@ -2079,4 +2169,296 @@ model ordem_producao_apontamento {
   @@index([id_ordem_producao, id_setor, data_apontamento], map: "idx_op_apontamento_etapa_data")
   @@index([id_ordem_producao, id_ordem_producao_item], map: "idx_op_apontamento_item")
   @@index([id_usuario], map: "idx_op_apontamento_usuario")
+}
+
+
+model estoque_variacao {
+  id                   Int               @id @default(autoincrement())
+  id_estoque           Int
+  id_empresa           Int
+  id_produto           Int
+  id_variacao          Int
+  quantidade           Decimal           @default(0.000) @db.Decimal(15, 3)
+  quantidade_reservada Decimal           @default(0.000) @db.Decimal(15, 3)
+  estoque              estoque           @relation(fields: [id_estoque, id_empresa, id_produto], references: [id, id_empresa, id_produto], onUpdate: Restrict, map: "fk_ev_posicao")
+  produto_variacoes    produto_variacoes @relation(fields: [id_variacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onUpdate: Restrict, map: "fk_ev_variacao")
+
+  @@unique([id_estoque, id_variacao], map: "uk_estoque_variacao")
+  @@index([id_estoque, id_empresa, id_produto], map: "fk_ev_posicao")
+  @@index([id_variacao, id_empresa, id_produto], map: "fk_ev_variacao")
+}
+
+
+model operacao_erp {
+  id              Int             @id @default(autoincrement())
+  id_empresa      Int
+  id_usuario      Int
+  chave           String          @db.VarChar(128)
+  hash            String          @db.Char(64)
+  tipo            String          @db.VarChar(50)
+  resultado       Json
+  data_cadastro   DateTime        @default(now())
+  usuario_empresa usuario_empresa @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_operacao_usuario_empresa")
+
+  @@unique([id_empresa, chave], map: "uk_operacao_empresa_chave")
+  @@index([id_usuario, id_empresa], map: "fk_operacao_usuario_empresa")
+}
+
+
+model transferencia_estoque {
+  id                                                                                    Int                          @id @default(autoincrement())
+  id_empresa                                                                            Int
+  id_usuario                                                                            Int
+  id_produto                                                                            Int
+  id_variacao                                                                           Int?
+  id_local_origem                                                                       Int
+  id_setor_origem                                                                       Int
+  id_local_destino                                                                      Int
+  id_setor_destino                                                                      Int
+  quantidade                                                                            Decimal                      @db.Decimal(15, 3)
+  status                                                                                transferencia_estoque_status @default(ENVIADA)
+  id_movimento_saida                                                                    Int                          @unique(map: "id_movimento_saida")
+  id_movimento_entrada                                                                  Int?                         @unique(map: "id_movimento_entrada")
+  data_envio                                                                            DateTime                     @default(now())
+  data_recebimento                                                                      DateTime?
+  locais_estoque_transferencia_estoque_id_empresa_id_local_destinoTolocais_estoque      locais_estoque               @relation("transferencia_estoque_id_empresa_id_local_destinoTolocais_estoque", fields: [id_empresa, id_local_destino], references: [id_empresa, id], onUpdate: Restrict, map: "fk_transferencia_destino")
+  movimentacao_estoque_transferencia_estoque_id_movimento_entradaTomovimentacao_estoque movimentacao_estoque?        @relation("transferencia_estoque_id_movimento_entradaTomovimentacao_estoque", fields: [id_movimento_entrada], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_transferencia_entrada")
+  locais_estoque_transferencia_estoque_id_empresa_id_local_origemTolocais_estoque       locais_estoque               @relation("transferencia_estoque_id_empresa_id_local_origemTolocais_estoque", fields: [id_empresa, id_local_origem], references: [id_empresa, id], onUpdate: Restrict, map: "fk_transferencia_origem")
+  movimentacao_estoque_transferencia_estoque_id_movimento_saidaTomovimentacao_estoque   movimentacao_estoque         @relation("transferencia_estoque_id_movimento_saidaTomovimentacao_estoque", fields: [id_movimento_saida], references: [id], onUpdate: Restrict, map: "fk_transferencia_saida")
+  usuario_empresa                                                                       usuario_empresa              @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_transferencia_usuario")
+  produto_variacoes                                                                     produto_variacoes?           @relation(fields: [id_variacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onUpdate: Restrict, map: "fk_transferencia_variacao")
+
+  @@index([id_empresa, id_local_destino], map: "fk_transferencia_destino")
+  @@index([id_empresa, id_local_origem], map: "fk_transferencia_origem")
+  @@index([id_usuario, id_empresa], map: "fk_transferencia_usuario")
+  @@index([id_variacao, id_empresa, id_produto], map: "fk_transferencia_variacao")
+}
+
+
+enum transferencia_estoque_status {
+  ENVIADA
+  RECEBIDA
+}
+
+model notificacao_evento {
+  id                  Int                   @id @default(autoincrement())
+  id_empresa          Int
+  id_cancelamento     Int
+  tipo                String                @db.VarChar(40)
+  chave               String                @db.VarChar(128)
+  destino             String                @db.VarChar(15)
+  titulo              String                @db.VarChar(120)
+  mensagem            String                @db.VarChar(255)
+  criado_em           DateTime              @default(now())
+  processado_em       DateTime?
+  tentativas          Int                   @default(0)
+  ultimo_erro         String?               @db.VarChar(255)
+  pedido_cancelamento pedido_cancelamento   @relation(fields: [id_cancelamento, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_notificacao_evento_cancelamento")
+  notificacao_interna notificacao_interna[]
+
+  @@unique([id_empresa, chave], map: "uk_notificacao_evento_chave")
+  @@unique([id, id_empresa], map: "uk_notificacao_evento_id_empresa")
+  @@index([id_cancelamento, id_empresa], map: "fk_notificacao_evento_cancelamento")
+}
+
+model notificacao_interna {
+  id                 Int                @id @default(autoincrement())
+  id_empresa         Int
+  id_usuario         Int
+  id_evento          Int
+  lida_em            DateTime?
+  criada_em          DateTime           @default(now())
+  usuario_empresa    usuario_empresa    @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_notificacao_destinatario")
+  notificacao_evento notificacao_evento @relation(fields: [id_evento, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_notificacao_evento")
+
+  @@unique([id_evento, id_usuario], map: "uk_notificacao_destinatario")
+  @@index([id_usuario, id_empresa], map: "fk_notificacao_destinatario")
+  @@index([id_evento, id_empresa], map: "fk_notificacao_evento")
+  @@index([id_empresa, id_usuario, lida_em, id], map: "idx_notificacao_usuario_lida")
+}
+
+model pedido_cancelamento {
+  id                                                                             Int                         @id @default(autoincrement())
+  id_empresa                                                                     Int
+  id_pedido_cliente                                                              Int
+  id_solicitante                                                                 Int
+  tipo                                                                           String                      @db.VarChar(20)
+  id_entrega                                                                     Int?
+  id_fechamento_referencia                                                       Int?
+  motivo                                                                         String                      @db.VarChar(255)
+  status                                                                         String                      @db.VarChar(30)
+  exige_aprovacao                                                                Boolean
+  referencia_inconsistente                                                       Boolean                     @default(false)
+  fechado_em_referencia                                                          DateTime?
+  limite_sem_aprovacao                                                           DateTime?
+  solicitado_em                                                                  DateTime                    @default(now())
+  id_decisor                                                                     Int?
+  decisao                                                                        String?                     @db.VarChar(10)
+  motivo_decisao                                                                 String?                     @db.VarChar(255)
+  decidido_em                                                                    DateTime?
+  executado_em                                                                   DateTime?
+  concluido_em                                                                   DateTime?
+  hash_estado                                                                    String                      @db.Char(64)
+  plano_efeitos Json
+  ultima_falha                                                                   String?                     @db.VarChar(255)
+  pedido_ativo                                                                   Int?
+  notificacao_evento                                                             notificacao_evento[]
+  usuario_empresa_pedido_cancelamento_id_decisor_id_empresaTousuario_empresa     usuario_empresa?            @relation("pedido_cancelamento_id_decisor_id_empresaTousuario_empresa", fields: [id_decisor, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_cancelamento_decisor")
+  pedido_cliente_entrega                                                         pedido_cliente_entrega?     @relation(fields: [id_entrega, id_pedido_cliente], references: [id, id_pedido_cliente], onUpdate: Restrict, map: "fk_cancelamento_entrega")
+  pedido_cliente_fechamento                                                      pedido_cliente_fechamento?  @relation(fields: [id_fechamento_referencia, id_empresa, id_pedido_cliente], references: [id, id_empresa, id_pedido_cliente], onUpdate: Restrict, map: "fk_cancelamento_fechamento")
+  pedido_cliente                                                                 pedido_cliente              @relation(fields: [id_pedido_cliente, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_cancelamento_pedido")
+  usuario_empresa_pedido_cancelamento_id_solicitante_id_empresaTousuario_empresa usuario_empresa             @relation("pedido_cancelamento_id_solicitante_id_empresaTousuario_empresa", fields: [id_solicitante, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_cancelamento_solicitante")
+  pedido_credito_receber                                                         pedido_credito_receber[]
+  pedido_entrega_estorno                                                         pedido_entrega_estorno[]
+  pedido_fechamento_estorno                                                      pedido_fechamento_estorno[]
+
+  @@unique([id, id_empresa], map: "uk_cancelamento_id_empresa")
+  @@unique([id, id_empresa, id_pedido_cliente], map: "uk_cancelamento_id_empresa_pedido")
+  @@unique([id_empresa, pedido_ativo], map: "uk_cancelamento_pedido_ativo")
+  @@index([id_decisor, id_empresa], map: "fk_cancelamento_decisor")
+  @@index([id_entrega, id_pedido_cliente], map: "fk_cancelamento_entrega")
+  @@index([id_fechamento_referencia, id_empresa, id_pedido_cliente], map: "fk_cancelamento_fechamento")
+  @@index([id_pedido_cliente, id_empresa], map: "fk_cancelamento_pedido")
+  @@index([id_solicitante, id_empresa], map: "fk_cancelamento_solicitante")
+  @@index([id_empresa, status, id], map: "idx_cancelamento_empresa_status")
+}
+
+model pedido_credito_receber {
+  id                  Int                 @id @default(autoincrement())
+  id_empresa          Int
+  id_cancelamento     Int
+  id_conta_receber    Int
+  id_usuario          Int
+  valor               Decimal             @db.Decimal(15, 2)
+  saldo_anulado       Decimal             @db.Decimal(15, 2)
+  valor_restituir     Decimal             @db.Decimal(15, 2)
+  saldo_anterior      Decimal             @db.Decimal(15, 2)
+  situacao_anterior   String              @db.VarChar(15)
+  data_credito        DateTime            @default(now())
+  pedido_cancelamento pedido_cancelamento @relation(fields: [id_cancelamento, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_credito_cancelamento")
+  contas_receber      contas_receber      @relation(fields: [id_conta_receber, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_credito_titulo")
+  usuario_empresa     usuario_empresa     @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_credito_usuario")
+  pedido_reembolso    pedido_reembolso[]
+
+  @@unique([id_cancelamento, id_conta_receber], map: "uk_credito_cancelamento_titulo")
+  @@unique([id, id_empresa], map: "uk_credito_id_empresa")
+  @@index([id_cancelamento, id_empresa], map: "fk_credito_cancelamento")
+  @@index([id_conta_receber, id_empresa], map: "fk_credito_titulo")
+  @@index([id_usuario, id_empresa], map: "fk_credito_usuario")
+}
+
+model pedido_devolucao_destinacao {
+  id                                                                                                     Int                          @id @default(autoincrement())
+  id_empresa                                                                                             Int
+  id_recebimento                                                                                         Int
+  id_usuario                                                                                             Int
+  quantidade                                                                                             Decimal                      @db.Decimal(15, 3)
+  tratamento                                                                                             String                       @db.VarChar(10)
+  motivo                                                                                                 String                       @db.VarChar(255)
+  id_movimento_entrada                                                                                   Int                          @unique(map: "uk_devolucao_destino_entrada")
+  id_movimento_saida                                                                                     Int?                         @unique(map: "uk_devolucao_destino_saida")
+  data_destinacao                                                                                        DateTime                     @default(now())
+  movimentacao_estoque_pedido_devolucao_destinacao_id_movimento_entrada_id_empresaTomovimentacao_estoque movimentacao_estoque         @relation("pedido_devolucao_destinacao_id_movimento_entrada_id_empresaTomovimentacao_estoque", fields: [id_movimento_entrada, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_devolucao_destino_entrada")
+  pedido_devolucao_recebimento                                                                           pedido_devolucao_recebimento @relation(fields: [id_recebimento, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_devolucao_destino_recebimento")
+  movimentacao_estoque_pedido_devolucao_destinacao_id_movimento_saida_id_empresaTomovimentacao_estoque   movimentacao_estoque?        @relation("pedido_devolucao_destinacao_id_movimento_saida_id_empresaTomovimentacao_estoque", fields: [id_movimento_saida, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_devolucao_destino_saida")
+  usuario_empresa                                                                                        usuario_empresa              @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_devolucao_destino_usuario")
+
+  @@index([id_movimento_entrada, id_empresa], map: "fk_devolucao_destino_entrada")
+  @@index([id_recebimento, id_empresa], map: "fk_devolucao_destino_recebimento")
+  @@index([id_movimento_saida, id_empresa], map: "fk_devolucao_destino_saida")
+  @@index([id_usuario, id_empresa], map: "fk_devolucao_destino_usuario")
+}
+
+model pedido_devolucao_linha {
+  id                           Int                            @id @default(autoincrement())
+  id_empresa                   Int
+  id_entrega_estorno           Int
+  id_movimento_saida           Int                            @unique(map: "uk_devolucao_movimento_saida")
+  quantidade_prevista          Decimal                        @db.Decimal(15, 3)
+  pedido_entrega_estorno       pedido_entrega_estorno         @relation(fields: [id_entrega_estorno, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_devolucao_estorno")
+  movimentacao_estoque         movimentacao_estoque           @relation(fields: [id_movimento_saida, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_devolucao_movimento")
+  pedido_devolucao_recebimento pedido_devolucao_recebimento[]
+
+  @@unique([id, id_empresa], map: "uk_devolucao_linha_id_empresa")
+  @@index([id_entrega_estorno, id_empresa], map: "fk_devolucao_estorno")
+  @@index([id_movimento_saida, id_empresa], map: "fk_devolucao_movimento")
+}
+
+model pedido_devolucao_recebimento {
+  id                          Int                           @id @default(autoincrement())
+  id_empresa                  Int
+  id_linha                    Int
+  id_usuario                  Int
+  quantidade                  Decimal                       @db.Decimal(15, 3)
+  condicao                    String                        @db.VarChar(20)
+  recebido_em                 DateTime                      @default(now())
+  observacao                  String                        @db.VarChar(255)
+  pedido_devolucao_destinacao pedido_devolucao_destinacao[]
+  pedido_devolucao_linha      pedido_devolucao_linha        @relation(fields: [id_linha, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_devolucao_recebimento_linha")
+  usuario_empresa             usuario_empresa               @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_devolucao_recebimento_usuario")
+
+  @@unique([id, id_empresa], map: "uk_devolucao_recebimento_id_empresa")
+  @@index([id_linha, id_empresa], map: "fk_devolucao_recebimento_linha")
+  @@index([id_usuario, id_empresa], map: "fk_devolucao_recebimento_usuario")
+}
+
+model pedido_entrega_estorno {
+  id                     Int                      @id @default(autoincrement())
+  id_empresa             Int
+  id_pedido_cliente      Int
+  id_cancelamento        Int
+  id_entrega             Int                      @unique(map: "uk_entrega_estorno_origem")
+  id_usuario             Int
+  status_anterior        String                   @db.VarChar(30)
+  valor_creditado        Decimal                  @default(0.00) @db.Decimal(15, 2)
+  rateio_itens Json
+  data_estorno           DateTime                 @default(now())
+  pedido_devolucao_linha pedido_devolucao_linha[]
+  pedido_cancelamento    pedido_cancelamento      @relation(fields: [id_cancelamento, id_empresa, id_pedido_cliente], references: [id, id_empresa, id_pedido_cliente], onUpdate: Restrict, map: "fk_entrega_estorno_cancelamento")
+  pedido_cliente_entrega pedido_cliente_entrega   @relation(fields: [id_entrega, id_pedido_cliente], references: [id, id_pedido_cliente], onUpdate: Restrict, map: "fk_entrega_estorno_origem")
+  usuario_empresa        usuario_empresa          @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_entrega_estorno_usuario")
+
+  @@unique([id, id_empresa], map: "uk_entrega_estorno_id_empresa")
+  @@index([id_cancelamento, id_empresa, id_pedido_cliente], map: "fk_entrega_estorno_cancelamento")
+  @@index([id_entrega, id_pedido_cliente], map: "fk_entrega_estorno_origem")
+  @@index([id_usuario, id_empresa], map: "fk_entrega_estorno_usuario")
+}
+
+model pedido_fechamento_estorno {
+  id                        Int                       @id @default(autoincrement())
+  id_empresa                Int
+  id_pedido_cliente         Int
+  id_cancelamento           Int
+  id_fechamento             Int                       @unique(map: "uk_fechamento_estorno_origem")
+  id_usuario                Int
+  data_estorno              DateTime                  @default(now())
+  pedido_cancelamento       pedido_cancelamento       @relation(fields: [id_cancelamento, id_empresa, id_pedido_cliente], references: [id, id_empresa, id_pedido_cliente], onUpdate: Restrict, map: "fk_fechamento_estorno_cancelamento")
+  pedido_cliente_fechamento pedido_cliente_fechamento @relation(fields: [id_fechamento, id_empresa, id_pedido_cliente], references: [id, id_empresa, id_pedido_cliente], onUpdate: Restrict, map: "fk_fechamento_estorno_origem")
+  usuario_empresa           usuario_empresa           @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_fechamento_estorno_usuario")
+
+  @@index([id_cancelamento, id_empresa, id_pedido_cliente], map: "fk_fechamento_estorno_cancelamento")
+  @@index([id_fechamento, id_empresa, id_pedido_cliente], map: "fk_fechamento_estorno_origem")
+  @@index([id_usuario, id_empresa], map: "fk_fechamento_estorno_usuario")
+}
+
+model pedido_reembolso {
+  id                        Int                        @id @default(autoincrement())
+  id_empresa                Int
+  id_credito                Int
+  id_conta_bancaria         Int
+  id_usuario                Int
+  valor                     Decimal                    @db.Decimal(15, 2)
+  data_pagamento            DateTime
+  referencia                String?                    @db.VarChar(100)
+  observacao                String?                    @db.VarChar(255)
+  data_cadastro             DateTime                   @default(now())
+  movimentacoes_financeiras movimentacoes_financeiras[]
+  contas_bancarias          contas_bancarias           @relation(fields: [id_conta_bancaria, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_reembolso_banco")
+  pedido_credito_receber    pedido_credito_receber     @relation(fields: [id_credito, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_reembolso_credito")
+  usuario_empresa           usuario_empresa            @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_reembolso_usuario")
+
+  @@unique([id, id_empresa], map: "uk_reembolso_id_empresa")
+  @@index([id_conta_bancaria, id_empresa], map: "fk_reembolso_banco")
+  @@index([id_credito, id_empresa], map: "fk_reembolso_credito")
+  @@index([id_usuario, id_empresa], map: "fk_reembolso_usuario")
 }

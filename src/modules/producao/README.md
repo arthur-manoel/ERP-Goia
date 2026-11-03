@@ -1,6 +1,6 @@
 # Backend de ordens de produção
 
-Implementação em `src/modules/producao`: schemas Zod, Repository Prisma, Service, autorização e Router HTTP. Backend apenas; nenhuma tela ou estrutura do banco foi alterada. O Prisma Client deve estar gerado a partir do schema atual (`npm run db:generate`).
+Implementação em `src/modules/producao`: schemas Zod, Repository Prisma, Service, autorização e Router HTTP. As ações operacionais da tela de produção usam as APIs reais. A integração de estoque/consumo utiliza as extensões DB-first descritas em [operações integradas](../../../docs/operacoes-integradas.md). O Prisma Client deve estar gerado a partir do schema atual (`npm run db:generate`).
 
 ## Segurança e respostas
 
@@ -72,7 +72,7 @@ PUT exige número, quantidade e prioridade; opcionais omitidos são limpos. PATC
 
 POST de item: `{ "id_produto": 12, "quantidade": "10.500", "tamanho": "UNICO" }`. Exige produto ativo vinculado à empresa, habilitado para produção, ficha técnica vigente com componentes válidos e fluxo ativo. Reutiliza o cálculo existente (consumo unitário × quantidade, sem perda percentual, HALF_UP com três casas). O primeiro item cria etapas e snapshot; os demais precisam do mesmo fluxo/ordem de setores. Produto de um snapshot não é substituído. Limite operacional: 200 itens por ordem. Recalcular/remover itens altera somente planejamento sem execução; registros produtivos ou financeiros impedem essas alterações.
 
-Liberação verifica produtos e componentes em lote, sem exigir disponibilidade total de estoque nem criar reservas. Início, pausa, retomada e etapas reutilizam os Services existentes de produção/fluxos, preservando snapshot e movimentações entre setores. Não é permitido pular etapas. Movimentações em trânsito impedem avanço/conclusão.
+Liberação verifica produtos e componentes em lote, sem transformar planejamento em estoque. A reserva explícita dos materiais ocorre no fluxo operacional integrado, com pendências visíveis. Início, pausa, retomada e etapas reutilizam os Services existentes de produção/fluxos, preservando snapshot e movimentações entre setores. Não é permitido pular etapas. Movimentações em trânsito impedem avanço/conclusão.
 
 Apontamento é o total acumulado efetivamente produzido, com valor esperado para concorrência:
 
@@ -90,7 +90,9 @@ Escritas usam transações Serializable, lock da empresa e releitura da ordem so
 
 Cancelamento consulta reservas, consumos, estoque, compras, pedidos de compra, necessidades, movimentos de setores, apontamentos e obrigações financeiras das compras relacionadas. Também consulta etapas executadas. Havendo qualquer efeito não reversível pelos serviços disponíveis, retorna 409 com motivo. Sem impedimentos, altera somente status para CANCELADA e audita. Nunca apaga a ordem, notas fiscais, compras, pagamentos ou histórico produtivo. Ordens concluídas ou já canceladas não podem ser canceladas.
 
-**Limitações verificadas no projeto:** não existem Services de liberação de reserva ou estorno de consumo/estoque disponíveis para esta integração. Portanto, reservas ativas e execução prévia impedem cancelamento; não se simula sua liberação nem se excluem registros para contornar a regra. Não são criados consumos efetivos, necessidades, reservas, compras, contas a pagar ou entradas/baixas de estoque automaticamente. O módulo coordena o fluxo existente, calcula consumo planejado, registra produção efetiva e valida os efeitos persistidos; essas operações externas devem usar serviços próprios quando implementados. A conclusão permanece administrativa quanto ao estoque (`baixaEstoque: pendente` no contrato legado), não uma confirmação de baixa física. Não há novo mecanismo de estorno, perda ou recebimento parcial.
+**Integração operacional:** consumo real é registrado em `/api/ordem_producao/{id}/consumos`, com saída e consumo da reserva indivisíveis. Ao confirmar o último consumo de um material, as sobras são liberadas; divergência do planejado exige motivo. Conclusão exige esses registros e movimentos íntegros e grava ENTRADA_PRODUCAO da quantidade efetivamente produzida, por item, no local físico da fábrica configurado na OP. A chegada à loja ocorre por transferência recebida. Os caminhos novos e legados compartilham essa conclusão, sem baixa repetida de insumos.
+
+Cancelamento sem outros efeitos irreversíveis libera reservas integradas e cancela suas necessidades sem consumo, na mesma transação. Reservas legadas, consumo, execução e obrigações não reversíveis continuam bloqueando. Não há estorno financeiro/de estoque ou perda automática. OP concluída antiga sem movimentos identificados retorna `baixaEstoque: pendente_regularizacao`, sem inventar entrada retroativa. Detalhes, permissões adicionais de ESTOQUE e implantação em [operações integradas](../../../docs/operacoes-integradas.md).
 
 O modelo ordem_producao não contém `data_cadastro`, `data_atualizacao` nem relação de custos própria. Esses campos não são inventados, preenchidos ou usados como ordenação. A rastreabilidade das escritas usa auditoria existente. Consultas de movimentação de estoque consideram as origens ORDEM_PRODUCAO/PRODUCAO/CONSUMO_PRODUCAO; novas convenções de origem devem ser integradas pelo módulo de estoque, sem presumir que `origem_id` isolado identifica uma ordem.
 
@@ -110,4 +112,4 @@ node --test tests/producao.test.mjs
 npm run typecheck
 ```
 
-Os testes unitários usam Prisma mockado e não comprovam locks/rollback contra MySQL real. O teste opt-in `tests/producao.integration.test.mjs` foi ajustado para exigir produção efetiva antes da conclusão. Ele usa somente fixtures em MySQL local com schema preparado, sem DDL/migrations; foi mantido sem execução neste desenvolvimento. Para rodá-lo, configure PRODUCAO_TEST_DATABASE_URL e execute `node --test tests/producao.integration.test.mjs`. A opção `--configured-db --http` também exercita o Next real; execute somente em banco local de testes e sem outra instância dev usando o mesmo lock.
+Para persistência, consumo, conclusão, transferência, entrega e financeiro use o cenário HTTP em `tests/operacoes-integradas.integration.test.mjs`, com banco local isolado preparado conforme [operações integradas](../../../docs/operacoes-integradas.md). Os runners antigos que não preparam consumo real/local de destino precisam dessas pré-condições; não se fabricam apontamentos para concluir.

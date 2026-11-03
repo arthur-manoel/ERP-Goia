@@ -94,6 +94,47 @@ export async function updateProduto(
   const id = validate(produtoIdSchema, idInput)
   const data = validate(updateProdutoSchema, input)
   const categoryId = data.id_categoria
+  if (data.unidade !== undefined) {
+    return write(() =>
+      withCompanyWriteLock(companies, async (database) => {
+        await database.$queryRaw`SELECT id FROM produtos WHERE id = ${id} FOR UPDATE`
+        const current = await repository.findWritableWithCompanies(
+          id,
+          companies,
+          database,
+        )
+        if (!current) throw new NotFoundError()
+        if (current.unidade !== data.unidade) {
+          const history = await database.produtos.findUnique({
+            where: { id },
+            select: {
+              _count: {
+                select: {
+                  estoque: true,
+                  reserva_estoque: true,
+                  ordem_producao_item: true,
+                  ordem_producao_consumo_planejado: true,
+                  consumo_producao: true,
+                  pedido_cliente_item: true,
+                },
+              },
+            },
+          })
+          if (history && Object.values(history._count).some((n) => n > 0))
+            throw new ConflictError(
+              "Produto com posição, reserva, pedido ou produção não permite trocar a unidade do histórico.",
+            )
+        }
+        if (categoryId !== undefined && categoryId !== null)
+          await assertProductCategory(
+            categoryId,
+            current.produto_empresa.map((p) => p.id_empresa),
+            database,
+          )
+        return repository.update(id, data, companies, database)
+      }),
+    )
+  }
   if (categoryId !== undefined && categoryId !== null) {
     return write(() =>
       withCompanyWriteLock(companies, async (database) => {

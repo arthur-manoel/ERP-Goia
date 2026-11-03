@@ -152,6 +152,7 @@ export const listOrdemSchema = z
 export const ordemItemSchema = z
   .object({
     id_produto: idSchema,
+    id_variacao: idSchema.optional(),
     quantidade: decimalSchema.refine((v) => Number(v) > 0),
     tamanho: z.string().trim().min(1).max(30).default("UNICO"),
   })
