@@ -67,6 +67,111 @@ test("Cancelamentos HTTP e MariaDB: etapas, efeitos, permissões, concorrência 
   }
   try {
     await t.test(
+      "vencimento entre solicitação e execução exige nova aprovação",
+      async () => {
+        const { p } = await completo()
+        await prisma.pedido_cliente_fechamento.updateMany({
+          where: { id_pedido_cliente: p.id },
+          data: { data_fechamento: new Date(Date.now() - 7 * 86400000 + 8000) },
+        })
+        const antes = await a.previa(p, "FECHAMENTO")
+        const c = await a.solicitar(p, "FECHAMENTO")
+        assert.equal(c.status, "AGUARDANDO_EXECUCAO")
+        const espera = Date.parse(antes.limiteSemAprovacao) - Date.now() + 500
+        assert.ok(espera < 10000)
+        if (espera > 0)
+          await new Promise((resolve) => setTimeout(resolve, espera))
+        const depois = await a.previa(p, "FECHAMENTO")
+        assert.equal(depois.exigeAprovacao, true)
+        assert.equal(depois.hashEstado, antes.hashEstado)
+        const efeitosAntes = await snapshot()
+        const resposta = await a.chamar(
+          op(c, "executar"),
+          "POST",
+          {},
+          { chave: randomUUID() },
+        )
+        assert.equal(resposta.status, 409)
+        assert.equal(await snapshot(), efeitosAntes)
+        assert.equal((await a.detalhe(c)).status, "INTERVENCAO")
+        await a.post(op(c, "reavaliar"), {
+          hashEstado: depois.hashEstado,
+          motivo: "Prazo vencido enquanto aguardava execução",
+        })
+        assert.equal((await a.detalhe(c)).status, "AGUARDANDO_APROVACAO")
+        await aprovar(c)
+        await a.executar(c)
+      },
+    )
+    await t.test(
+      "prévia e detalhe limitam dados físicos à leitura de estoque",
+      async () => {
+        const p = await a.novo()
+        const r = await a.reservar(p, "3.000")
+        await a.entregar(p, r, "1.000")
+        const acessoEstoque = await a.previa(p)
+        assert.ok(acessoEstoque.reservas[0].id)
+        assert.ok(acessoEstoque.devolucoes[0].idMovimento)
+        const consulta = await a.chamar(
+          `/api/pedidos/${p.id}/cancelamentos/previa?tipo=PEDIDO`,
+          "GET",
+          undefined,
+          { usuario: 3 },
+        )
+        assert.equal(consulta.status, 200)
+        const c = await a.solicitar(p)
+        const detalhe = await a.detalhe(c, { usuario: 3 })
+        for (const resumo of [consulta.body.data, detalhe.plano]) {
+          assert.equal(resumo.totalReservas, 1)
+          assert.equal(resumo.totalDevolucoes, 1)
+          assert.deepEqual(resumo.reservas, [])
+          assert.deepEqual(resumo.devolucoes, [])
+        }
+      },
+    )
+    await t.test(
+      "replay de liberação exige a permissão atual do documento de origem",
+      async () => {
+        const p = await a.novo()
+        const r = await a.reservar(p, "3.000")
+        const vinculo = a.vinculos[1].id
+        await prisma.permissoes_usuario.create({
+          data: {
+            id_usuario_empresa: vinculo,
+            recurso: "ESTOQUE",
+            pode_ler: true,
+            pode_editar: true,
+          },
+        })
+        try {
+          const rota = `/api/estoque/reservas/${r.idReserva}/liberar`
+          const body = {
+            quantidade: "1.000",
+            motivo: "Liberação autorizada da fixture",
+          }
+          const options = { chave: randomUUID(), usuario: 1 }
+          const inicial = await a.chamar(rota, "POST", body, options)
+          assert.equal(inicial.status, 201, JSON.stringify(inicial.body))
+          await prisma.permissoes_usuario.updateMany({
+            where: { id_usuario_empresa: vinculo, recurso: "PEDIDOS" },
+            data: { pode_editar: false },
+          })
+          assert.equal(
+            (await a.chamar(rota, "POST", body, options)).status,
+            403,
+          )
+        } finally {
+          await prisma.permissoes_usuario.updateMany({
+            where: { id_usuario_empresa: vinculo, recurso: "PEDIDOS" },
+            data: { pode_editar: true },
+          })
+          await prisma.permissoes_usuario.deleteMany({
+            where: { id_usuario_empresa: vinculo, recurso: "ESTOQUE" },
+          })
+        }
+      },
+    )
+    await t.test(
       "execução inválida mantém aprovação e permite corrigir o envio",
       async () => {
         const p = await a.novo()

@@ -883,8 +883,8 @@ function ResumoPrevia({ previa: p }: { previa: Previa }) {
           : "Sem aprovação adicional pelo prazo. As permissões das etapas continuam obrigatórias."}
       </p>
       <p>
-        {p.reservas.length} reservas a liberar · {p.entregas.length} entregas a
-        anular · {p.devolucoes.length} saídas com retorno a confirmar
+        {p.totalReservas} reservas a liberar · {p.entregas.length} entregas a
+        anular · {p.totalDevolucoes} saídas com retorno a confirmar
       </p>
       {p.credito !== null && (
         <p>
@@ -1105,7 +1105,7 @@ function FormularioReembolso({
 }
 
 function EfeitosPersistidos({ plano }: { plano: Detalhe["plano"] }) {
-  const array = (campo: string) => {
+  const array = (campo: "reservas" | "entregas" | "devolucoes") => {
     const v = plano[campo]
     return Array.isArray(v) ? v : []
   }
@@ -1113,9 +1113,10 @@ function EfeitosPersistidos({ plano }: { plano: Detalhe["plano"] }) {
     <div className="space-y-2 rounded-md bg-muted p-3">
       <h3 className="font-semibold">Efeitos previstos na solicitação</h3>
       <p>
-        {array("reservas").length} reservas a liberar ·{" "}
-        {array("entregas").length} entregas a anular ·{" "}
-        {array("devolucoes").length} saídas com retorno a confirmar
+        {Number(plano.totalReservas ?? array("reservas").length)} reservas a
+        liberar · {array("entregas").length} entregas a anular ·{" "}
+        {Number(plano.totalDevolucoes ?? array("devolucoes").length)} saídas com
+        retorno a confirmar
       </p>
       {array("devolucoes").map((v, i) =>
         v && typeof v === "object" && !Array.isArray(v) ? (

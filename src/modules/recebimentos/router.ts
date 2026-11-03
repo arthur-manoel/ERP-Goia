@@ -1,5 +1,9 @@
 import "server-only"
-import { HttpError, ValidationError } from "@/lib/api/errors"
+import {
+  ConflitoTransitorio,
+  HttpError,
+  ValidationError,
+} from "@/lib/api/errors"
 import { readQuery, validate } from "@/lib/api/http"
 import { enforceRateLimit } from "@/lib/api/rate-limit"
 import { lerJson } from "@/modules/movimentacoes-estoque/router"
@@ -78,6 +82,7 @@ export async function recebimentosHandler(request: Request, id?: string) {
     return Response.json(
       {
         success: false,
+        ...(erro instanceof ConflitoTransitorio ? { code: erro.code } : {}),
         error:
           erro instanceof HttpError
             ? erro.message

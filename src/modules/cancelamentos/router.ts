@@ -2,7 +2,11 @@ import "server-only"
 import { z } from "zod"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
-import { HttpError, ValidationError } from "@/lib/api/errors"
+import {
+  ConflitoTransitorio,
+  HttpError,
+  ValidationError,
+} from "@/lib/api/errors"
 import { readQuery, validate } from "@/lib/api/http"
 import { enforceRateLimit } from "@/lib/api/rate-limit"
 import { disputaPersistencia } from "@/lib/prisma-concorrencia"
@@ -368,6 +372,11 @@ export async function cancelamentosHandler(
     return Response.json(
       {
         success: false,
+        ...(erro instanceof ConflitoTransitorio
+          ? { code: erro.code }
+          : !conhecido && conflito
+            ? { code: "CONFLITO_TRANSITORIO" }
+            : {}),
         error: conhecido
           ? erro.message
           : conflito

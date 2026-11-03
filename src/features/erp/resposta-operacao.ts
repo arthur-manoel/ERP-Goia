@@ -7,8 +7,12 @@ export async function lerRespostaOperacao(
   descartarTentativa: () => void,
 ) {
   if (resposta.ok) return resposta.json()
-  if (recusasDefinitivas.includes(resposta.status)) descartarTentativa()
   const dados = await resposta.json().catch(() => null)
+  if (
+    recusasDefinitivas.includes(resposta.status) &&
+    !(resposta.status === 409 && dados?.code === "CONFLITO_TRANSITORIO")
+  )
+    descartarTentativa()
   return {
     error:
       typeof dados?.error === "string"

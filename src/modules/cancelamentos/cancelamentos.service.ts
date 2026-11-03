@@ -8,7 +8,7 @@ import {
   type Tx,
 } from "@/modules/reservas/operacoes"
 import { acesso, exigir, podeConsultar } from "./cancelamentos.authorization"
-import { preparar, mostrarPrevia } from "./cancelamentos.plano"
+import { preparar, mostrarPrevia, projetarEfeitos } from "./cancelamentos.plano"
 import { buscar } from "./cancelamentos.execucao"
 import { evento } from "@/modules/notificacoes/notificacoes.service"
 import type { Escopo, Solicitar } from "./cancelamentos.schema"
@@ -23,7 +23,7 @@ export async function previa(
   const a = await acesso(tx, ctx)
   exigir(a.lerPedido || a.gerente)
   const p = await preparar(tx, ctx, idPedido, escopo)
-  return mostrarPrevia(p, a.financeiro)
+  return mostrarPrevia(p, a)
 }
 export async function solicitar(
   tx: Tx,
@@ -324,10 +324,6 @@ export async function detalhe(tx: Tx, ctx: Contexto, id: number) {
     !Array.isArray(row.plano_efeitos)
       ? { ...row.plano_efeitos }
       : {}
-  if (!a.financeiro) {
-    delete plano.credito
-    delete plano.rateio
-  }
   const autores = await tx.usuarios.findMany({
     where: {
       id: {
@@ -358,7 +354,7 @@ export async function detalhe(tx: Tx, ctx: Contexto, id: number) {
     executadoEm: row.executado_em,
     concluidoEm: row.concluido_em,
     ultimaFalha: row.ultima_falha,
-    plano,
+    plano: projetarEfeitos(plano, a),
     entregas,
     permissoes: a,
     devolucoes: linhas.map((l) => ({

@@ -200,6 +200,10 @@ export async function executarEstorno(tx: Tx, ctx: Contexto, id: number) {
     throw new ReavaliacaoNecessaria(
       "O pedido, estoque ou financeiro mudou. Reavalie a solicitação e obtenha nova aprovação quando exigida.",
     )
+  if (p.efeitos.exigeAprovacao && !row.exige_aprovacao)
+    throw new ReavaliacaoNecessaria(
+      "O prazo sem aprovação expirou. Reavalie a solicitação e obtenha aprovação gerencial antes de executar.",
+    )
   if (p.efeitos.inconsistencias.length)
     throw new ReavaliacaoNecessaria(
       "Há inconsistências históricas. Regularize a origem e reavalie antes de executar.",

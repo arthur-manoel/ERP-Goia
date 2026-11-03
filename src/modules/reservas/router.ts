@@ -7,6 +7,7 @@ import {
   HttpError,
   NotFoundError,
   ConflictError,
+  ConflitoTransitorio,
   ValidationError,
 } from "@/lib/api/errors"
 import { readQuery, validate } from "@/lib/api/http"
@@ -372,37 +373,16 @@ export async function operacoesHandler(
           return reservar(tx, ctx, validate(schemas.reservaSchema, body))
         if (op === "liberar") {
           const input = validate(schemas.liberarSchema, body)
-          const r = await tx.reserva_estoque.findFirst({
-            where: { id, id_empresa: ctx.idEmpresa },
-          })
-          if (!r) throw new NotFoundError("Reserva não encontrada.")
-          const auth = await requireRole(
-            request,
-            r.tipo_origem === "VENDA"
-              ? ["ADMINISTRACAO", "VENDAS"]
-              : ["ADMINISTRACAO", "PRODUCAO"],
-          )
-          if (auth.error)
-            throw new HttpError(
-              auth.error.status,
-              "Perfil sem acesso ao documento de origem.",
-            )
-          await conferir(tx, ctx, [
-            [
-              r.tipo_origem === "VENDA" ? "PEDIDOS" : "ORDENS_PRODUCAO",
-              "editar",
-            ],
-          ])
           await finalizarReserva(
             tx,
             ctx,
-            r.id,
+            id!,
             new Prisma.Decimal(input.quantidade),
             false,
             input.motivo,
           )
           return {
-            idReserva: r.id,
+            idReserva: id!,
             quantidadeLiberada: new Prisma.Decimal(input.quantidade).toFixed(3),
           }
         }
@@ -491,6 +471,33 @@ export async function operacoesHandler(
         }
         throw new ValidationError("Operação indisponível.")
       },
+      op === "liberar"
+        ? {
+            validar: async (tx) => {
+              const r = await tx.reserva_estoque.findFirst({
+                where: { id, id_empresa: ctx.idEmpresa },
+              })
+              if (!r) throw new NotFoundError("Reserva não encontrada.")
+              const auth = await requireRole(
+                request,
+                r.tipo_origem === "VENDA"
+                  ? ["ADMINISTRACAO", "VENDAS"]
+                  : ["ADMINISTRACAO", "PRODUCAO"],
+              )
+              if (auth.error)
+                throw new HttpError(
+                  auth.error.status,
+                  "Perfil sem acesso ao documento de origem.",
+                )
+              await conferir(tx, ctx, [
+                [
+                  r.tipo_origem === "VENDA" ? "PEDIDOS" : "ORDENS_PRODUCAO",
+                  "editar",
+                ],
+              ])
+            },
+          }
+        : undefined,
     )
     return Response.json(
       { success: true, data: data.dados, criado: data.criado },
@@ -502,6 +509,7 @@ export async function operacoesHandler(
     return Response.json(
       {
         success: false,
+        ...(erro instanceof ConflitoTransitorio ? { code: erro.code } : {}),
         error:
           erro instanceof HttpError
             ? erro.message

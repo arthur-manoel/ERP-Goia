@@ -289,11 +289,28 @@ export async function preparar(
   }
 }
 export type Plano = Awaited<ReturnType<typeof preparar>>
-export function mostrarPrevia(p: Plano, financeiro: boolean) {
+export function projetarEfeitos<T extends Record<string, unknown>>(
+  efeitos: T,
+  acesso: { estoque: boolean; financeiro: boolean },
+) {
+  const { reservas, devolucoes, credito, rateio, ...resumo } = efeitos
+  return {
+    ...resumo,
+    totalReservas: Array.isArray(reservas) ? reservas.length : 0,
+    totalDevolucoes: Array.isArray(devolucoes) ? devolucoes.length : 0,
+    reservas: acesso.estoque && Array.isArray(reservas) ? reservas : [],
+    devolucoes: acesso.estoque && Array.isArray(devolucoes) ? devolucoes : [],
+    ...(acesso.financeiro ? { credito, rateio } : {}),
+  }
+}
+
+export function mostrarPrevia(
+  p: Plano,
+  acesso: { estoque: boolean; financeiro: boolean },
+) {
   return {
     hashEstado: p.hashEstado,
-    ...p.efeitos,
-    credito: financeiro ? p.efeitos.credito : null,
-    rateio: financeiro ? p.efeitos.rateio : undefined,
+    ...projetarEfeitos(p.efeitos, acesso),
+    credito: acesso.financeiro ? p.efeitos.credito : null,
   }
 }

@@ -2,7 +2,12 @@ import "server-only"
 import { createHash } from "node:crypto"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
-import { ConflictError, NotFoundError, ValidationError } from "@/lib/api/errors"
+import {
+  ConflictError,
+  ConflitoTransitorio,
+  NotFoundError,
+  ValidationError,
+} from "@/lib/api/errors"
 import { disputaPersistencia } from "@/lib/prisma-concorrencia"
 import { invalidConfirmedMovements } from "../../../modules/contas_receber/repository"
 import { auditFinancial } from "../../../modules/financeiro/auditoria"
@@ -428,7 +433,7 @@ export async function registrarRecebimento(
     } catch (erro) {
       if (!disputaPersistencia(erro)) throw erro
       if (tentativa === 2)
-        throw new ConflictError(
+        throw new ConflitoTransitorio(
           "Disputa entre recebimentos. Consulte o título ou repita com a mesma chave e os mesmos dados.",
         )
     }

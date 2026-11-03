@@ -2,7 +2,7 @@ import "server-only"
 import { createHash } from "node:crypto"
 import { Prisma } from "@/generated/prisma/client"
 import { requireRole } from "@/lib/authorize"
-import { HttpError, ConflictError } from "@/lib/api/errors"
+import { HttpError, ConflictError, ConflitoTransitorio } from "@/lib/api/errors"
 import { prisma } from "@/lib/prisma"
 import { disputaPersistencia } from "@/lib/prisma-concorrencia"
 export type Tx = Prisma.TransactionClient
@@ -181,7 +181,7 @@ export async function executar<T extends Prisma.InputJsonValue>(
     } catch (e) {
       if (!disputaPersistencia(e)) throw e
       if (i === 2)
-        throw new ConflictError(
+        throw new ConflitoTransitorio(
           "Dados alterados por outra operação. Consulte novamente ou repita a mesma chave.",
         )
     }

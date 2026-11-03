@@ -23,6 +23,24 @@ describe("tentativa idempotente após uma resposta do servidor", () => {
     },
   )
 
+  it("distingue o 409 que permite repetir da recusa de negócio", async () => {
+    const descartar = vi.fn()
+    const temporario = Response.json(
+      { code: "CONFLITO_TRANSITORIO", error: "Repita com a mesma chave." },
+      { status: 409 },
+    )
+    expect((await lerRespostaOperacao(temporario, descartar)).error).toContain(
+      "mesma chave",
+    )
+    expect(descartar).not.toHaveBeenCalled()
+
+    await lerRespostaOperacao(
+      Response.json({ error: "Estado inválido." }, { status: 409 }),
+      descartar,
+    )
+    expect(descartar).toHaveBeenCalledOnce()
+  })
+
   it("mantém a chave se a resposta não comprova o resultado", async () => {
     const descartar = vi.fn()
     await lerRespostaOperacao(
