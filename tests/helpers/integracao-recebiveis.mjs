@@ -298,7 +298,14 @@ export async function ambienteRecebiveis() {
     // (incluindo fechamento/financeiro) exigem explicitamente cache privado.
     assert.equal(
       response.headers.get("Cache-Control"),
-      rota.startsWith("/api/clientes/") ? "no-store" : "private, no-store",
+      rota.startsWith("/api/clientes/") ||
+        /^\/api\/ordens-producao\/\d+$/.test(rota) ||
+        (method === "PATCH" && /^\/api\/contas_receber\/\d+$/.test(rota)) ||
+        /^\/api\/estoque\/(entradas|saidas|ajustes|saldo)(?:\?|$)/.test(rota) ||
+        (rota.startsWith("/api/ordem_producao") &&
+          !/\/(consumos|operacao)(?:\?|$)/.test(rota))
+        ? "no-store"
+        : "private, no-store",
     )
     return {
       status: response.status,
@@ -433,6 +440,7 @@ export async function ambienteRecebiveis() {
   }
 
   return {
+    base,
     prisma,
     empresas,
     usuarios,

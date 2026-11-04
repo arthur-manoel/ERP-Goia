@@ -194,6 +194,11 @@ function pagamento(
   const conta = estado.fechamento.venda.contas_receber[0]
   conta.pagamentos_receber.push({
     id: 120 + conta.pagamentos_receber.length,
+    id_usuario: null,
+    id_conta_bancaria: null,
+    chave_idempotencia: null,
+    hash_requisicao: null,
+    referencia: null,
     id_empresa: 20,
     id_conta_receber: conta.id,
     data_pagamento: data,

@@ -10,7 +10,7 @@ import { request, context } from "../../helpers/http"
 
 for (const [name, collection, item, resource] of [
   ["cores", cores, core, "CORES"],
-  ["tamanhos", tamanhos, tamanho, "PRODUTOS"],
+  ["tamanhos", tamanhos, tamanho, "TAMANHOS"],
   ["produtos", produtos, produto, "PRODUTOS"],
 ] as const) {
   describe(name + ": autorização", () => {

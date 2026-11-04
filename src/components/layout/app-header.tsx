@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ThemeToggle } from "./theme-toggle"
@@ -10,6 +11,9 @@ export function AppHeader({ usuario }: { usuario: UsuarioLogado | null }) {
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="my-4" />
       <div className="ml-auto flex items-center gap-2">
+        <Link href="/notificacoes" className="text-sm underline">
+          Notificações
+        </Link>
         <ThemeToggle />
         <MenuUsuario usuario={usuario} />
       </div>

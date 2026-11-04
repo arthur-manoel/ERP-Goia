@@ -152,6 +152,7 @@ export const listOrdemSchema = z
 export const ordemItemSchema = z
   .object({
     id_produto: idSchema,
+    id_variacao: idSchema.optional(),
     quantidade: decimalSchema.refine((v) => Number(v) > 0),
     tamanho: z.string().trim().min(1).max(30).default("UNICO"),
   })
@@ -165,6 +166,7 @@ export const apontarSchema = z
   .object({
     quantidade_produzida: decimalSchema,
     quantidade_esperada: decimalSchema,
+    motivo_ajuste_legado: z.string().trim().min(1).max(255).optional(),
   })
   .strict()
 export type OrdemInput = z.output<typeof createOrdemSchema>

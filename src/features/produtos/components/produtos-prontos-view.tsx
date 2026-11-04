@@ -135,7 +135,7 @@ export function ProdutosProntosView() {
       let totalPaginasDisponiveis = 1
       do {
         const resposta = await requisitar(
-          `/api/tipos_produto?page=${paginaAtual}&limit=${limiteTipos}`,
+          `/api/produtos/tipos?page=${paginaAtual}&limit=${limiteTipos}`,
         )
         if (!resposta.ok) throw new Error(await mensagemErro(resposta))
         const corpo = (await resposta.json()) as {

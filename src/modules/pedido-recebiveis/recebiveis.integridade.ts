@@ -1,3 +1,4 @@
+import { ConflictError } from "@/lib/api/errors"
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { dinheiro, subtotal, total } from "@/modules/pedidos/pedidos.calculo"
@@ -12,6 +13,11 @@ import {
   snapshotPedido,
   snapshotSchema,
 } from "./recebiveis.snapshot"
+
+import {
+  calcularCobranca,
+  type CreditoRecebivel,
+} from "@/modules/recebimentos/recebimentos.saldo"
 
 export function regularizacao(): never {
   throw new PedidoError(
@@ -57,7 +63,11 @@ export function calcularPedido(pedido: Pedido) {
   return { ...valores, itens }
 }
 
-export function validarIntegridade(pedido: Pedido, fechamento: Fechamento) {
+export function validarIntegridade(
+  pedido: Pedido,
+  fechamento: Fechamento,
+  creditos = new Map<number, CreditoRecebivel[]>(),
+) {
   const p = planoPersistidoSchema.safeParse(fechamento.plano_pagamento)
   const s = snapshotSchema.safeParse(fechamento.snapshot_pedido)
   if (!p.success || !s.success) regularizacao()
@@ -165,8 +175,7 @@ export function validarIntegridade(pedido: Pedido, fechamento: Fechamento) {
       !conta.valor_acrescimo.isZero() ||
       conta.saldo === null ||
       conta.saldo.lt(0) ||
-      conta.saldo.gt(conta.valor_final) ||
-      conta.situacao === "CANCELADO"
+      conta.saldo.gt(conta.valor_final)
     )
       regularizacao()
     let recebido = new Prisma.Decimal(0)
@@ -180,16 +189,22 @@ export function validarIntegridade(pedido: Pedido, fechamento: Fechamento) {
       if (pagamento.status === "CONFIRMADO")
         recebido = recebido.plus(pagamento.valor)
     }
-    const saldo = conta.saldo!
-    if (
-      recebido.gt(conta.valor_final) ||
-      !saldo.eq(conta.valor_final.minus(recebido)) ||
-      (saldo.isZero() && conta.situacao !== "PAGO") ||
-      (saldo.gt(0) && conta.situacao === "PAGO") ||
-      (recebido.isZero() && conta.situacao === "PARCIAL") ||
-      (recebido.gt(0) && saldo.gt(0) && conta.situacao === "ABERTO")
-    )
-      regularizacao()
+    try {
+      const cobranca = calcularCobranca(
+        conta.valor_final,
+        recebido,
+        creditos.get(conta.id) ?? [],
+      )
+      if (
+        !conta.saldo!.eq(cobranca.saldo) ||
+        (conta.situacao !== cobranca.situacao &&
+          !(conta.situacao === "ATRASADO" && cobranca.saldo.gt(0)))
+      )
+        regularizacao()
+    } catch (error) {
+      if (error instanceof ConflictError) regularizacao()
+      throw error
+    }
   }
   return { plano, parcelas }
 }

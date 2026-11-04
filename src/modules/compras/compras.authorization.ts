@@ -8,32 +8,38 @@ import {
 } from "./compras.repository"
 
 /**
- * O enum `permissoes_usuario_recurso` NÃO possui COMPRAS (e criar o valor exige migration do
- * responsável pelo banco). Até lá, o módulo reutiliza os recursos existentes mais próximos:
- *   - solicitações, pedidos e compras → ESTOQUE (compras de insumos abastecem o estoque)
+ * Recursos explícitos do enum ampliado:
+ *   - solicitações, pedidos e compras → COMPRAS
  *   - notas fiscais                   → NOTAS_FISCAIS
  * Administradores (usuarios.nivel_acesso = ADMIN ou vínculo EMPRESA) dispensam permissões individuais.
  */
 export type Area = "requisicoes" | "pedidos" | "compras" | "notas" | "opcoes"
-export type Recurso = "ESTOQUE" | "NOTAS_FISCAIS"
+export type Recurso = "COMPRAS" | "NOTAS_FISCAIS"
 const recursoDaArea: Record<Area, Recurso> = {
-  requisicoes: "ESTOQUE",
-  pedidos: "ESTOQUE",
-  compras: "ESTOQUE",
-  opcoes: "ESTOQUE",
+  requisicoes: "COMPRAS",
+  pedidos: "COMPRAS",
+  compras: "COMPRAS",
+  opcoes: "COMPRAS",
   notas: "NOTAS_FISCAIS",
 }
 
 /**
- * Seletores (opcoes) servem telas de Compras (ESTOQUE) e de Notas Fiscais (NOTAS_FISCAIS).
- * Fornecedores, pedidos e compras podem ser consultados por quem tem QUALQUER dos dois recursos,
+ * Seletores (opcoes) servem telas de Compras e de Notas Fiscais.
+ * Opções podem ser consultadas por quem tem QUALQUER dos dois recursos,
  * sem ampliar nada além de leitura e sempre dentro da empresa do vínculo.
- * Insumos, locais e setores continuam exigindo ESTOQUE.
+ * O acesso a seletores é restrito à leitura necessária ao documento de origem.
  */
 export function recursosDaOpcao(tipo: string | null): Recurso[] {
-  return tipo === "fornecedores" || tipo === "pedidos" || tipo === "compras"
-    ? ["ESTOQUE", "NOTAS_FISCAIS"]
-    : ["ESTOQUE"]
+  return [
+    "insumos",
+    "fornecedores",
+    "locais",
+    "setores",
+    "pedidos",
+    "compras",
+  ].includes(tipo ?? "")
+    ? ["COMPRAS", "NOTAS_FISCAIS"]
+    : []
 }
 
 export async function autorizar(

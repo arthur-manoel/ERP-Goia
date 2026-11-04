@@ -1,6 +1,13 @@
 # Backend de ordens de produção
 
-Implementação em `src/modules/producao`: schemas Zod, Repository Prisma, Service, autorização e Router HTTP. Backend apenas; nenhuma tela ou estrutura do banco foi alterada. O Prisma Client deve estar gerado a partir do schema atual (`npm run db:generate`).
+Os [apontamentos de produção/perdas](../apontamentos/README.md) usam rotas
+filhas de `/api/ordens-producao/{id}/apontamentos`, recurso ORDENS_PRODUCAO e
+histórico persistente. São distintos do apontamento de quantidade final em
+`/api/ordem_producao/{id}/itens/{itemId}/producao`: atualizam a projeção do item ao registrar a produção final, sem movimentar estoque
+ou concluir etapas. Setores e fluxos usam SETORES e
+FLUXOS_PRODUCAO; veja a [matriz](../../../docs/permissoes-modulos.md).
+
+Implementação em `src/modules/producao`: schemas Zod, Repository Prisma, Service, autorização e Router HTTP. As ações operacionais da tela de produção usam as APIs reais. A integração de estoque/consumo utiliza as extensões DB-first descritas em [operações integradas](../../../docs/operacoes-integradas.md). O Prisma Client deve estar gerado a partir do schema atual (`npm run db:generate`).
 
 ## Segurança e respostas
 
@@ -72,7 +79,7 @@ PUT exige número, quantidade e prioridade; opcionais omitidos são limpos. PATC
 
 POST de item: `{ "id_produto": 12, "quantidade": "10.500", "tamanho": "UNICO" }`. Exige produto ativo vinculado à empresa, habilitado para produção, ficha técnica vigente com componentes válidos e fluxo ativo. Reutiliza o cálculo existente (consumo unitário × quantidade, sem perda percentual, HALF_UP com três casas). O primeiro item cria etapas e snapshot; os demais precisam do mesmo fluxo/ordem de setores. Produto de um snapshot não é substituído. Limite operacional: 200 itens por ordem. Recalcular/remover itens altera somente planejamento sem execução; registros produtivos ou financeiros impedem essas alterações.
 
-Liberação verifica produtos e componentes em lote, sem exigir disponibilidade total de estoque nem criar reservas. Início, pausa, retomada e etapas reutilizam os Services existentes de produção/fluxos, preservando snapshot e movimentações entre setores. Não é permitido pular etapas. Movimentações em trânsito impedem avanço/conclusão.
+Liberação verifica produtos e componentes em lote, sem transformar planejamento em estoque. A reserva explícita dos materiais ocorre no fluxo operacional integrado, com pendências visíveis. Início, pausa, retomada e etapas reutilizam os Services existentes de produção/fluxos, preservando snapshot e movimentações entre setores. Não é permitido pular etapas. Movimentações em trânsito impedem avanço/conclusão.
 
 Apontamento é o total acumulado efetivamente produzido, com valor esperado para concorrência:
 
@@ -80,9 +87,35 @@ Apontamento é o total acumulado efetivamente produzido, com valor esperado para
 { "quantidade_produzida": "7.125", "quantidade_esperada": "0" }
 ```
 
-Em ordens com snapshot, a API atualiza o total do item e insere apenas o delta em `ordem_producao_apontamento`, com setor, usuário e auditoria na mesma transação. Repetir o mesmo total não cria outro apontamento. Estado esperado desatualizado retorna 409; reduções exigem ajuste/estorno e são bloqueadas. Apontamentos exigem ordem EM_PRODUCAO. Com snapshot, exigem a última etapa em execução. Sem snapshot (fluxo legado), não exigem novas etapas: validam início efetivo, ausência de movimentações em trânsito e passagem por todos os setores configurados, quando houver. Nesse fluxo, o total é persistido no item e o delta é registrado na auditoria, na mesma transação, pois a tabela ordem_producao_apontamento exige uma etapa por FK. Nenhuma etapa é fabricada e nenhuma estrutura é alterada. O total produzido também impede cancelamento sem estorno, mesmo quando não existe uma linha na tabela de apontamentos. Não representam entrada de produto acabado no estoque.
+Em ordens sem snapshot com quantidade confirmada apenas no item, use
+`motivo_ajuste_legado` para reduzir o total de forma auditável. Envie a quantidade
+atual em `quantidade_esperada`. Quando houver apontamentos anteriores, o total
+declarado respeita a disponibilidade comprovada e passa a ser vinculado ao
+apontamento final. Se já existir um apontamento final, use correção ou estorno
+pelo ID do apontamento. A perda integral comprovada permite concluir o item com
+zero peças boas.
 
-Conclusão exige quantidade efetivamente produzida positiva em cada item, início válido, fluxo concluível, ausência de reservas ativas, necessidades não encerradas, compras/pedidos pendentes e consumos inconsistentes. Não copia quantidade planejada para produzida e não exige igualdade entre ambas. Não há política existente para concluir itens com produção integralmente perdida; esse caso permanece bloqueado, aguardando fluxo específico de perdas. Conclusão preenche `data_conclusao`; nunca recebe esse campo do cliente.
+Com snapshot e apontamentos detalhados na etapa final, esse PUT **confirma** a
+soma válida daquela etapa, sem criar outro apontamento. Registro/correção/estorno
+atualiza a projeção do item atomicamente; produção e perda são independentes.
+Sem detalhamento final, o contrato acumulado registra somente o delta positivo,
+com vínculo na nova tabela producao_confirmacao. Registro detalhado sem vínculo
+após esse fluxo acumulado retorna 409; correção/estorno pelo ID é explícito.
+Consulte [o contrato combinado](../apontamentos/README.md#relação-com-a-confirmação-final-da-op)
+para sequências, idempotência, concorrência e reconciliação de legados.
+
+O PUT aceita Idempotency-Key opcional de 8–128 caracteres ASCII visíveis sem
+espaços. Sem header, a identidade é derivada do comando normalizado. Chave com
+outro autor/conteúdo ou replay após alteração do estado produtivo retorna 409,
+sem restaurar produção corrigida/estornada. Nova operação após reconciliação
+exige consultar os valores atuais e utilizar outra chave explícita.
+
+Sem snapshot (fluxo legado), preserva início efetivo, ausência de movimentações
+em trânsito e passagem por todos os setores configurados. O item e a auditoria
+guardam o total/delta, com confirmação LEGADO; não se fabrica etapa nem linha
+sem FK válida. Nenhum desses registros representa entrada de acabado no estoque.
+
+Conclusão exige produção efetiva positiva ou perda integral comprovada em cada item, início válido, fluxo concluível e ausência de reservas ativas, necessidades não encerradas, compras/pedidos pendentes e consumos inconsistentes. Não copia quantidade planejada para produzida e não exige igualdade entre ambas. Conclusão preenche `data_conclusao`; nunca recebe esse campo do cliente.
 
 ## Transações, histórico e limites das integrações
 
@@ -90,7 +123,11 @@ Escritas usam transações Serializable, lock da empresa e releitura da ordem so
 
 Cancelamento consulta reservas, consumos, estoque, compras, pedidos de compra, necessidades, movimentos de setores, apontamentos e obrigações financeiras das compras relacionadas. Também consulta etapas executadas. Havendo qualquer efeito não reversível pelos serviços disponíveis, retorna 409 com motivo. Sem impedimentos, altera somente status para CANCELADA e audita. Nunca apaga a ordem, notas fiscais, compras, pagamentos ou histórico produtivo. Ordens concluídas ou já canceladas não podem ser canceladas.
 
-**Limitações verificadas no projeto:** não existem Services de liberação de reserva ou estorno de consumo/estoque disponíveis para esta integração. Portanto, reservas ativas e execução prévia impedem cancelamento; não se simula sua liberação nem se excluem registros para contornar a regra. Não são criados consumos efetivos, necessidades, reservas, compras, contas a pagar ou entradas/baixas de estoque automaticamente. O módulo coordena o fluxo existente, calcula consumo planejado, registra produção efetiva e valida os efeitos persistidos; essas operações externas devem usar serviços próprios quando implementados. A conclusão permanece administrativa quanto ao estoque (`baixaEstoque: pendente` no contrato legado), não uma confirmação de baixa física. Não há novo mecanismo de estorno, perda ou recebimento parcial.
+**Integração operacional:** consumo real é registrado em `/api/ordem_producao/{id}/consumos`, com saída e consumo da reserva indivisíveis. Ao confirmar o último consumo de um material, as sobras são liberadas; divergência do planejado exige motivo. Conclusão exige esses registros e movimentos íntegros e grava ENTRADA_PRODUCAO da quantidade efetivamente produzida, por item, no local físico da fábrica configurado na OP. A chegada à loja ocorre por transferência recebida. Os caminhos novos e legados compartilham essa conclusão, sem baixa repetida de insumos.
+
+Cancelamento sem outros efeitos irreversíveis libera reservas integradas e cancela suas necessidades sem consumo, na mesma transação. Reservas legadas, consumo, execução e obrigações não reversíveis continuam bloqueando. Não há estorno financeiro/de estoque ou perda automática. OP concluída antiga sem movimentos identificados retorna `baixaEstoque: pendente_regularizacao`, sem inventar entrada retroativa. Detalhes, permissões adicionais de ESTOQUE e implantação em [operações integradas](../../../docs/operacoes-integradas.md).
+
+A perda integral comprovada conclui o item com zero peças boas e sem entrada de produto acabado. O consumo real registrado continua no livro.
 
 O modelo ordem_producao não contém `data_cadastro`, `data_atualizacao` nem relação de custos própria. Esses campos não são inventados, preenchidos ou usados como ordenação. A rastreabilidade das escritas usa auditoria existente. Consultas de movimentação de estoque consideram as origens ORDEM_PRODUCAO/PRODUCAO/CONSUMO_PRODUCAO; novas convenções de origem devem ser integradas pelo módulo de estoque, sem presumir que `origem_id` isolado identifica uma ordem.
 
@@ -110,4 +147,4 @@ node --test tests/producao.test.mjs
 npm run typecheck
 ```
 
-Os testes unitários usam Prisma mockado e não comprovam locks/rollback contra MySQL real. O teste opt-in `tests/producao.integration.test.mjs` foi ajustado para exigir produção efetiva antes da conclusão. Ele usa somente fixtures em MySQL local com schema preparado, sem DDL/migrations; foi mantido sem execução neste desenvolvimento. Para rodá-lo, configure PRODUCAO_TEST_DATABASE_URL e execute `node --test tests/producao.integration.test.mjs`. A opção `--configured-db --http` também exercita o Next real; execute somente em banco local de testes e sem outra instância dev usando o mesmo lock.
+Para persistência, consumo, conclusão, transferência, entrega e financeiro use o cenário HTTP em `tests/operacoes-integradas.integration.test.mjs`, com banco local isolado preparado conforme [operações integradas](../../../docs/operacoes-integradas.md). Os runners antigos que não preparam consumo real/local de destino precisam dessas pré-condições; não se fabricam apontamentos para concluir.

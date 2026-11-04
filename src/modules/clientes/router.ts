@@ -52,6 +52,7 @@ async function executar(
       operacao === "criar" || operacao === "editar" || operacao === "excluir"
         ? operacao
         : "ler",
+      operacao === "pedidos",
     )
     if (ctx instanceof Response) {
       ctx.headers.set("Cache-Control", "no-store")

@@ -61,7 +61,7 @@ function noDirectSettlement(
     requested !== current?.situacao
   )
     throw new ConflictError(
-      "Baixa exige pagamento, saldo e movimentação na mesma transação. Fluxo de recebimento ainda não disponível.",
+      "Baixa exige pagamento, saldo e movimentação na mesma transação. Use o fluxo de recebimentos do título.",
     )
 }
 
@@ -351,7 +351,20 @@ async function update(
           ? { observacao: data.observacao }
           : {}),
       }
-      // Metadados de títulos protegidos não recalculam valores do plano fechado.
+      // O fechamento preserva o valor original. Recebimentos e créditos de
+      // cancelamento já atualizaram o saldo e a situação na própria transação.
+      if (current.id_fechamento !== null) {
+        const after = await repository.patch(id, metadata, companies, database)
+        await repository.auditFinancial(
+          database,
+          actor,
+          "contas_receber",
+          current,
+          after,
+          "EDICAO",
+        )
+        return toResponse(after)
+      }
       if (immutable)
         return save(id, metadata, companies, database, actor, current, true)
       const originalSale = await repository.findVenda(

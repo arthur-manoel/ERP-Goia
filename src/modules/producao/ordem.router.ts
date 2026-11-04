@@ -98,6 +98,7 @@ async function execute(
             id,
             itemId,
             validate(schemas.apontarSchema, await readJson(request)),
+            request.headers.get("Idempotency-Key") ?? undefined,
           )
         }
         if (operation === "startStage" || operation === "finishStage") {

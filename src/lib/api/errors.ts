@@ -22,3 +22,7 @@ export class ConflictError extends HttpError {
     super(409, message)
   }
 }
+
+export class ConflitoTransitorio extends ConflictError {
+  readonly code = "CONFLITO_TRANSITORIO"
+}

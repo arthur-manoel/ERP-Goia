@@ -28,7 +28,7 @@ function setup() {
     id_empresa: 10,
     nivel_acesso: "USUARIO",
     usuarios: { nivel_acesso: "USUARIO" },
-    permissoes_usuario: [permissao],
+    permissoes_usuario: [permissao, { recurso: "VENDAS", pode_ler: true }],
   }
   const vinculos = [vinculo]
   const token = { id: 5, role: "VENDAS" }
