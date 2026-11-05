@@ -40,9 +40,50 @@ export function validarFluxo(fluxo: repo.Fluxo) {
     )
 }
 export function consultar(ctx: Contexto, tipo: repo.Entidade, id: number) {
-  return transacao(async (tx) => ({
-    [tipo]: await detalhe(tx, ctx, tipo, await repo.buscar(tx, ctx, tipo, id)),
-  }))
+  return transacao(async (tx) => {
+    const dados = await detalhe(
+      tx,
+      ctx,
+      tipo,
+      await repo.buscar(tx, ctx, tipo, id),
+    )
+    return {
+      [tipo]:
+        tipo === "setor"
+          ? { ...dados, recursos: await repo.recursosSetor(tx, id) }
+          : dados,
+    }
+  })
+}
+export function listarTipos(ctx: Contexto) {
+  return transacao(async (tx) => ({ tipos: await repo.listarTipos(tx, ctx) }))
+}
+export function consultarRecursos(ctx: Contexto, id: number) {
+  return transacao(async (tx) => {
+    await repo.buscar(tx, ctx, "setor", id)
+    return { recursos: await repo.recursosSetor(tx, id) }
+  })
+}
+export function substituirRecursos(
+  ctx: Contexto,
+  id: number,
+  recursos: string[],
+) {
+  return transacao(async (tx) => {
+    await repo.buscar(tx, ctx, "setor", id)
+    const antes = await repo.recursosSetor(tx, id)
+    await repo.substituirRecursos(tx, id, recursos)
+    const depois = [...recursos].sort()
+    await repo.auditarCadastro(
+      tx,
+      ctx,
+      "permissoes_setor",
+      id,
+      { idSetor: id, recursos: antes },
+      { idSetor: id, recursos: depois },
+    )
+    return { recursos: depois }
+  })
 }
 export function listar(ctx: Contexto, tipo: repo.Entidade, input: Listagem) {
   return transacao(async (tx) => {
@@ -65,6 +106,7 @@ export function salvar(
   tipo: repo.Entidade,
   input: Edicao,
   id?: number,
+  opcoes: { ehAdmin?: boolean } = {},
 ) {
   return transacao(async (tx) => {
     const antes =
@@ -77,12 +119,45 @@ export function salvar(
           throw new ProducaoError(422, "Selecione apenas setores ativos.")
       }
     }
+    // setores.tipo participa da resolução do perfil de login dos usuários do setor
+    // (auth.role). Só administradores alteram o tipo e ele deve existir em tipos_setor.
+    let tipoSetor: string | undefined
+    if (
+      tipo === "setor" &&
+      input.tipo !== undefined &&
+      input.tipo !== antes?.tipo
+    ) {
+      if (!opcoes.ehAdmin)
+        throw new ProducaoError(
+          403,
+          "Somente administradores podem alterar o tipo do setor.",
+        )
+      const canonico = await repo.tipoAtivo(tx, ctx, input.tipo)
+      if (canonico === null)
+        throw new ProducaoError(
+          422,
+          "Tipo de setor inválido ou inativo para esta empresa.",
+        )
+      tipoSetor = canonico
+    }
     const dados: Cadastro = {
+      tipo: tipoSetor,
       nome: input.nome ?? antes?.nome ?? "",
       descricao:
         input.descricao === undefined ? antes?.descricao : input.descricao,
       ativo: input.ativo ?? (antes ? antes.status === "ATIVO" : true),
     }
+    if (
+      tipo === "setor" &&
+      id !== undefined &&
+      antes?.status === "ATIVO" &&
+      dados.ativo === false &&
+      (await repo.setorEmFluxoAtivo(tx, id))
+    )
+      throw new ProducaoError(
+        409,
+        "O setor está em um fluxo ativo e não pode ser inativado. Remova-o do fluxo antes.",
+      )
     const salvo = await repo.gravar(tx, ctx, tipo, dados, id)
     if (tipo === "fluxo" && input.setores)
       await repo.substituirSetores(tx, salvo, input.setores)
