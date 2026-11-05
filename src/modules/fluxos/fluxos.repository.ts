@@ -12,6 +12,8 @@ export type Entidade = "setor" | "fluxo"
 export type Registro = {
   id: number
   nome: string
+  /** Presente apenas em setores (coluna setores.tipo). */
+  tipo?: string
   descricao: string | null
   status: "ATIVO" | "INATIVO"
   createdAt: Date
@@ -41,7 +43,10 @@ export type Snapshot = {
 // Identificadores vêm exclusivamente desta enumeração interna. Valores usam binds Prisma.
 const tabela = (tipo: Entidade) =>
   tipo === "setor" ? Prisma.sql`setores` : Prisma.sql`fluxos_producao`
-const colunas = Prisma.sql`id, nome, descricao, status, data_cadastro AS createdAt, data_atualizacao AS updatedAt`
+const colunas = (tipo: Entidade) =>
+  tipo === "setor"
+    ? Prisma.sql`id, nome, tipo, descricao, status, data_cadastro AS createdAt, data_atualizacao AS updatedAt`
+    : Prisma.sql`id, nome, descricao, status, data_cadastro AS createdAt, data_atualizacao AS updatedAt`
 export async function buscar(
   tx: Transaction,
   ctx: Contexto,
@@ -49,7 +54,7 @@ export async function buscar(
   id: number,
 ) {
   const rows = await tx.$queryRaw<Registro[]>(
-    Prisma.sql`SELECT ${colunas} FROM ${tabela(tipo)} WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa} FOR UPDATE`,
+    Prisma.sql`SELECT ${colunas(tipo)} FROM ${tabela(tipo)} WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa} FOR UPDATE`,
   )
   if (!rows[0])
     throw new ProducaoError(
@@ -68,7 +73,7 @@ export async function listar(
     ${input.nome ? Prisma.sql`AND LOCATE(${input.nome}, nome) > 0` : Prisma.empty}
     ${input.status ? Prisma.sql`AND status = ${input.status}` : Prisma.empty}`
   const rows = await tx.$queryRaw<Registro[]>(
-    Prisma.sql`SELECT ${colunas} FROM ${tabela(tipo)} WHERE ${where} ORDER BY nome, id LIMIT ${input.limite} OFFSET ${(input.pagina - 1) * input.limite}`,
+    Prisma.sql`SELECT ${colunas(tipo)} FROM ${tabela(tipo)} WHERE ${where} ORDER BY nome, id LIMIT ${input.limite} OFFSET ${(input.pagina - 1) * input.limite}`,
   )
   const [count] = await tx.$queryRaw<Array<{ total: bigint }>>(
     Prisma.sql`SELECT COUNT(*) AS total FROM ${tabela(tipo)} WHERE ${where}`,
@@ -83,14 +88,16 @@ export async function gravar(
   id?: number,
 ) {
   const status = input.ativo === false ? "INATIVO" : "ATIVO"
+  // Sem tipo informado, o INSERT mantém o default da coluna e o UPDATE preserva o valor atual.
+  const tipoSetor = tipo === "setor" ? input.tipo : undefined
   if (id !== undefined) {
     await tx.$executeRaw(
-      Prisma.sql`UPDATE ${tabela(tipo)} SET nome = ${input.nome}, descricao = ${input.descricao ?? null}, status = ${status}, data_atualizacao = CURRENT_TIMESTAMP(3) WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa}`,
+      Prisma.sql`UPDATE ${tabela(tipo)} SET nome = ${input.nome}, ${tipoSetor === undefined ? Prisma.empty : Prisma.sql`tipo = ${tipoSetor},`} descricao = ${input.descricao ?? null}, status = ${status}, data_atualizacao = CURRENT_TIMESTAMP(3) WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa}`,
     )
     return id
   }
   await tx.$executeRaw(
-    Prisma.sql`INSERT INTO ${tabela(tipo)} (id_empresa, nome, descricao, status) VALUES (${ctx.idEmpresa}, ${input.nome}, ${input.descricao ?? null}, ${status})`,
+    Prisma.sql`INSERT INTO ${tabela(tipo)} (id_empresa, nome, ${tipoSetor === undefined ? Prisma.empty : Prisma.sql`tipo,`} descricao, status) VALUES (${ctx.idEmpresa}, ${input.nome}, ${tipoSetor === undefined ? Prisma.empty : Prisma.sql`${tipoSetor},`} ${input.descricao ?? null}, ${status})`,
   )
   const [row] = await tx.$queryRaw<
     Array<{ id: bigint }>
@@ -118,9 +125,48 @@ export async function remover(
   tipo: Entidade,
   id: number,
 ) {
+  // Dados dependentes (sem alterar schema): permissões do setor saem junto com ele.
+  if (tipo === "setor")
+    await tx.$executeRaw`DELETE FROM permissoes_setor WHERE id_setor = ${id}`
   await tx.$executeRaw(
     Prisma.sql`DELETE FROM ${tabela(tipo)} WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa}`,
   )
+}
+export type TipoSetor = { id: number; nome: string }
+export function listarTipos(tx: Transaction, ctx: Contexto) {
+  return tx.$queryRaw<
+    TipoSetor[]
+  >`SELECT id, nome FROM tipos_setor WHERE id_empresa = ${ctx.idEmpresa} AND status = 'ATIVO' ORDER BY nome, id`
+}
+/** Devolve o nome canônico do tipo ativo da empresa, ou null se não existir. */
+export async function tipoAtivo(tx: Transaction, ctx: Contexto, nome: string) {
+  const [row] = await tx.$queryRaw<
+    Array<{ nome: string }>
+  >`SELECT nome FROM tipos_setor WHERE id_empresa = ${ctx.idEmpresa} AND nome = ${nome} AND status = 'ATIVO' LIMIT 1`
+  return row?.nome ?? null
+}
+export async function setorEmFluxoAtivo(tx: Transaction, id: number) {
+  const rows = await tx.$queryRaw<
+    Array<{ id: number }>
+  >`SELECT f.id FROM fluxo_producao_setor fs JOIN fluxos_producao f ON f.id = fs.id_fluxo WHERE fs.id_setor = ${id} AND f.status = 'ATIVO' LIMIT 1`
+  return rows.length > 0
+}
+export async function recursosSetor(tx: Transaction, id: number) {
+  const rows = await tx.$queryRaw<
+    Array<{ recurso: string }>
+  >`SELECT recurso FROM permissoes_setor WHERE id_setor = ${id} ORDER BY recurso`
+  return rows.map((r) => r.recurso)
+}
+export async function substituirRecursos(
+  tx: Transaction,
+  id: number,
+  recursos: string[],
+) {
+  await tx.$executeRaw`DELETE FROM permissoes_setor WHERE id_setor = ${id}`
+  if (recursos.length)
+    await tx.$executeRaw(
+      Prisma.sql`INSERT INTO permissoes_setor (id_setor, recurso) VALUES ${Prisma.join(recursos.map((r) => Prisma.sql`(${id}, ${r})`))}`,
+    )
 }
 export async function emUso(tx: Transaction, tipo: Entidade, id: number) {
   const rows =
@@ -236,7 +282,7 @@ export function produtosDoFluxo(
 export function auditarCadastro(
   tx: Transaction,
   ctx: Contexto,
-  tabela: "setores" | "fluxos_producao" | "produto_fluxo",
+  tabela: "setores" | "fluxos_producao" | "produto_fluxo" | "permissoes_setor",
   id: number,
   antes: unknown,
   depois: unknown,

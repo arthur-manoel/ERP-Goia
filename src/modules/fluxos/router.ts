@@ -1,10 +1,12 @@
 import "server-only"
 import type { z } from "zod"
+import { requireRole } from "@/lib/authorize"
 import { autorizar } from "../producao/producao.authorization"
 import { ProducaoError } from "../producao/producao.repository"
 import * as schemas from "./fluxos.schema"
 import * as service from "./fluxos.service"
 import type { Entidade } from "./fluxos.repository"
+import type { Edicao } from "./fluxos.schema"
 
 type RouteContext = { params: Promise<{ id: string }> }
 type Operacao =
@@ -106,7 +108,7 @@ export function handler(tipo: Entidade, operacao: Operacao) {
           validar(schemas.listarSchema, query),
         )
       } else {
-        const input =
+        const input: Edicao =
           tipo === "setor"
             ? validar(
                 operacao === "criar"
@@ -130,6 +132,9 @@ export function handler(tipo: Entidade, operacao: Operacao) {
           tipo,
           input,
           operacao === "editar" ? id : undefined,
+          {
+            ehAdmin: !(await requireRole(request, ["ADMINISTRACAO"])).error,
+          },
         )
       }
       return Response.json(result, {
