@@ -112,6 +112,7 @@ it("restringe compra e categoria financeira de despesa à mesma empresa", async 
   await collection.POST(await request("/api/contas_pagar", "POST", input))
   expect(db.compras.findFirst).toHaveBeenCalledWith({
     where: { id: 20, id_empresa: 10 },
+    include: { planos_pagamento_compra: { select: { id: true }, take: 1 } },
   })
   expect(db.categoria_financeira.findFirst).toHaveBeenCalledWith({
     where: {

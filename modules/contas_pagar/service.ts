@@ -82,6 +82,8 @@ async function validateRelations(
     throw new ValidationError(
       "Categoria financeira inexistente, inativa ou incompatível com despesa nesta empresa.",
     )
+  if (compra.planos_pagamento_compra?.length)
+    throw new ConflictError("A compra já possui plano financeiro confirmado.")
   if (compra.status === "CANCELADA")
     throw new ConflictError(
       "Compra cancelada não permite criar ou alterar obrigações financeiras.",
@@ -151,6 +153,15 @@ export async function listContasPagar(input: unknown, companies: number[]) {
     input,
   )
   assertCompany(filters.id_empresa, companies)
+  const plano =
+    filters.id_plano_pagamento === undefined
+      ? undefined
+      : await repository.findPlano(
+          filters.id_plano_pagamento,
+          filters.id_empresa === undefined ? companies : [filters.id_empresa],
+        )
+  if (plano === null)
+    throw new NotFoundError("Plano financeiro não encontrado.")
   const result = await repository.findAll(
     {
       ...filters,
@@ -160,6 +171,7 @@ export async function listContasPagar(input: unknown, companies: number[]) {
     companies,
   )
   return {
+    ...(plano ? { plano } : {}),
     rows: result.rows.map(toResponse),
     count: result.count,
     page,
@@ -232,6 +244,7 @@ async function update(
       const payments = await repository.countPayments(id, database)
       const paidExpenses = await repository.countPaidExpenses(id, database)
       const immutable =
+        current.id_plano_pagamento != null ||
         ["PAGO", "PARCIAL", "CANCELADO"].includes(current.situacao) ||
         payments > 0 ||
         paidExpenses > 0
@@ -320,6 +333,8 @@ export async function deleteContaPagar(
       const current = await repository.findForUpdate(id, companies, database)
       if (!current) throw new NotFoundError("Conta a pagar não encontrada.")
       await assertCanCancel(actor, [current.id_empresa], database)
+      if (current.id_plano_pagamento != null)
+        throw new ConflictError("Cancele as parcelas do plano pela compra.")
       if (
         ["PAGO", "PARCIAL"].includes(current.situacao) ||
         (await repository.countPayments(id, database)) > 0 ||

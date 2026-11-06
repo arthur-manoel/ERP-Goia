@@ -116,6 +116,8 @@ export const listContasPagarSchema = z
     limit: contaPagarIdSchema.pipe(z.number().max(100)).default(20),
     id_empresa: contaPagarIdSchema.optional(),
     id_compra: contaPagarIdSchema.optional(),
+    id_fornecedor: contaPagarIdSchema.optional(),
+    id_plano_pagamento: contaPagarIdSchema.optional(),
     id_categoria: contaPagarIdSchema.optional(),
     situacao: contaPagarSituacaoSchema.optional(),
     data_vencimento: date.optional(),
