@@ -17,7 +17,23 @@ export async function allowedCompanies(
 ) {
   // Falhar fechado também em chamadas JS/legadas que escapem da tipagem.
   if (!recursoValido(recurso) || !acaoValida(action)) return []
-  const authorization = {
+  const rows = await database.usuario_empresa.findMany({
+    where: vinculoCatalogo(id, recurso, [action]),
+    select: { id_empresa: true },
+  })
+  return rows.map((row) => row.id_empresa)
+}
+
+export function vinculoCatalogo(
+  id: number,
+  recurso: RecursoPermissao,
+  actions: Action[],
+): Prisma.usuario_empresaWhereInput {
+  return {
+    id_usuario: id,
+    status: "ATIVO",
+    usuarios: { status: "ATIVO" },
+    empresas: { status: "ATIVA" },
     OR: [
       // Administração global ainda exige vínculo ativo com a empresa.
       { usuarios: { nivel_acesso: "ADMIN" as const } },
@@ -26,20 +42,12 @@ export async function allowedCompanies(
       // Demais usuários só recebem a operação explicitamente concedida.
       {
         permissoes_usuario: {
-          some: { recurso, [action]: true },
+          some: {
+            recurso,
+            ...Object.fromEntries(actions.map((action) => [action, true])),
+          },
         },
       },
     ],
   }
-  const rows = await database.usuario_empresa.findMany({
-    where: {
-      id_usuario: id,
-      status: "ATIVO",
-      usuarios: { status: "ATIVO" },
-      empresas: { status: "ATIVA" },
-      ...authorization,
-    },
-    select: { id_empresa: true },
-  })
-  return rows.map((row) => row.id_empresa)
 }

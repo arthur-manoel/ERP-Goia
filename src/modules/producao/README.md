@@ -56,6 +56,19 @@ Operações de ciclo de vida não necessitam corpo. O status não é um campo ed
 
 ## Cadastro e edição
 
+Para liberar ou iniciar, a OP deve ter local ativo para entrada, setor de
+destino e produtos habilitados para produção e estoque. Itens com grade devem
+identificar uma variação ativa da empresa. Produtos sem grade permanecem sem
+variação.
+
+`POST /api/ordem_producao/{id}/regularizar` preenche dados ausentes da futura
+entrada em uma OP aberta. Envie `motivo` e os campos a corrigir `idLocal` (ausente, inativo ou incompatível),
+`idSetor` (quando não houver fluxo nem setor) ou `variacoes` com
+`{ idItem, idVariacao }`. A operação exige edição de produção e estoque.
+Ela preserva dimensões de grade já registradas e recusa ordens que já tenham
+entrada física. A trilha de auditoria registra valores anteriores, novos,
+autor, data e motivo.
+
 Exemplo de POST:
 
 ```json

@@ -1150,6 +1150,86 @@ test("Cancelamentos HTTP e MariaDB: etapas, efeitos, permissões, concorrência 
             where: { notificacao_evento: { id_cancelamento: c.id } },
           })) > 0,
         )
+        const destinatario = { id_empresa: empresa, id_usuario: a.usuarios[1] }
+        async function notificar(destino) {
+          const evento = await prisma.notificacao_evento.create({
+            data: {
+              id_empresa: empresa,
+              id_cancelamento: c.id,
+              destino,
+              chave: randomUUID(),
+              tipo: "FIXTURE",
+              titulo: destino,
+              mensagem: "Notificação sintética da paginação",
+              processado_em: new Date(),
+            },
+          })
+          return prisma.notificacao_interna.create({
+            data: { ...destinatario, id_evento: evento.id },
+          })
+        }
+        const antiga = await notificar("TODOS")
+        const recente = await notificar("TODOS")
+        const restrita = await notificar("GERENCIA")
+        const listar = (pagina) =>
+          a.chamar(
+            `/api/notificacoes?pagina=${pagina}&limite=1`,
+            "GET",
+            undefined,
+            { usuario: 1 },
+          )
+        const antes = await listar(1)
+        assert.equal(antes.status, 200)
+        assert.equal(antes.body.data.itens[0].id, restrita.id)
+        await prisma.cargos.update({
+          where: { id: cargo },
+          data: { aprova_cancelamento: false },
+        })
+        try {
+          const primeira = await listar(1)
+          const segunda = await listar(2)
+          assert.equal(primeira.status, 200)
+          assert.equal(segunda.status, 200)
+          assert.equal(primeira.body.data.itens[0].id, recente.id)
+          assert.equal(segunda.body.data.itens[0].id, antiga.id)
+          const totalVisivel = await prisma.notificacao_interna.count({
+            where: {
+              ...destinatario,
+              notificacao_evento: {
+                OR: [
+                  { destino: "TODOS" },
+                  {
+                    destino: "SOLICITANTE",
+                    pedido_cancelamento: {
+                      id_solicitante: destinatario.id_usuario,
+                    },
+                  },
+                ],
+              },
+            },
+          })
+          assert.equal(primeira.body.data.total, totalVisivel)
+          const marcar = async (id) =>
+            a.post(`/api/notificacoes/${id}/ler`, {}, { usuario: 1 })
+          assert.equal((await marcar(restrita.id)).atualizadas, 0)
+          assert.equal((await marcar(recente.id)).atualizadas, 1)
+          const lida = await listar(1)
+          assert.ok(lida.body.data.itens[0].lidaEm)
+          assert.equal(lida.body.data.total, totalVisivel)
+          const outraEmpresa = await a.chamar(
+            "/api/notificacoes?pagina=1&limite=1",
+            "GET",
+            undefined,
+            { usuario: 5, empresa: a.empresas[1] },
+          )
+          assert.equal(outraEmpresa.status, 200)
+          assert.equal(outraEmpresa.body.data.total, 0)
+        } finally {
+          await prisma.cargos.update({
+            where: { id: cargo },
+            data: { aprova_cancelamento: true },
+          })
+        }
       },
     )
   } finally {

@@ -92,7 +92,7 @@ for (const [name, collection, item, resource] of [
               id: 1,
               produto_empresa: {
                 some: { id_empresa: { in: [10] } },
-                every: { id_empresa: { in: [10] } },
+                every: expect.objectContaining({ id_empresa: { in: [10] } }),
               },
             }
           : { id: 1, id_empresa: { in: [10] } }

@@ -16,6 +16,7 @@ function setup(overrides = {}) {
     id_empresa: 10,
     id_usuario: 5,
     id_setor: null,
+    id_local_estoque: 4,
     status: "PLANEJADA",
     quantidade_planejada: new Decimal(2),
     data_inicio: null,
@@ -41,6 +42,16 @@ function setup(overrides = {}) {
     ],
   }
   const tx = {
+    locais_estoque: {
+      async findFirst() {
+        return { id: 4 }
+      },
+    },
+    estoque: {
+      async findFirst() {
+        return null
+      },
+    },
     usuario_empresa: {
       async findFirst() {
         return { id: 1 }
@@ -197,6 +208,7 @@ function setup(overrides = {}) {
       // Aqui validamos que o orquestrador chama o mesmo colaborador transacional.
       if (id === "@/modules/reservas/fluxo.service")
         return {
+          async variacaoEntradaProducao() {},
           async entradaConclusao(database, contexto, idOP) {
             assert.equal(database, tx)
             calls.push(["entrada-producao", contexto, idOP])
@@ -693,6 +705,7 @@ function setupEtapas() {
     return { count: 1 }
   }
   state.ordem.status = "LIBERADA"
+  state.ordem.ordem_producao_fluxo_setor = etapas
   return { ...state, etapas, snapshot }
 }
 

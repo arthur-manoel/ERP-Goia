@@ -1,6 +1,9 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
-import { entradaConclusao } from "@/modules/reservas/fluxo.service"
+import {
+  entradaConclusao,
+  variacaoEntradaProducao,
+} from "@/modules/reservas/fluxo.service"
 import * as repo from "./ordem.repository"
 import { totaisDaOrdem } from "../apontamentos/apontamentos.repository"
 import {
@@ -49,6 +52,68 @@ export async function relationships(
       )
   }
 }
+export function posicaoIncompativel(
+  tx: Transaction,
+  ctx: Contexto,
+  local: number,
+  setor: number,
+  produtos: number[],
+) {
+  return tx.estoque.findFirst({
+    where: {
+      id_empresa: ctx.idEmpresa,
+      id_produto: { in: produtos },
+      OR: [
+        { id_local_estoque: local, id_setor: { not: setor } },
+        { id_setor: setor, id_local_estoque: { not: local } },
+      ],
+    },
+    select: { id: true },
+  })
+}
+
+export async function validarDestinoProducao(
+  tx: Transaction,
+  ctx: Contexto,
+  ordem: Pick<
+    Ordem,
+    | "id_local_estoque"
+    | "id_setor"
+    | "ordem_producao_item"
+    | "ordem_producao_fluxo_setor"
+  >,
+) {
+  const local = ordem.id_local_estoque
+  const setor =
+    ordem.ordem_producao_fluxo_setor.at(-1)?.id_setor ?? ordem.id_setor
+  if (local === null || !(await repo.local(ctx, local, tx)))
+    return fail(
+      "Informe um local de entrada ativo na empresa antes de liberar ou iniciar a produção.",
+    )
+  if (setor === null || !(await repo.sector(ctx, setor, tx)))
+    return fail("Informe um setor de destino ativo para a produção.")
+  const produtos = [
+    ...new Set(ordem.ordem_producao_item.map((item) => item.id_produto)),
+  ]
+  if ((await repo.activeProducts(ctx, produtos, true, tx)) !== produtos.length)
+    fail(
+      "Os produtos da OP devem estar ativos e habilitados para produção e estoque nesta empresa.",
+    )
+  const incompatibilidade = await posicaoIncompativel(
+    tx,
+    ctx,
+    local,
+    setor,
+    produtos,
+  )
+  if (incompatibilidade)
+    fail(
+      "A posição de estoque de um produto da OP é incompatível com o local e o setor de destino.",
+    )
+  for (const item of ordem.ordem_producao_item)
+    await variacaoEntradaProducao(tx, ctx, item)
+}
+
 export async function ready(ctx: Contexto, id: number, tx: Transaction) {
   const row = await buscarOrdem(tx, ctx, id)
   await relationships(ctx, row, tx)
@@ -56,9 +121,7 @@ export async function ready(ctx: Contexto, id: number, tx: Transaction) {
     fail("Informe quantidade positiva e itens antes de liberar ou iniciar.")
   if (row.ordem_producao_item.length > 200)
     fail("A ordem ultrapassa o limite operacional de 200 itens.")
-  const products = [
-    ...new Set(row.ordem_producao_item.map((item) => item.id_produto)),
-  ]
+  await validarDestinoProducao(tx, ctx, row)
   const materials = [
     ...new Set(
       row.ordem_producao_item.flatMap((item) =>
@@ -69,7 +132,6 @@ export async function ready(ctx: Contexto, id: number, tx: Transaction) {
     ),
   ]
   if (
-    (await repo.activeProducts(ctx, products, true, tx)) !== products.length ||
     (await repo.activeProducts(ctx, materials, false, tx)) !== materials.length
   )
     fail("Produtos ou componentes inativos/não autorizados nesta empresa.")

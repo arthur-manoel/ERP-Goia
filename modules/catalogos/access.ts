@@ -4,7 +4,7 @@ import { HttpError } from "../../src/lib/api/errors"
 import { handleRequest, readJson } from "../../src/lib/api/http"
 import { enforceRateLimit, type RateLimit } from "../../src/lib/api/rate-limit"
 import { allowedCompanies, type Action } from "./repository"
-export type CatalogActor = { idUsuario: number }
+export type CatalogActor = { idUsuario: number; empresasAutorizadas?: number[] }
 export function assertCompany(id: number | undefined, companies: number[]) {
   if (id !== undefined && !companies.includes(id))
     throw new HttpError(403, "Sem permissão para esta empresa.")
@@ -29,7 +29,8 @@ export function catalogRequest<T>(
     if (!Number.isSafeInteger(id) || id <= 0 || id > 2_147_483_647)
       throw new HttpError(401, "Não autenticado.")
     if (rateLimit) enforceRateLimit(request, rateLimit, String(id))
-    let companies = await allowedCompanies(id, resource, action)
+    let empresasAutorizadas = await allowedCompanies(id, resource, action)
+    let companies = empresasAutorizadas
     if (!companies.length)
       throw new HttpError(
         403,
@@ -60,11 +61,14 @@ export function catalogRequest<T>(
         ["INATIVO", "INATIVA"].includes(String(body.status))
       ) {
         const exclusao = await allowedCompanies(id, resource, "pode_excluir")
+        empresasAutorizadas = empresasAutorizadas.filter((company) =>
+          exclusao.includes(company),
+        )
         companies = companies.filter((company) => exclusao.includes(company))
         if (!companies.length)
           throw new HttpError(403, "Sem permissão para inativar nesta empresa.")
       }
     }
-    return operation(companies, { idUsuario: id })
+    return operation(companies, { idUsuario: id, empresasAutorizadas })
   }, status)
 }

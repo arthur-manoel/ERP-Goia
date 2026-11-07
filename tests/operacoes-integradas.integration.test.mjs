@@ -11,7 +11,14 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     setores = []
   let op
   async function post(rota, body = {}, chave = randomUUID(), status = 201) {
-    const r = await a.chamar(rota, "POST", body, { chave })
+    let r = await a.chamar(rota, "POST", body, { chave })
+    if (r.status === 429 && status !== 429) {
+      console.log(
+        "Fixture aguardando a renovação da janela antes de repetir a mesma operação.",
+      )
+      await new Promise((resolve) => setTimeout(resolve, 60100))
+      r = await a.chamar(rota, "POST", body, { chave })
+    }
     assert.equal(r.status, status, `${rota}: ${JSON.stringify(r.body)}`)
     return r.body.data ?? r.body
   }
@@ -473,6 +480,17 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     const entregueUmaVez = await snapshot()
     await post(`/api/pedidos/${pedido.id}/entregas`, parcial, chaveEntrega, 200)
     assert.equal(await snapshot(), entregueUmaVez)
+    const chaveRecusada = randomUUID()
+    for (let tentativa = 0; tentativa < 2; tentativa++) {
+      const recusa = await post(
+        `/api/pedidos/${pedido.id}/entregas`,
+        parcial,
+        chaveRecusada,
+        409,
+      )
+      assert.equal(recusa.code, "ENTREGA_RECUSADA")
+      assert.equal(await snapshot(), entregueUmaVez)
+    }
     const completa = await post(`/api/pedidos/${pedido.id}/entregas`, {
       nomeRecebedor: "Cliente da fixture",
       itens: [
@@ -1103,13 +1121,44 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         const ordem = await post("/api/ordem_producao", {
           numero: `Perda-total-${randomUUID()}`,
           quantidade_planejada: "1.000",
-          id_local_estoque: locais[1].id,
         })
         const item = await post(`/api/ordem_producao/${ordem.id}/itens`, {
           id_produto: produto,
-          id_variacao: m.id,
           quantidade: "1.000",
         })
+        const rota = `/api/ordem_producao/${ordem.id}`
+        await post(`${rota}/liberar`, {}, randomUUID(), 409)
+        const localIncompativel = await a.chamar(rota, "PATCH", {
+          id_local_estoque: locais[2].id,
+        })
+        assert.equal(localIncompativel.status, 200)
+        const incompatibilidade = await post(
+          `${rota}/liberar`,
+          {},
+          randomUUID(),
+          409,
+        )
+        assert.match(incompatibilidade.error, /incompatível/)
+        const localValido = await a.chamar(rota, "PATCH", {
+          id_local_estoque: locais[1].id,
+        })
+        assert.equal(localValido.status, 200)
+        const gradeAusente = await post(
+          `${rota}/liberar`,
+          {},
+          randomUUID(),
+          409,
+        )
+        assert.match(gradeAusente.error, /variação válida/)
+        await post(
+          `${rota}/regularizar`,
+          {
+            variacoes: [{ idItem: item.id, idVariacao: m.id }],
+            motivo: "Identificação da grade planejada",
+          },
+          randomUUID(),
+          200,
+        )
         await post(
           `/api/ordem_producao/${ordem.id}/liberar`,
           {},
@@ -1170,6 +1219,57 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           quantidade: "2.000",
           concluirConsumo: true,
         })
+        // Simula uma OP em curso legada, com fatos preservados e destino ausente.
+        await prisma.ordem_producao.update({
+          where: { id: ordem.id },
+          data: { id_local_estoque: null },
+        })
+        const destino = {
+          idLocal: locais[1].id,
+          motivo: "Completar destino da OP legada",
+        }
+        const negada = await a.chamar(`${rota}/regularizar`, "POST", destino, {
+          usuario: 1,
+        })
+        assert.equal(negada.status, 403)
+        const fatos = async () => {
+          const {
+            saldos,
+            grade,
+            reservas,
+            movimentos,
+            kardex,
+            etapas,
+            consumos,
+          } = JSON.parse(await snapshot())
+          return {
+            saldos,
+            grade,
+            reservas,
+            movimentos,
+            kardex,
+            etapas,
+            consumos,
+          }
+        }
+        const saldoAntes = await fatos()
+        await post(`${rota}/regularizar`, destino, randomUUID(), 200)
+        assert.deepEqual(await fatos(), saldoAntes)
+        assert.deepEqual(
+          (await a.chamar(operacao)).body.data.itensComPerdaIntegral,
+          [item.id],
+        )
+        const trilha = await prisma.auditoria.findFirstOrThrow({
+          where: {
+            id_empresa: empresa,
+            tabela: "ordem_producao",
+            id_registro: ordem.id,
+          },
+          orderBy: { id: "desc" },
+        })
+        assert.equal(trilha.id_usuario, a.usuarios[0])
+        assert.equal(JSON.parse(trilha.dados_anteriores).local, null)
+        assert.equal(JSON.parse(trilha.dados_novos).motivo, destino.motivo)
         for (const [i, etapa] of etapas.entries()) {
           if (i)
             await post(
@@ -1189,6 +1289,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         assert.equal(consulta.status, 200)
         assert.equal(consulta.body.ordem.status, "CONCLUIDA")
         assert.equal(consulta.body.baixaEstoque, "efetivada")
+        await post(`${rota}/concluir`, {}, randomUUID(), 409)
         const auditoria = await prisma.auditoria.findFirstOrThrow({
           where: {
             id_empresa: empresa,

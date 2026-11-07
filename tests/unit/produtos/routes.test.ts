@@ -107,3 +107,83 @@ it("permite manter unidade e trocar unidade de produto sem histórico", async ()
   ).toBe(200)
   expect(db.produtos.findUnique).not.toHaveBeenCalled()
 })
+
+it.each([10, 20])(
+  "confere todos os vínculos na escrita global com empresa ativa %i",
+  async (empresa) => {
+    db.usuario_empresa.findMany.mockResolvedValue([
+      { id_empresa: 10 },
+      { id_empresa: 20 },
+    ])
+    db.produtos.update.mockResolvedValue({ id: 1 })
+    const req = await request("/api/produtos/1", "PATCH", {
+      nome: "Compartilhado",
+    })
+    req.headers.set("X-Empresa-Id", String(empresa))
+    expect((await item.PATCH(req, context())).status).toBe(200)
+    expect(db.produtos.update).toHaveBeenCalledWith({
+      where: {
+        id: 1,
+        produto_empresa: {
+          some: { id_empresa: { in: [empresa] } },
+          every: expect.objectContaining({
+            id_empresa: { in: [10, 20] },
+            empresas: {
+              usuario_empresa: {
+                some: expect.objectContaining({
+                  OR: expect.arrayContaining([
+                    {
+                      permissoes_usuario: {
+                        some: { recurso: "PRODUTOS", pode_editar: true },
+                      },
+                    },
+                  ]),
+                }),
+              },
+            },
+          }),
+        },
+      },
+      data: { nome: "Compartilhado" },
+    })
+  },
+)
+
+it("limita a inativação às empresas com edição e exclusão", async () => {
+  db.usuario_empresa.findMany
+    .mockResolvedValueOnce([{ id_empresa: 10 }, { id_empresa: 20 }])
+    .mockResolvedValueOnce([{ id_empresa: 10 }])
+  db.produtos.update.mockResolvedValue({ id: 1 })
+  const req = await request("/api/produtos/1", "PATCH", { status: "INATIVO" })
+  req.headers.set("X-Empresa-Id", "10")
+  expect((await item.PATCH(req, context())).status).toBe(200)
+  expect(db.produtos.update).toHaveBeenCalledWith({
+    where: {
+      id: 1,
+      produto_empresa: {
+        some: { id_empresa: { in: [10] } },
+        every: expect.objectContaining({
+          id_empresa: { in: [10] },
+          empresas: {
+            usuario_empresa: {
+              some: expect.objectContaining({
+                OR: expect.arrayContaining([
+                  {
+                    permissoes_usuario: {
+                      some: {
+                        recurso: "PRODUTOS",
+                        pode_editar: true,
+                        pode_excluir: true,
+                      },
+                    },
+                  },
+                ]),
+              }),
+            },
+          },
+        }),
+      },
+    },
+    data: { status: "INATIVO" },
+  })
+})

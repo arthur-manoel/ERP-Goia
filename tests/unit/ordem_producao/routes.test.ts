@@ -65,6 +65,8 @@ let snapshot: boolean
 let item: {
   id: number
   id_produto: number
+  id_cor: number | null
+  id_tamanho: number | null
   quantidade: Prisma.Decimal
   quantidade_produzida: Prisma.Decimal
   ordem_producao_consumo_planejado: object[]
@@ -110,6 +112,8 @@ beforeEach(() => {
   item = {
     id: 8,
     id_produto: 20,
+    id_cor: null,
+    id_tamanho: null,
     quantidade: decimal(10),
     quantidade_produzida: decimal(0),
     ordem_producao_consumo_planejado: [{ id_materia_prima: 22 }],
@@ -415,6 +419,9 @@ it("não libera ordem vazia e impede alterações fora do planejamento", async (
 })
 it("início, pausa e retomada preservam a data original e impedem duplicação", async () => {
   production()
+  row.id_local_estoque = 9
+  db.locais_estoque.findFirst.mockResolvedValue({ id: 9 })
+  db.produto_variacoes.findMany.mockResolvedValue([])
   row.status = "LIBERADA"
   row.data_inicio = null
   stages[0].status = "PENDENTE"
@@ -425,6 +432,20 @@ it("início, pausa e retomada preservam a data original e impedem duplicação",
   expect((await retomar(await req("POST"), context())).status).toBe(200)
   expect(row.data_inicio).toEqual(date)
 })
+it.each(["liberar", "iniciar"] as const)(
+  "impede %s com OP sem local de entrada",
+  async (acao) => {
+    production()
+    row.status = acao === "liberar" ? "PLANEJADA" : "LIBERADA"
+    row.id_local_estoque = null
+    const resposta = await (acao === "liberar" ? liberar : iniciar)(
+      await req("POST"),
+      context(),
+    )
+    expect(resposta.status).toBe(409)
+    expect((await resposta.json()).error).toContain("local de entrada")
+  },
+)
 it.each([
   "reserva_estoque",
   "consumo_producao",

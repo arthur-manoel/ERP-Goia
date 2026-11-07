@@ -15,6 +15,7 @@ import { enforceRateLimit } from "@/lib/api/rate-limit"
 import { lerJson } from "@/modules/movimentacoes-estoque/router"
 import { chaveRecebimento } from "@/modules/recebimentos/recebimentos.schema"
 import { perdasIntegraisComprovadas } from "@/modules/producao/ordem.validation"
+import { variacaoAtivaNaEmpresa } from "@/modules/estoque/estoque.grade"
 import {
   autorizar,
   conferir,
@@ -30,6 +31,10 @@ import {
   enviarTransferencia,
   receberTransferencia,
 } from "./fluxo.service"
+
+class EntregaRecusada extends HttpError {
+  readonly code = "ENTREGA_RECUSADA"
+}
 
 type Operacao =
   | "fechamento"
@@ -195,7 +200,40 @@ export async function operacoesHandler(
               include: {
                 ordem_producao_item: {
                   include: {
-                    produtos: { select: { nome: true, unidade: true } },
+                    produtos: {
+                      select: {
+                        nome: true,
+                        unidade: true,
+                        estoque: {
+                          where: { id_empresa: ctx.idEmpresa },
+                          select: { id_local_estoque: true, id_setor: true },
+                        },
+                        produto_variacoes: {
+                          where: { id_empresa: ctx.idEmpresa },
+                          orderBy: { id: "asc" },
+                          select: {
+                            id: true,
+                            id_cor: true,
+                            id_tamanho: true,
+                            status: true,
+                            cores: {
+                              select: {
+                                nome: true,
+                                status: true,
+                                id_empresa: true,
+                              },
+                            },
+                            tamanhos: {
+                              select: {
+                                nome: true,
+                                status: true,
+                                id_empresa: true,
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
                   },
                 },
                 ordem_producao_consumo_planejado: {
@@ -210,7 +248,29 @@ export async function operacoesHandler(
             })
             if (!ordem) throw new NotFoundError("OP não encontrada.")
             const perdas = await perdasIntegraisComprovadas(tx, ordem)
-            return textoJson({ ...ordem, itensComPerdaIntegral: [...perdas] })
+            return textoJson({
+              ...ordem,
+              ordem_producao_item: ordem.ordem_producao_item.map((item) => ({
+                ...item,
+                produtos: {
+                  ...item.produtos,
+                  produto_variacoes: item.produtos.produto_variacoes.map(
+                    (v) => ({
+                      id: v.id,
+                      id_cor: v.id_cor,
+                      id_tamanho: v.id_tamanho,
+                      status: v.status,
+                      elegivel:
+                        v.status === "ATIVO" &&
+                        variacaoAtivaNaEmpresa(v, ctx.idEmpresa),
+                      cores: v.cores && { nome: v.cores.nome },
+                      tamanhos: v.tamanhos && { nome: v.tamanhos.nome },
+                    }),
+                  ),
+                },
+              })),
+              itensComPerdaIntegral: [...perdas],
+            })
           }
           if (op === "detalhe") {
             const reserva = await tx.reserva_estoque.findFirst({
@@ -444,14 +504,26 @@ export async function operacoesHandler(
             consultarPendencias: true,
           }
         }
-        if (op === "entregar")
-          return confirmarEntrega(
-            tx,
-            ctx,
-            id!,
-            validate(schemas.entregaSchema, body),
-            chave,
-          )
+        if (op === "entregar") {
+          try {
+            return await confirmarEntrega(
+              tx,
+              ctx,
+              id!,
+              validate(schemas.entregaSchema, body),
+              chave,
+            )
+          } catch (erro) {
+            // O callback só roda após a consulta da chave na transação.
+            if (
+              erro instanceof HttpError &&
+              [400, 404, 409].includes(erro.status) &&
+              !(erro instanceof ConflitoTransitorio)
+            )
+              throw new EntregaRecusada(erro.status, erro.message)
+            throw erro
+          }
+        }
         if (op === "consumir")
           return consumirMaterial(
             tx,
@@ -511,7 +583,10 @@ export async function operacoesHandler(
     return Response.json(
       {
         success: false,
-        ...(erro instanceof ConflitoTransitorio ? { code: erro.code } : {}),
+        ...(erro instanceof ConflitoTransitorio ||
+        erro instanceof EntregaRecusada
+          ? { code: erro.code }
+          : {}),
         error:
           erro instanceof HttpError
             ? erro.message

@@ -5,12 +5,17 @@ const recusasDefinitivas = [400, 403, 404, 409, 413, 415, 422]
 export async function lerRespostaOperacao(
   resposta: Response,
   descartarTentativa: () => void,
+  exigirRecusaConfirmada = false,
 ) {
   if (resposta.ok) return resposta.json()
   const dados = await resposta.json().catch(() => null)
   if (
     recusasDefinitivas.includes(resposta.status) &&
-    !(resposta.status === 409 && dados?.code === "CONFLITO_TRANSITORIO")
+    (!exigirRecusaConfirmada || dados?.code === "ENTREGA_RECUSADA") &&
+    !(
+      resposta.status === 409 &&
+      (!dados || dados.code === "CONFLITO_TRANSITORIO")
+    )
   )
     descartarTentativa()
   return {

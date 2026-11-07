@@ -267,18 +267,8 @@ export async function cancelamentosHandler(
                 input as z.infer<typeof schemas.reembolsoSchema>,
               ),
             )
-          case "lerNotificacao": {
-            const n = await tx.notificacao_interna.updateMany({
-              where: {
-                id,
-                id_empresa: ctx!.idEmpresa,
-                id_usuario: ctx!.idUsuario,
-                lida_em: null,
-              },
-              data: { lida_em: new Date() },
-            })
-            return { atualizadas: n.count }
-          }
+          case "lerNotificacao":
+            return notificacoes.marcarLida(tx, ctx!, id!)
           case "processarNotificacoes":
             return { solicitado: true }
           case "cargo": {

@@ -230,7 +230,7 @@ function RecebimentosEmpresa({ identidade }: { identidade: string }) {
                   <TableHead>Título / venda</TableHead>
                   <TableHead>Parcela</TableHead>
                   <TableHead>Valor original</TableHead>
-                  <TableHead>Valor devido</TableHead>
+                  <TableHead>Valor antes dos créditos</TableHead>
                   <TableHead>Saldo</TableHead>
                   <TableHead>Vencimento</TableHead>
                   <TableHead>Situação</TableHead>

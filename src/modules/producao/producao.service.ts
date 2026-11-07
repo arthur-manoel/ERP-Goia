@@ -340,7 +340,7 @@ export async function avancarOrdemNaTransacao(
   const fluxo = ordem.ordem_producao_fluxo_setor
   if (input.statusDestino === "EM_PRODUCAO" && ordem.status !== "PAUSADA") {
     if (ordem.status === "LIBERADA") {
-      setor = fluxo[0]?.id_setor ?? null
+      setor = fluxo[0]?.id_setor ?? setor
     } else {
       const index = fluxo.findIndex((item) => item.id_setor === setor)
       if (index < 0 || index === fluxo.length - 1)

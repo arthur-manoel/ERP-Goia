@@ -190,7 +190,9 @@ export function activeProducts(
       status: "ATIVO",
       produtos: {
         status: "ATIVO",
-        ...(production ? { permite_producao: true } : {}),
+        ...(production
+          ? { permite_producao: true, controla_estoque: true }
+          : {}),
       },
     },
   })
@@ -485,7 +487,12 @@ export function updateItem(
   ctx: Contexto,
   id: number,
   itemId: number,
-  data: { quantidade?: string; tamanho?: string },
+  data: {
+    quantidade?: string
+    tamanho?: string
+    id_cor?: number | null
+    id_tamanho?: number | null
+  },
   tx: Transaction,
 ) {
   return tx.ordem_producao_item.updateMany({

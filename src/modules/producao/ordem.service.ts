@@ -1,5 +1,6 @@
 import "server-only"
 import { liberarReservasOP } from "@/modules/reservas/reservas.service"
+import { conferir } from "@/modules/reservas/operacoes"
 import { Prisma } from "@/generated/prisma/client"
 import type { z } from "zod"
 import * as repo from "./ordem.repository"
@@ -21,6 +22,8 @@ import {
   relationships,
   ready,
   validarApontamentoLegado,
+  validarDestinoProducao,
+  posicaoIncompativel,
 } from "./ordem.validation"
 import {
   auditar,
@@ -45,6 +48,7 @@ import type {
   ordemItemSchema,
   apontarSchema,
   patchItemSchema,
+  regularizarOrdemSchema,
 } from "./ordem.schema"
 
 const conflict = (message: string): never => {
@@ -180,6 +184,158 @@ export function update(
   })
 }
 export const patch = update
+export function regularizar(
+  ctx: Contexto,
+  id: number,
+  input: z.output<typeof regularizarOrdemSchema>,
+) {
+  return repo.write(ctx, async (tx) => {
+    await conferir(tx, ctx, [
+      ["ORDENS_PRODUCAO", "editar"],
+      ["ESTOQUE", "editar"],
+    ])
+    await required(ctx, id, tx)
+    const antes = await buscarOrdem(tx, ctx, id)
+    if (["CONCLUIDA", "CANCELADA"].includes(antes.status))
+      conflict(
+        "Ordens encerradas não podem ser regularizadas por esta operação.",
+      )
+    if (
+      await tx.movimentacao_estoque.findFirst({
+        where: {
+          id_empresa: ctx.idEmpresa,
+          origem_id: id,
+          tipo: "ENTRADA_PRODUCAO",
+          origem_tipo: { in: ["ORDEM_PRODUCAO", "PRODUCAO"] },
+        },
+        select: { id: true },
+      })
+    )
+      conflict(
+        "Já existe entrada de produção. A regularização não pode alterar esse histórico.",
+      )
+    const localAnterior = antes.id_local_estoque
+    const setorFinal =
+      antes.ordem_producao_fluxo_setor.at(-1)?.id_setor ?? antes.id_setor
+    const setorDestino = setorFinal ?? input.idSetor
+    if (
+      input.idLocal &&
+      localAnterior !== null &&
+      (input.idLocal === localAnterior ||
+        ((await repo.local(ctx, localAnterior, tx)) &&
+          (setorDestino === undefined ||
+            !(await posicaoIncompativel(
+              tx,
+              ctx,
+              localAnterior,
+              setorDestino,
+              antes.ordem_producao_item.map((i) => i.id_produto),
+            )))))
+    )
+      conflict(
+        "A regularização só altera um local ausente, inativo ou incompatível.",
+      )
+    if (
+      input.idSetor &&
+      (antes.id_setor !== null || antes.ordem_producao_fluxo_setor.length)
+    )
+      conflict("O setor já está definido na ordem ou no fluxo.")
+
+    const dados = { id_local_estoque: input.idLocal, id_setor: input.idSetor }
+    if (input.idLocal || input.idSetor) await repo.update(ctx, id, dados, tx)
+    for (const selecao of input.variacoes) {
+      const item = antes.ordem_producao_item.find(
+        (i) => i.id === selecao.idItem,
+      )
+      if (!item)
+        throw new ProducaoError(404, "Item não encontrado nesta ordem.")
+      const variante = await tx.produto_variacoes.findFirst({
+        where: {
+          id: selecao.idVariacao,
+          id_empresa: ctx.idEmpresa,
+          id_produto: item.id_produto,
+          status: "ATIVO",
+        },
+        select: {
+          id_cor: true,
+          id_tamanho: true,
+          tamanhos: { select: { nome: true } },
+        },
+      })
+      if (!variante)
+        throw new ProducaoError(
+          400,
+          "Variação inválida para este produto e empresa.",
+        )
+      const tamanhoRegistrado = item.tamanho.trim().toLocaleLowerCase("pt-BR")
+      if (
+        item.id_tamanho === null &&
+        tamanhoRegistrado &&
+        !["unico", "único"].includes(tamanhoRegistrado) &&
+        variante.tamanhos?.nome.trim().toLocaleLowerCase("pt-BR") !==
+          tamanhoRegistrado
+      )
+        conflict(
+          "A variação precisa preservar o tamanho já registrado na ordem.",
+        )
+      if (item.id_pedido_cliente_item !== null) {
+        const itemPedido = await tx.pedido_cliente_item.findFirst({
+          where: {
+            id: item.id_pedido_cliente_item,
+            id_pedido_cliente: antes.id_pedido_cliente ?? undefined,
+            id_produto: item.id_produto,
+            pedido_cliente: { id_empresa: ctx.idEmpresa },
+          },
+          select: { id_variacao: true },
+        })
+        if (
+          !itemPedido ||
+          (itemPedido.id_variacao !== null &&
+            itemPedido.id_variacao !== selecao.idVariacao)
+        )
+          conflict(
+            "A variação precisa preservar a grade do item de pedido vinculado.",
+          )
+      }
+      if (
+        (item.id_cor !== null && item.id_cor !== variante.id_cor) ||
+        (item.id_tamanho !== null && item.id_tamanho !== variante.id_tamanho) ||
+        (item.id_cor === variante.id_cor &&
+          item.id_tamanho === variante.id_tamanho)
+      )
+        conflict(
+          "A variação deve preencher os dados ausentes e preservar a grade já registrada.",
+        )
+      await repo.updateItem(
+        ctx,
+        id,
+        item.id,
+        {
+          id_cor: variante.id_cor,
+          id_tamanho: variante.id_tamanho,
+        },
+        tx,
+      )
+    }
+    const depois = await buscarOrdem(tx, ctx, id)
+    await validarDestinoProducao(tx, ctx, depois)
+    const destino = (ordem: typeof antes) => ({
+      local: ordem.id_local_estoque,
+      setor: ordem.id_setor,
+      variacoes: ordem.ordem_producao_item.map(
+        ({ id, id_cor, id_tamanho }) => ({ id, id_cor, id_tamanho }),
+      ),
+    })
+    const auditoria = {
+      id,
+      ...destino(depois),
+      evento: "REGULARIZACAO_DESTINO",
+      motivo: input.motivo,
+    }
+    await auditar(tx, ctx, destino(antes), auditoria)
+    return depois
+  })
+}
 export function cancel(ctx: Contexto, id: number) {
   return repo.write(ctx, async (tx) => {
     const before = await required(ctx, id, tx)
@@ -367,7 +523,9 @@ export function addItem(
           ? {
               id_cor: variacao.id_cor,
               id_tamanho: variacao.id_tamanho,
-              tamanho: variacao.tamanhos?.nome ?? input.tamanho,
+              tamanho: variacao.tamanhos
+                ? Array.from(variacao.tamanhos.nome).slice(0, 30).join("")
+                : input.tamanho,
             }
           : {}),
       },

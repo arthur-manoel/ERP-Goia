@@ -134,9 +134,7 @@ export async function consultar(
   pagina: number,
   limite: number,
 ) {
-  const a = await acesso(tx, ctx)
-  exigir(podeConsultar(a))
-  const where = { id_empresa: ctx.idEmpresa, id_usuario: ctx.idUsuario }
+  const where = await filtroVisivel(tx, ctx)
   const [rows, total] = await Promise.all([
     tx.notificacao_interna.findMany({
       where,
@@ -148,27 +146,47 @@ export async function consultar(
     tx.notificacao_interna.count({ where }),
   ])
   return {
-    itens: rows
-      .filter((n) => {
-        const d = n.notificacao_evento.destino
-        return d === "GERENCIA"
-          ? a.gerente
-          : d === "FINANCEIRO"
-            ? a.financeiro
-            : d === "ESTOQUE"
-              ? a.estoque
-              : true
-      })
-      .map((n) => ({
-        id: n.id,
-        lidaEm: n.lida_em,
-        criadaEm: n.criada_em,
-        idCancelamento: n.notificacao_evento.id_cancelamento,
-        titulo: n.notificacao_evento.titulo,
-        mensagem: n.notificacao_evento.mensagem,
-      })),
+    itens: rows.map((n) => ({
+      id: n.id,
+      lidaEm: n.lida_em,
+      criadaEm: n.criada_em,
+      idCancelamento: n.notificacao_evento.id_cancelamento,
+      titulo: n.notificacao_evento.titulo,
+      mensagem: n.notificacao_evento.mensagem,
+    })),
     pagina,
     limite,
     total,
   }
+}
+
+async function filtroVisivel(tx: Tx, ctx: Contexto) {
+  const a = await acesso(tx, ctx)
+  exigir(podeConsultar(a))
+  const destinos = ["TODOS"]
+  if (a.gerente) destinos.push("GERENCIA")
+  if (a.financeiro) destinos.push("FINANCEIRO")
+  if (a.estoque) destinos.push("ESTOQUE")
+  return {
+    id_empresa: ctx.idEmpresa,
+    id_usuario: ctx.idUsuario,
+    notificacao_evento: {
+      id_empresa: ctx.idEmpresa,
+      OR: [
+        { destino: { in: destinos } },
+        {
+          destino: "SOLICITANTE",
+          pedido_cancelamento: { id_solicitante: ctx.idUsuario },
+        },
+      ],
+    },
+  }
+}
+
+export async function marcarLida(tx: Tx, ctx: Contexto, id: number) {
+  const n = await tx.notificacao_interna.updateMany({
+    where: { ...(await filtroVisivel(tx, ctx)), id, lida_em: null },
+    data: { lida_em: new Date() },
+  })
+  return { atualizadas: n.count }
 }

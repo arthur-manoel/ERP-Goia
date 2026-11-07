@@ -40,6 +40,7 @@ function Conteudo() {
   const [erro, setErro] = useState("")
   const [ocupado, setOcupado] = useState(false)
   const [pagina, setPagina] = useState(1)
+  const [revisao, setRevisao] = useState(0)
   const carregar = useCallback(async () => {
     const r = await requisitar(`/api/notificacoes?pagina=${pagina}&limite=25`, {
       cache: "no-store",
@@ -55,13 +56,16 @@ function Conteudo() {
         if (ativa) setLista(v)
       },
       (e) => {
-        if (ativa) setErro(e.message)
+        if (ativa) {
+          setLista(undefined)
+          setErro(e.message)
+        }
       },
     )
     return () => {
       ativa = false
     }
-  }, [carregar])
+  }, [carregar, revisao])
   async function executar(url: string) {
     if (ocupado) return
     setOcupado(true)
@@ -81,12 +85,18 @@ function Conteudo() {
         setErro(
           "Algumas notificações continuam pendentes; tente atualizar novamente.",
         )
-      setLista(await carregar())
     } catch (e) {
       setErro((e as Error).message)
     } finally {
+      setLista(undefined)
+      setRevisao((r) => r + 1)
       setOcupado(false)
     }
+  }
+  function mudarPagina(delta: number) {
+    setLista(undefined)
+    setErro("")
+    setPagina((atual) => atual + delta)
   }
   return (
     <div className="space-y-4">
@@ -102,49 +112,54 @@ function Conteudo() {
           {erro}
         </p>
       )}
-      {lista?.itens.map((n) => (
-        <article key={n.id} className="space-y-2 rounded-lg border p-4">
-          <h2 className="font-semibold">
-            {n.titulo}
-            {n.lidaEm ? "" : " · Não lida"}
-          </h2>
-          <p>{n.mensagem}</p>
-          <p className="text-sm text-muted-foreground">
-            {formatarDataHora(new Date(n.criadaEm))}
-          </p>
-          <div className="flex gap-4">
-            <Link
-              className="underline"
-              href={`/vendas/pedidos/cancelamentos?cancelamento=${n.idCancelamento}`}
-            >
-              Acompanhar solicitação
-            </Link>
-            {!n.lidaEm && (
-              <Button
-                disabled={ocupado}
-                variant="outline"
-                onClick={() => void executar(`/api/notificacoes/${n.id}/ler`)}
+      {lista?.pagina === pagina &&
+        lista.itens.map((n) => (
+          <article key={n.id} className="space-y-2 rounded-lg border p-4">
+            <h2 className="font-semibold">
+              {n.titulo}
+              {n.lidaEm ? "" : " · Não lida"}
+            </h2>
+            <p>{n.mensagem}</p>
+            <p className="text-sm text-muted-foreground">
+              {formatarDataHora(new Date(n.criadaEm))}
+            </p>
+            <div className="flex gap-4">
+              <Link
+                className="underline"
+                href={`/vendas/pedidos/cancelamentos?cancelamento=${n.idCancelamento}`}
               >
-                Marcar como lida
-              </Button>
-            )}
-          </div>
-        </article>
-      ))}
-      {lista?.itens.length === 0 && <p>Nenhuma notificação disponível.</p>}
+                Acompanhar solicitação
+              </Link>
+              {!n.lidaEm && (
+                <Button
+                  disabled={ocupado}
+                  variant="outline"
+                  onClick={() => void executar(`/api/notificacoes/${n.id}/ler`)}
+                >
+                  Marcar como lida
+                </Button>
+              )}
+            </div>
+          </article>
+        ))}
+      {lista?.pagina === pagina && lista.itens.length === 0 && (
+        <p>Nenhuma notificação disponível.</p>
+      )}
       <div className="flex gap-3">
         <Button
           variant="outline"
           disabled={pagina === 1 || ocupado}
-          onClick={() => setPagina((p) => p - 1)}
+          onClick={() => mudarPagina(-1)}
         >
           Anterior
         </Button>
         <span>Página {pagina}</span>
         <Button
           variant="outline"
-          disabled={!lista || pagina * 25 >= lista.total || ocupado}
-          onClick={() => setPagina((p) => p + 1)}
+          disabled={
+            lista?.pagina !== pagina || pagina * 25 >= lista.total || ocupado
+          }
+          onClick={() => mudarPagina(1)}
         >
           Próxima
         </Button>

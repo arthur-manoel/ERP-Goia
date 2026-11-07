@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -40,6 +41,12 @@ import {
 } from "@/modules/reservas/reservas.schema"
 
 import { reservasParaConsumo } from "../consumo"
+import {
+  formatarMilesimos,
+  milesimos,
+  quantidadeDaEntrega,
+  zero,
+} from "../quantidades"
 
 type Origem = "PEDIDO" | "PRODUCAO" | "RESERVAS"
 type Variacao = {
@@ -115,9 +122,20 @@ type Ordem = Documento & {
   ordem_producao_item: {
     id: number
     id_produto: number
+    id_cor: number | null
+    id_tamanho: number | null
     quantidade: string
     quantidade_produzida: string
-    produtos: { nome: string; unidade: string }
+    produtos: {
+      nome: string
+      unidade: string
+      estoque: { id_local_estoque: number; id_setor: number }[]
+      produto_variacoes: (Variacao & {
+        id_cor: number | null
+        id_tamanho: number | null
+        elegivel: boolean
+      })[]
+    }
   }[]
   ordem_producao_consumo_planejado: {
     id_materia_prima: number
@@ -154,9 +172,9 @@ const grade = (v: Variacao | null) =>
       "Sem cor e tamanho"
     : "Sem grade"
 const saldoReserva = (r: Reserva) =>
-  Number(r.quantidade) -
-  Number(r.quantidade_consumida) -
-  Number(r.quantidade_liberada)
+  milesimos(r.quantidade) -
+  milesimos(r.quantidade_consumida) -
+  milesimos(r.quantidade_liberada)
 const assinar = (fn: () => void) => {
   window.addEventListener("storage", fn)
   return () => window.removeEventListener("storage", fn)
@@ -223,12 +241,14 @@ function Campo({
   inicial,
   tipo = "text",
   obrigatorio = true,
+  erro,
 }: {
   nome: string
   titulo: string
   inicial?: string
   tipo?: string
   obrigatorio?: boolean
+  erro?: string
 }) {
   return (
     <Field>
@@ -239,7 +259,14 @@ function Campo({
         type={tipo}
         defaultValue={inicial}
         required={obrigatorio}
+        aria-invalid={erro ? true : undefined}
+        aria-describedby={erro ? `${nome}-erro` : undefined}
       />
+      {erro && (
+        <p id={`${nome}-erro`} role="alert" className="text-destructive">
+          {erro}
+        </p>
+      )}
     </Field>
   )
 }
@@ -295,6 +322,7 @@ function Conteudo({
 }) {
   const { requisitar } = useAutenticacao()
   const [revisao, setRevisao] = useState(0)
+  const [revisaoEntrega, setRevisaoEntrega] = useState(0)
   const [erro, setErro] = useState("")
   const [ocupado, setOcupado] = useState(false)
   const trava = useRef(false)
@@ -337,6 +365,7 @@ function Conteudo({
     headers?: Record<string, string>,
   ) {
     if (trava.current) return
+    const retomada = pendente !== null
     const tentativa = pendente ?? {
       url,
       body,
@@ -344,8 +373,16 @@ function Conteudo({
       chave: crypto.randomUUID(),
       headers,
     }
+    const registro = JSON.stringify(tentativa)
+    const entrega = /^\/api\/pedidos\/\d+\/entregas$/.test(tentativa.url)
+    const limparTentativa = () => {
+      if (sessionStorage.getItem(chaveStorage) !== registro) return
+      sessionStorage.removeItem(chaveStorage)
+      window.dispatchEvent(new Event("storage"))
+    }
     try {
-      sessionStorage.setItem(chaveStorage, JSON.stringify(tentativa))
+      if (sessionStorage.getItem(chaveStorage) !== armazenado) return
+      sessionStorage.setItem(chaveStorage, registro)
       window.dispatchEvent(new Event("storage"))
     } catch {
       setErro(
@@ -366,23 +403,27 @@ function Conteudo({
         },
         body: JSON.stringify(tentativa.body),
       })
-      const value = await lerRespostaOperacao(resposta, () => {
-        sessionStorage.removeItem(chaveStorage)
-        window.dispatchEvent(new Event("storage"))
-        setRevisao((r) => r + 1)
-      })
+      const value = await lerRespostaOperacao(
+        resposta,
+        () => {
+          limparTentativa()
+          setRevisao((r) => r + 1)
+        },
+        entrega && retomada,
+      )
       if (!resposta.ok) {
         throw new Error(
           value.error ?? "Confirmação interrompida; repita a mesma tentativa.",
         )
       }
-      sessionStorage.removeItem(chaveStorage)
-      window.dispatchEvent(new Event("storage"))
+      limparTentativa()
       toast.success("Operação confirmada no banco.")
+      if (entrega) setRevisaoEntrega((r) => r + 1)
       setRevisao((r) => r + 1)
     } catch (e) {
       setErro(
-        e instanceof Error
+        e instanceof Error &&
+          !(e instanceof TypeError || e instanceof SyntaxError)
           ? e.message
           : "Resposta interrompida. Repita a mesma confirmação para evitar duplicidade.",
       )
@@ -461,6 +502,7 @@ function Conteudo({
               origem={origem}
               requisitar={requisitar}
               revisao={revisao}
+              revisaoEntrega={revisaoEntrega}
               opcoes={opcoes}
               bloqueado={bloqueado}
               enviar={enviar}
@@ -787,6 +829,7 @@ function DocumentoOperacional({
   origem,
   requisitar,
   revisao,
+  revisaoEntrega,
   opcoes,
   bloqueado,
   enviar,
@@ -794,6 +837,7 @@ function DocumentoOperacional({
   origem: Exclude<Origem, "RESERVAS">
   requisitar: Api
   revisao: number
+  revisaoEntrega: number
   opcoes: Opcoes
   bloqueado: boolean
   enviar: Enviar
@@ -904,6 +948,7 @@ function DocumentoOperacional({
         <DetalheDocumento
           requisitar={requisitar}
           revisao={revisao}
+          revisaoEntrega={revisaoEntrega}
           key={id}
           origem={origem}
           documento={detalhes.dados}
@@ -919,6 +964,7 @@ function DocumentoOperacional({
 function DetalheDocumento({
   requisitar,
   revisao,
+  revisaoEntrega,
   origem,
   documento,
   opcoes,
@@ -927,6 +973,7 @@ function DetalheDocumento({
 }: {
   requisitar: Api
   revisao: number
+  revisaoEntrega: number
   origem: "PEDIDO" | "PRODUCAO"
   documento: Pedido | Ordem
   opcoes: Opcoes
@@ -938,8 +985,44 @@ function DetalheDocumento({
   const [variacao, setVariacao] = useState("")
   const [reservaConsumo, setReservaConsumo] = useState("")
   const [erroLocal, setErroLocal] = useState("")
+  const [setorRegularizacao, setSetorRegularizacao] = useState("")
+  const [errosEntrega, setErrosEntrega] = useState<Record<number, string>>({})
   const pedido = origem === "PEDIDO" ? (documento as Pedido) : null
   const ordem = origem === "PRODUCAO" ? (documento as Ordem) : null
+  const itensSemGradeDefinida =
+    ordem?.ordem_producao_item.filter(
+      (i) =>
+        i.produtos.produto_variacoes.length > 0 &&
+        i.produtos.produto_variacoes.filter(
+          (v) =>
+            v.elegivel &&
+            v.id_cor === i.id_cor &&
+            v.id_tamanho === i.id_tamanho,
+        ).length !== 1,
+    ) ?? []
+  const faltaSetor =
+    !!ordem && !ordem.id_setor && !ordem.ordem_producao_fluxo_setor.length
+  const setorFinal =
+    ordem?.ordem_producao_fluxo_setor.at(-1)?.id_setor ?? ordem?.id_setor
+  const setorDestino = setorFinal ?? Number(setorRegularizacao)
+  const locaisCompativeis = ordem
+    ? opcoes.locais.filter(
+        (local) =>
+          !setorDestino ||
+          ordem.ordem_producao_item.every((i) =>
+            i.produtos.estoque.every(
+              (posicao) =>
+                (posicao.id_local_estoque === local.id) ===
+                (posicao.id_setor === setorDestino),
+            ),
+          ),
+      )
+    : []
+  const faltaLocal =
+    !!ordem &&
+    !locaisCompativeis.some((local) => local.id === ordem.id_local_estoque)
+  const faltaDestino =
+    !!ordem && (faltaLocal || faltaSetor || itensSemGradeDefinida.length > 0)
   const pedidoOperacional = pedido
     ? [
         "RASCUNHO",
@@ -960,6 +1043,7 @@ function DetalheDocumento({
       )
   const podeConcluir = Boolean(
     ordem &&
+    !faltaDestino &&
     ordem.status === "EM_PRODUCAO" &&
     ordem.ordem_producao_item.length &&
     ordem.ordem_producao_item.every(
@@ -1000,20 +1084,23 @@ function DetalheDocumento({
   )
   const usaGrade = Boolean(linha?.id_variacao || variacao)
   const fisicoSelecionado = usaGrade
-    ? (gradePosicao?.quantidade ?? "0")
+    ? milesimos(gradePosicao?.quantidade ?? "0")
     : posicao
-      ? Number(posicao.quantidade) -
-        posicao.estoque_variacao.reduce((s, v) => s + Number(v.quantidade), 0)
-      : "0"
-  const reservadoSelecionado = usaGrade
-    ? (gradePosicao?.quantidade_reservada ?? "0")
-    : posicao
-      ? Number(posicao.quantidade_reservada) -
+      ? milesimos(posicao.quantidade) -
         posicao.estoque_variacao.reduce(
-          (s, v) => s + Number(v.quantidade_reservada),
-          0,
+          (s, v) => s + milesimos(v.quantidade),
+          zero,
         )
-      : "0"
+      : zero
+  const reservadoSelecionado = usaGrade
+    ? milesimos(gradePosicao?.quantidade_reservada ?? "0")
+    : posicao
+      ? milesimos(posicao.quantidade_reservada) -
+        posicao.estoque_variacao.reduce(
+          (s, v) => s + milesimos(v.quantidade_reservada),
+          zero,
+        )
+      : zero
   const reservas = pedido
     ? pedido.pedido_cliente_item.flatMap((i) =>
         i.reserva_estoque.map((r) => ({
@@ -1044,7 +1131,7 @@ function DetalheDocumento({
       setErroLocal(validado.error.issues[0].message)
       return
     }
-    if (Number(q) > Number(fisicoSelecionado) - Number(reservadoSelecionado)) {
+    if (milesimos(validado.data) > fisicoSelecionado - reservadoSelecionado) {
       setErroLocal(
         "A quantidade excede o disponível nesta variação e local. O pedido pode permanecer em planejamento com saldo pendente.",
       )
@@ -1096,10 +1183,12 @@ function DetalheDocumento({
                       e.pedido_cliente_entrega.status,
                     ),
                 )
-                .reduce((s, e) => s + Number(e.quantidade), 0)
+                .reduce((s, e) => s + milesimos(e.quantidade), zero)
               const reservado = i.reserva_estoque
                 .filter((r) => r.status === "ATIVA")
-                .reduce((s, r) => s + saldoReserva(r), 0)
+                .reduce((s, r) => s + saldoReserva(r), zero)
+              const pendenteReserva =
+                milesimos(i.quantidade) - entregue - reservado
               return (
                 <TableRow key={i.id}>
                   <TableCell>
@@ -1107,9 +1196,9 @@ function DetalheDocumento({
                   </TableCell>
                   <TableCell>
                     {formatarQuantidade(i.quantidade)} /{" "}
-                    {formatarQuantidade(reservado)} /{" "}
-                    {formatarQuantidade(
-                      Math.max(0, Number(i.quantidade) - entregue - reservado),
+                    {formatarMilesimos(reservado)} /{" "}
+                    {formatarMilesimos(
+                      pendenteReserva > zero ? pendenteReserva : zero,
                     )}
                   </TableCell>
                 </TableRow>
@@ -1156,7 +1245,7 @@ function DetalheDocumento({
           <Campo nome="reservar-quantidade" titulo="Quantidade a reservar" />
           <p className="text-sm text-muted-foreground">
             {posicao
-              ? `Físico nesta variação: ${formatarQuantidade(fisicoSelecionado)} · reservado: ${formatarQuantidade(reservadoSelecionado)} · disponível: ${formatarQuantidade(Number(fisicoSelecionado) - Number(reservadoSelecionado))}`
+              ? `Físico nesta variação: ${formatarMilesimos(fisicoSelecionado)} · reservado: ${formatarMilesimos(reservadoSelecionado)} · disponível: ${formatarMilesimos(fisicoSelecionado - reservadoSelecionado)}`
               : "Selecione um produto e local com posição física. A confirmação final confere o saldo disponível."}
           </p>
           <Button type="submit" disabled={!item || !local}>
@@ -1185,25 +1274,34 @@ function DetalheDocumento({
       )}
       {pedido && pedidoOperacional && pedido.status !== "RASCUNHO" && (
         <form
+          key={revisaoEntrega}
           onSubmit={(e) => {
             e.preventDefault()
             const fd = new FormData(e.currentTarget)
-            const itens = reservas
-              .filter(
-                (r) =>
-                  r.status === "ATIVA" &&
-                  Number(
-                    String(fd.get(`entregar-${r.id}`) ?? "0").replace(",", "."),
-                  ) > 0,
-              )
-              .map((r) => ({
-                idItem: r.idItem,
-                idReserva: r.id,
-                quantidade: String(fd.get(`entregar-${r.id}`)).replace(
-                  ",",
-                  ".",
-                ),
-              }))
+            const erros: Record<number, string> = {}
+            const itens = reservas.flatMap((r) => {
+              if (r.status !== "ATIVA") return []
+              const linha = quantidadeDaEntrega(fd.get(`entregar-${r.id}`))
+              if (linha.tipo === "omitida") return []
+              if (linha.tipo === "invalida") {
+                erros[r.id] =
+                  "Informe uma quantidade válida com até três casas decimais."
+                return []
+              }
+              if (milesimos(linha.quantidade) > saldoReserva(r)) {
+                erros[r.id] = "A quantidade excede o restante desta reserva."
+                return []
+              }
+              return [
+                {
+                  idItem: r.idItem,
+                  idReserva: r.id,
+                  quantidade: linha.quantidade,
+                },
+              ]
+            })
+            setErrosEntrega(erros)
+            if (Object.keys(erros).length) return
             const dados = {
               nomeRecebedor: fd.get("nome-recebedor"),
               itens,
@@ -1211,18 +1309,6 @@ function DetalheDocumento({
             const validado = entregaSchema.safeParse(dados)
             if (!validado.success) {
               setErroLocal(validado.error.issues[0].message)
-              return
-            }
-            if (
-              itens.some(
-                (i) =>
-                  Number(i.quantidade) >
-                  saldoReserva(reservas.find((r) => r.id === i.idReserva)!),
-              )
-            ) {
-              setErroLocal(
-                "A quantidade entregue excede o restante de uma reserva. Consulte novamente antes de confirmar.",
-              )
               return
             }
             setErroLocal("")
@@ -1244,7 +1330,8 @@ function DetalheDocumento({
                 <Campo
                   key={r.id}
                   nome={`entregar-${r.id}`}
-                  titulo={`${r.nomeItem} · reserva ${r.id} · ${opcoes.locais.find((l) => l.id === r.id_local_estoque)?.nome ?? "Local da reserva"} · restante ${formatarQuantidade(saldoReserva(r))}`}
+                  titulo={`${r.nomeItem} · reserva ${r.id} · ${opcoes.locais.find((l) => l.id === r.id_local_estoque)?.nome ?? "Local da reserva"} · restante ${formatarMilesimos(saldoReserva(r))}`}
+                  erro={errosEntrega[r.id]}
                   inicial="0"
                   obrigatorio={false}
                 />
@@ -1269,6 +1356,121 @@ function DetalheDocumento({
       )}
       {ordem && (
         <>
+          {faltaDestino &&
+            !["CONCLUIDA", "CANCELADA"].includes(ordem.status) && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const fd = new FormData(e.currentTarget)
+                  void enviar(`/api/ordem_producao/${ordem.id}/regularizar`, {
+                    ...(faltaLocal
+                      ? { idLocal: Number(fd.get("destino-local")) }
+                      : {}),
+                    ...(faltaSetor
+                      ? { idSetor: Number(fd.get("destino-setor")) }
+                      : {}),
+                    variacoes: itensSemGradeDefinida.map((i) => ({
+                      idItem: i.id,
+                      idVariacao: Number(fd.get(`destino-variacao-${i.id}`)),
+                    })),
+                    motivo: fd.get("destino-motivo"),
+                  })
+                }}
+              >
+                <fieldset disabled={bloqueado} className="space-y-3">
+                  <legend className="font-semibold">
+                    Regularizar destino da produção
+                  </legend>
+                  <p>
+                    Corrija o destino para liberar, iniciar ou concluir a OP.
+                  </p>
+                  {faltaLocal && (
+                    <Field>
+                      <FieldLabel htmlFor="destino-local">
+                        Local de entrada dos produtos
+                      </FieldLabel>
+                      <NativeSelect
+                        id="destino-local"
+                        name="destino-local"
+                        required
+                        key={setorDestino}
+                        defaultValue=""
+                      >
+                        <NativeSelectOption value="">
+                          Selecione o local
+                        </NativeSelectOption>
+                        {locaisCompativeis.map((l) => (
+                          <NativeSelectOption key={l.id} value={l.id}>
+                            {l.nome}
+                          </NativeSelectOption>
+                        ))}
+                      </NativeSelect>
+                    </Field>
+                  )}
+                  {faltaSetor && (
+                    <Field>
+                      <FieldLabel htmlFor="destino-setor">
+                        Setor de entrada dos produtos
+                      </FieldLabel>
+                      <NativeSelect
+                        id="destino-setor"
+                        name="destino-setor"
+                        required
+                        value={setorRegularizacao}
+                        onChange={(e) => setSetorRegularizacao(e.target.value)}
+                      >
+                        <NativeSelectOption value="">
+                          Selecione o setor
+                        </NativeSelectOption>
+                        {opcoes.setores.map((s) => (
+                          <NativeSelectOption key={s.id} value={s.id}>
+                            {s.nome}
+                          </NativeSelectOption>
+                        ))}
+                      </NativeSelect>
+                    </Field>
+                  )}
+                  {itensSemGradeDefinida.map((i) => {
+                    const nome = `destino-variacao-${i.id}`
+                    return (
+                      <Field key={i.id}>
+                        <FieldLabel htmlFor={nome}>
+                          Variação de {i.produtos.nome}
+                        </FieldLabel>
+                        <NativeSelect
+                          id={nome}
+                          name={nome}
+                          required
+                          defaultValue=""
+                        >
+                          <NativeSelectOption value="">
+                            Selecione a variação
+                          </NativeSelectOption>
+                          {i.produtos.produto_variacoes
+                            .filter(
+                              (v) =>
+                                v.elegivel &&
+                                (i.id_cor === null || i.id_cor === v.id_cor) &&
+                                (i.id_tamanho === null ||
+                                  i.id_tamanho === v.id_tamanho),
+                            )
+                            .map((v) => (
+                              <NativeSelectOption key={v.id} value={v.id}>
+                                {grade(v)}
+                              </NativeSelectOption>
+                            ))}
+                        </NativeSelect>
+                      </Field>
+                    )
+                  })}
+                  <Campo
+                    nome="destino-motivo"
+                    titulo="Motivo da regularização"
+                  />
+                  <Button type="submit">Salvar regularização</Button>
+                </fieldset>
+              </form>
+            )}
           <div className="flex flex-wrap gap-2">
             {(["liberar", "iniciar", "pausar", "retomar"] as const).map(
               (acao) => (
@@ -1277,6 +1479,8 @@ function DetalheDocumento({
                   variant="outline"
                   disabled={
                     bloqueado ||
+                    (faltaDestino &&
+                      (acao === "liberar" || acao === "iniciar")) ||
                     ordem.status !==
                       {
                         liberar: "PLANEJADA",
@@ -1360,7 +1564,7 @@ function DetalheDocumento({
                 alterar={setReservaConsumo}
                 opcoes={reservasConsumo.map((r) => ({
                   value: String(r.id),
-                  label: `${r.nomeItem} · reserva ${r.id} · consumido ${formatarQuantidade(r.quantidade_consumida)} · restante ${formatarQuantidade(saldoReserva(r))}${r.status === "ATENDIDA" ? " · somente encerramento" : ""}`,
+                  label: `${r.nomeItem} · reserva ${r.id} · consumido ${formatarQuantidade(r.quantidade_consumida)} · restante ${formatarMilesimos(saldoReserva(r))}${r.status === "ATENDIDA" ? " · somente encerramento" : ""}`,
                 }))}
               />
               <Campo
@@ -1404,6 +1608,7 @@ function DetalheDocumento({
                   variant="outline"
                   disabled={
                     bloqueado ||
+                    (faltaDestino && etapa.status === "PENDENTE") ||
                     ordem.status !== "EM_PRODUCAO" ||
                     etapa.id !==
                       ordem.ordem_producao_fluxo_setor.find(

@@ -2,6 +2,7 @@ import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/api/errors"
 import { movimentarNaTransacao } from "@/modules/movimentacoes-estoque/movimentacoes-estoque.repository"
+import { variacaoAtivaNaEmpresa } from "@/modules/estoque/estoque.grade"
 import {
   auditar,
   conferir,
@@ -223,6 +224,47 @@ export async function consumoConclusaoComprovado(
   )
 }
 
+export async function variacaoEntradaProducao(
+  tx: Tx,
+  ctx: Contexto,
+  item: {
+    id_produto: number
+    id_cor: number | null
+    id_tamanho: number | null
+  },
+) {
+  const escopo = { id_empresa: ctx.idEmpresa, id_produto: item.id_produto }
+  const [variacoes, vinculo] = await Promise.all([
+    tx.produto_variacoes.findMany({
+      where: escopo,
+      include: { cores: true, tamanhos: true },
+    }),
+    tx.produto_empresa.findFirst({
+      where: escopo,
+      select: { id_cor: true, id_tamanho: true },
+    }),
+  ])
+  const correspondentes = variacoes.filter(
+    (v) =>
+      v.status === "ATIVO" &&
+      variacaoAtivaNaEmpresa(v, ctx.idEmpresa) &&
+      v.id_cor === item.id_cor &&
+      v.id_tamanho === item.id_tamanho,
+  )
+  if (
+    (variacoes.length > 0 && correspondentes.length !== 1) ||
+    (!variacoes.length &&
+      (item.id_cor !== null ||
+        item.id_tamanho !== null ||
+        vinculo?.id_cor != null ||
+        vinculo?.id_tamanho != null))
+  )
+    throw new ConflictError(
+      "A cor e o tamanho produzidos precisam identificar uma variação válida, sem inferir outra grade.",
+    )
+  return correspondentes[0]?.id
+}
+
 /** Invocado dentro da transação da conclusão, nunca pelo GET ou fechamento. */
 export async function entradaConclusao(
   tx: Tx,
@@ -269,25 +311,7 @@ export async function entradaConclusao(
       throw new ConflictError(
         "Informe a produção efetiva de cada item antes de concluir.",
       )
-    const variacoes = await tx.produto_variacoes.findMany({
-      where: {
-        id_empresa: ctx.idEmpresa,
-        id_produto: item.id_produto,
-        id_cor: item.id_cor,
-        id_tamanho: item.id_tamanho,
-        status: "ATIVO",
-      },
-    })
-    const possuiGrade = await tx.produto_variacoes.count({
-      where: { id_empresa: ctx.idEmpresa, id_produto: item.id_produto },
-    })
-    if (
-      (possuiGrade && variacoes.length !== 1) ||
-      (!possuiGrade && (item.id_cor || item.id_tamanho))
-    )
-      throw new ConflictError(
-        "A cor e o tamanho produzidos precisam identificar uma variação válida, sem inferir outra grade.",
-      )
+    const idVariacao = await variacaoEntradaProducao(tx, ctx, item)
     const mov = await movimentarNaTransacao(
       tx,
       ctx,
@@ -295,7 +319,7 @@ export async function entradaConclusao(
         idProduto: item.id_produto,
         idLocalEstoque: op.id_local_estoque,
         idSetor: op.id_setor,
-        idVariacao: variacoes[0]?.id,
+        idVariacao,
         quantidade: item.quantidade_produzida.toFixed(3),
         observacao: `Produtos prontos da fábrica, OP ${idOP}; chegada à loja exige transferência recebida`,
       },

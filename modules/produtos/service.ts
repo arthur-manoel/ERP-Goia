@@ -90,9 +90,21 @@ export async function updateProduto(
   idInput: unknown,
   input: unknown,
   companies: number[],
+  selecionadas?: number[],
+  idUsuario?: number,
 ) {
   const id = validate(produtoIdSchema, idInput)
   const data = validate(updateProdutoSchema, input)
+  const autor: repository.AutorProduto | undefined =
+    idUsuario === undefined
+      ? undefined
+      : {
+          idUsuario,
+          acoes:
+            data.status === "INATIVO"
+              ? ["pode_editar", "pode_excluir"]
+              : ["pode_editar"],
+        }
   const categoryId = data.id_categoria
   if (
     (categoryId !== undefined && categoryId !== null) ||
@@ -105,6 +117,8 @@ export async function updateProduto(
           id,
           companies,
           database,
+          selecionadas,
+          autor,
         )
         if (!current) throw new NotFoundError()
         if (data.unidade !== undefined && data.unidade !== current.unidade) {
@@ -140,20 +154,40 @@ export async function updateProduto(
         ]
         if (categoryId !== undefined && categoryId !== null)
           await assertProductCategory(categoryId, owners, database)
-        const produto = await repository.update(id, data, companies, database)
+        const produto = await repository.update(
+          id,
+          data,
+          companies,
+          database,
+          selecionadas,
+          autor,
+        )
         if (!produto) throw new NotFoundError()
         return produto
       }),
     )
   }
-  const produto = await write(() => repository.update(id, data, companies))
+  const produto = await write(() =>
+    repository.update(id, data, companies, undefined, selecionadas, autor),
+  )
   if (!produto) throw new NotFoundError()
   return produto
 }
 
-export async function deleteProduto(idInput: unknown, companies: number[]) {
+export async function deleteProduto(
+  idInput: unknown,
+  companies: number[],
+  selecionadas?: number[],
+  idUsuario?: number,
+) {
   const id = validate(produtoIdSchema, idInput)
-  if (!(await write(() => repository.inactivate(id, companies))))
+  const autor: repository.AutorProduto | undefined =
+    idUsuario === undefined ? undefined : { idUsuario, acoes: ["pode_excluir"] }
+  if (
+    !(await write(() =>
+      repository.inactivate(id, companies, selecionadas, autor),
+    ))
+  )
     throw new NotFoundError()
   return { message: "Produto inativado com sucesso." }
 }

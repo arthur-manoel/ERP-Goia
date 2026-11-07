@@ -56,14 +56,14 @@ async function fixture(numeroEtapas = 1) {
       id_cargo: cargo.id,
     },
   })
-  await prisma.permissoes_usuario.create({
-    data: {
+  await prisma.permissoes_usuario.createMany({
+    data: ["ORDENS_PRODUCAO", "ESTOQUE"].map((recurso) => ({
       id_usuario_empresa: vinculo.id,
-      recurso: "ORDENS_PRODUCAO",
+      recurso,
       pode_ler: true,
       pode_criar: true,
       pode_editar: true,
-    },
+    })),
   })
   const login = await fetch(base + "/api/auth/login", {
     method: "POST",
@@ -137,12 +137,19 @@ async function fixture(numeroEtapas = 1) {
   await prisma.produto_fluxo.create({
     data: { id_empresa: f.empresa, id_produto: produto.id, id_fluxo: fluxo.id },
   })
+  const local = await prisma.locais_estoque.create({
+    data: { id_empresa: f.empresa, nome: "Local da produção" },
+  })
   f.op = (
     await call(
       f,
       "/api/ordem_producao",
       "POST",
-      { numero: marker, quantidade_planejada: "10" },
+      {
+        numero: marker,
+        quantidade_planejada: "10",
+        id_local_estoque: local.id,
+      },
       201,
     )
   ).id
@@ -156,7 +163,47 @@ async function fixture(numeroEtapas = 1) {
     )
   ).id
   await call(f, `/api/ordem_producao/${f.op}/liberar`, "POST", undefined, 200)
+  await call(
+    f,
+    "/api/estoque/entradas",
+    "POST",
+    {
+      idProduto: material.id,
+      idLocalEstoque: local.id,
+      idSetor: setores[0].id,
+      quantidade: "1.250",
+      observacao: "Saldo da fixture de produção",
+    },
+    201,
+    randomUUID(),
+  )
+  const reserva = await call(
+    f,
+    "/api/estoque/reservas",
+    "POST",
+    {
+      origem: "PRODUCAO",
+      idOrigem: f.op,
+      idProduto: material.id,
+      idLocalEstoque: local.id,
+      quantidade: "1.250",
+    },
+    201,
+    randomUUID(),
+  )
   await call(f, `/api/ordem_producao/${f.op}/iniciar`, "POST", undefined, 200)
+  await call(
+    f,
+    `/api/ordem_producao/${f.op}/consumos`,
+    "POST",
+    {
+      idReserva: reserva.idReserva,
+      quantidade: "1.250",
+      concluirConsumo: true,
+    },
+    201,
+    randomUUID(),
+  )
   f.etapas = await prisma.ordem_producao_fluxo_setor.findMany({
     where: { id_ordem_producao: f.op },
     orderBy: { ordem: "asc" },
@@ -856,20 +903,12 @@ try {
       },
     )
     await t.test(
-      "saída de insumo não bloqueia o primeiro apontamento final",
+      "regularizar destino após consumo e apontamento permite concluir uma única entrada",
       async () => {
         const f = await fixture()
-        const material =
-          await prisma.ordem_producao_consumo_planejado.findFirstOrThrow({
-            where: { id_ordem_producao: f.op },
-          })
-        const saida = await prisma.movimentacao_estoque.create({
-          data: {
+        const saida = await prisma.movimentacao_estoque.findFirstOrThrow({
+          where: {
             id_empresa: f.empresa,
-            id_produto: material.id_materia_prima,
-            id_usuario: f.usuario,
-            tipo: "SAIDA_PRODUCAO",
-            quantidade: "0.750",
             origem_tipo: "CONSUMO_PRODUCAO",
             origem_id: f.op,
           },
@@ -877,17 +916,95 @@ try {
         await apontar(f, "6")
         await confirmar(f, "6", "6", randomUUID())
         await total(f, "6")
-        const concluida = await call(
+        const ordem = await prisma.ordem_producao.update({
+          where: { id: f.op },
+          data: { id_local_estoque: null },
+        })
+        const local = await prisma.locais_estoque.findFirstOrThrow({
+          where: { id_empresa: f.empresa, nome: "Local da produção" },
+        })
+        assert.equal(ordem.status, "EM_PRODUCAO")
+        await call(
           f,
-          `/api/ordem_producao/${f.op}/etapas/${f.etapas[0].id}/concluir`,
+          `/api/ordem_producao/${f.op}/regularizar`,
           "POST",
+          {
+            idLocal: local.id,
+            motivo: "Completar destino sem alterar o histórico de consumo",
+          },
+          200,
+          randomUUID(),
         )
+        const rotaConclusao = `/api/ordem_producao/${f.op}/etapas/${f.etapas[0].id}/concluir`
+        const concluida = await call(f, rotaConclusao, "POST")
         assert.equal(concluida.status, "CONCLUIDA")
+        await semEfeito(f, () => call(f, rotaConclusao, "POST", undefined, 409))
+        const efeitos = await prisma.movimentacao_estoque.findMany({
+          where: {
+            id_empresa: f.empresa,
+            origem_id: f.op,
+            origem_tipo: { in: ["CONSUMO_PRODUCAO", "ORDEM_PRODUCAO"] },
+          },
+          orderBy: { id: "asc" },
+        })
+        assert.equal(efeitos.length, 2)
+        assert.deepEqual(efeitos[0], saida)
+        assert.equal(efeitos[1].tipo, "ENTRADA_PRODUCAO")
+        assert.equal(efeitos[1].quantidade.toFixed(3), "6.000")
+      },
+    )
+    await t.test(
+      "OP sem fluxo regulariza setor e troca local incompatível na mesma operação",
+      async () => {
+        const f = await fixture()
+        const setor = f.etapas[0].id_setor
+        const item = await prisma.ordem_producao_item.findUniqueOrThrow({
+          where: { id: f.item },
+        })
+        const local = await prisma.locais_estoque.create({
+          data: { id_empresa: f.empresa, nome: "Local existente do produto" },
+        })
+        const estoque = await prisma.estoque.create({
+          data: {
+            id_empresa: f.empresa,
+            id_local_estoque: local.id,
+            id_setor: setor,
+            id_produto: item.id_produto,
+          },
+        })
+        await prisma.ordem_producao_snapshot.delete({
+          where: { id_ordem_producao: f.op },
+        })
+        await prisma.ordem_producao_fluxo_setor.deleteMany({
+          where: { id_ordem_producao: f.op },
+        })
+        await prisma.ordem_producao.update({
+          where: { id: f.op },
+          data: { id_setor: null },
+        })
+        const rota = `/api/ordem_producao/${f.op}/regularizar`
+        const dados = {
+          idSetor: setor,
+          motivo: "Recuperar destino físico da ordem legada",
+        }
+        await call(f, rota, "POST", dados, 409, randomUUID())
+        await call(
+          f,
+          rota,
+          "POST",
+          { ...dados, idLocal: local.id },
+          200,
+          randomUUID(),
+        )
+        const ordem = await prisma.ordem_producao.findUniqueOrThrow({
+          where: { id: f.op },
+        })
+        assert.equal(ordem.id_setor, setor)
+        assert.equal(ordem.id_local_estoque, local.id)
+        assert.equal(ordem.status, "EM_PRODUCAO")
         assert.deepEqual(
-          await prisma.movimentacao_estoque.findMany({
-            where: { id_empresa: f.empresa, origem_id: f.op },
-          }),
-          [saida],
+          await prisma.estoque.findUniqueOrThrow({ where: { id: estoque.id } }),
+          estoque,
         )
       },
     )

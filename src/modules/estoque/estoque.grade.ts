@@ -3,6 +3,24 @@ import { Prisma } from "@/generated/prisma/client"
 import { ConflictError, NotFoundError } from "@/lib/api/errors"
 import { conferirSaldoGrade } from "./estoque.grade-saldo"
 
+export function variacaoAtivaNaEmpresa(
+  variacao: {
+    cores: { status: string; id_empresa: number | null } | null
+    tamanhos: { status: string; id_empresa: number | null } | null
+  },
+  idEmpresa: number,
+) {
+  const { cores, tamanhos } = variacao
+  return (
+    (!cores ||
+      (cores.status === "ATIVA" &&
+        (cores.id_empresa === null || cores.id_empresa === idEmpresa))) &&
+    (!tamanhos ||
+      (tamanhos.status === "ATIVO" &&
+        (tamanhos.id_empresa === null || tamanhos.id_empresa === idEmpresa)))
+  )
+}
+
 /** Detalhamento da mesma posição; físico agregado e kardex seguem no livro oficial. */
 export async function atualizarGradeEstoque(
   tx: Prisma.TransactionClient,
@@ -51,17 +69,7 @@ export async function atualizarGradeEstoque(
     },
     include: { cores: true, tamanhos: true },
   })
-  if (
-    !variacao ||
-    (variacao.cores &&
-      (variacao.cores.status !== "ATIVA" ||
-        (variacao.cores.id_empresa !== null &&
-          variacao.cores.id_empresa !== ctx.idEmpresa))) ||
-    (variacao.tamanhos &&
-      (variacao.tamanhos.status !== "ATIVO" ||
-        (variacao.tamanhos.id_empresa !== null &&
-          variacao.tamanhos.id_empresa !== ctx.idEmpresa)))
-  )
+  if (!variacao || !variacaoAtivaNaEmpresa(variacao, ctx.idEmpresa))
     throw new NotFoundError(
       "Variação ativa não encontrada para o produto na empresa.",
     )

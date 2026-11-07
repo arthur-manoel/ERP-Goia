@@ -47,9 +47,37 @@ describe("tentativa idempotente após uma resposta do servidor", () => {
       new Response("Indisponível", { status: 502 }),
       descartar,
     )
+    await lerRespostaOperacao(
+      new Response("Resposta truncada", { status: 409 }),
+      descartar,
+    )
     await expect(
       lerRespostaOperacao(new Response("corpo incompleto"), descartar),
     ).rejects.toThrow()
     expect(descartar).not.toHaveBeenCalled()
+  })
+
+  it("libera a entrega retomada somente quando a recusa foi verificada após consultar a chave", async () => {
+    const descartar = vi.fn()
+    await lerRespostaOperacao(
+      Response.json({ error: "Acesso negado" }, { status: 403 }),
+      descartar,
+      true,
+    )
+    await lerRespostaOperacao(
+      Response.json({ error: "Chave incompatível" }, { status: 409 }),
+      descartar,
+      true,
+    )
+    expect(descartar).not.toHaveBeenCalled()
+    await lerRespostaOperacao(
+      Response.json(
+        { error: "Reserva indisponível", code: "ENTREGA_RECUSADA" },
+        { status: 409 },
+      ),
+      descartar,
+      true,
+    )
+    expect(descartar).toHaveBeenCalledOnce()
   })
 })
