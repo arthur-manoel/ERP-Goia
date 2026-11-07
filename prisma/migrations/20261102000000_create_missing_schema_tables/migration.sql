@@ -5,7 +5,7 @@
 -- Os comandos são condicionais para também permitir o replay após a baseline,
 -- que já cria as tabelas com os nomes de destino.
 SET @rename_empresa_sql = IF(
-  EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'empresa'),
+  EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'empresa') AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'empresas'),
   'RENAME TABLE `empresa` TO `empresas`',
   'DO 0'
 );
@@ -14,7 +14,7 @@ EXECUTE rename_empresa_stmt;
 DEALLOCATE PREPARE rename_empresa_stmt;
 
 SET @rename_permissao_setor_sql = IF(
-  EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'permissao_setor'),
+  EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'permissao_setor') AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'permissoes_setor'),
   'RENAME TABLE `permissao_setor` TO `permissoes_setor`',
   'DO 0'
 );
@@ -22,24 +22,10 @@ PREPARE rename_permissao_setor_stmt FROM @rename_permissao_setor_sql;
 EXECUTE rename_permissao_setor_stmt;
 DEALLOCATE PREPARE rename_permissao_setor_stmt;
 
--- CreateTable
-CREATE TABLE `categoria_financeira` (
-    `id` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_empresa` INTEGER NOT NULL,
-    `nome` VARCHAR(100) NOT NULL,
-    `tipo` ENUM('RECEITA', 'DESPESA', 'AMBOS') NOT NULL DEFAULT 'AMBOS',
-    `descricao` VARCHAR(255) NULL,
-    `status` ENUM('ATIVA', 'INATIVA') NOT NULL DEFAULT 'ATIVA',
-    `data_cadastro` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    INDEX `idx_categoria_financeira_empresa`(`id_empresa`),
-    UNIQUE INDEX `uk_categoria_financeira_empresa_nome`(`id_empresa`, `nome`),
-    UNIQUE INDEX `uk_categoria_financeira_id_empresa`(`id`, `id_empresa`),
-    PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `cliente_contato` (
+CREATE TABLE IF NOT EXISTS `cliente_contato` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_cliente` INTEGER NOT NULL,
     `tipo` VARCHAR(30) NOT NULL,
@@ -54,7 +40,7 @@ CREATE TABLE `cliente_contato` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `cliente_endereco` (
+CREATE TABLE IF NOT EXISTS `cliente_endereco` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_cliente` INTEGER NOT NULL,
     `tipo` ENUM('PRINCIPAL', 'ENTREGA', 'COBRANCA', 'OUTRO') NOT NULL DEFAULT 'PRINCIPAL',
@@ -77,7 +63,7 @@ CREATE TABLE `cliente_endereco` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `condicoes_pagamento` (
+CREATE TABLE IF NOT EXISTS `condicoes_pagamento` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_empresa` INTEGER NOT NULL,
     `nome` VARCHAR(100) NOT NULL,
@@ -96,7 +82,7 @@ CREATE TABLE `condicoes_pagamento` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `contas_bancarias` (
+CREATE TABLE IF NOT EXISTS `contas_bancarias` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_empresa` INTEGER NOT NULL,
     `nome` VARCHAR(100) NOT NULL,
@@ -114,7 +100,7 @@ CREATE TABLE `contas_bancarias` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `contas_pagar` (
+CREATE TABLE IF NOT EXISTS `contas_pagar` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_empresa` INTEGER NOT NULL,
     `id_compra` INTEGER NOT NULL,
@@ -141,40 +127,10 @@ CREATE TABLE `contas_pagar` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
-CREATE TABLE `contas_receber` (
-    `id` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_empresa` INTEGER NOT NULL,
-    `id_venda` INTEGER NOT NULL,
-    `id_categoria` INTEGER NOT NULL,
-    `id_fechamento` INTEGER NULL,
-    `saldo` DECIMAL(15, 2) NULL,
-    `numero_parcela` INTEGER NOT NULL DEFAULT 1,
-    `total_parcelas` INTEGER NOT NULL DEFAULT 1,
-    `descricao` VARCHAR(255) NULL,
-    `data_lancamento` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    `data_vencimento` DATE NOT NULL,
-    `valor_original` DECIMAL(15, 2) NOT NULL,
-    `valor_desconto` DECIMAL(15, 2) NOT NULL DEFAULT 0,
-    `valor_acrescimo` DECIMAL(15, 2) NOT NULL DEFAULT 0,
-    `valor_final` DECIMAL(15, 2) NOT NULL,
-    `situacao` ENUM('ABERTO', 'PARCIAL', 'PAGO', 'ATRASADO', 'CANCELADO') NOT NULL DEFAULT 'ABERTO',
-    `observacao` TEXT NULL,
-    `data_cadastro` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    `data_atualizacao` DATETIME(3) NOT NULL,
 
-    INDEX `idx_conta_receber_fechamento`(`id_fechamento`, `id_empresa`, `id_venda`, `id_categoria`),
-    INDEX `idx_contas_receber_empresa`(`id_empresa`),
-    INDEX `idx_contas_receber_venda`(`id_venda`),
-    INDEX `idx_contas_receber_categoria`(`id_categoria`),
-    INDEX `idx_contas_receber_vencimento`(`data_vencimento`),
-    INDEX `idx_contas_receber_situacao`(`situacao`),
-    UNIQUE INDEX `uk_conta_receber_fechamento_parcela`(`id_fechamento`, `numero_parcela`),
-    PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `despesas` (
+CREATE TABLE IF NOT EXISTS `despesas` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_empresa` INTEGER NOT NULL,
     `id_categoria` INTEGER NOT NULL,
@@ -195,7 +151,7 @@ CREATE TABLE `despesas` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `movimentacoes_financeiras` (
+CREATE TABLE IF NOT EXISTS `movimentacoes_financeiras` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_empresa` INTEGER NOT NULL,
     `id_conta_bancaria` INTEGER NOT NULL,
@@ -216,7 +172,7 @@ CREATE TABLE `movimentacoes_financeiras` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `pagamentos_pagar` (
+CREATE TABLE IF NOT EXISTS `pagamentos_pagar` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_empresa` INTEGER NOT NULL,
     `id_conta_pagar` INTEGER NOT NULL,
@@ -234,7 +190,7 @@ CREATE TABLE `pagamentos_pagar` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `pagamentos_receber` (
+CREATE TABLE IF NOT EXISTS `pagamentos_receber` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_empresa` INTEGER NOT NULL,
     `id_conta_receber` INTEGER NOT NULL,
@@ -251,62 +207,10 @@ CREATE TABLE `pagamentos_receber` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
-CREATE TABLE `pedido_cliente` (
-    `id` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_empresa` INTEGER NOT NULL,
-    `id_cliente` INTEGER NOT NULL,
-    `id_usuario` INTEGER NOT NULL,
-    `id_condicao_pagamento` INTEGER NULL,
-    `id_endereco_entrega` INTEGER NULL,
-    `numero` VARCHAR(50) NOT NULL,
-    `referencia_cliente` VARCHAR(100) NULL,
-    `status` ENUM('RASCUNHO', 'CONFIRMADO', 'EM_PRODUCAO', 'PRONTO', 'EM_ENTREGA', 'PARCIALMENTE_ENTREGUE', 'ENTREGUE', 'CONCLUIDO', 'CANCELADO') NOT NULL DEFAULT 'RASCUNHO',
-    `canal_venda` ENUM('BALCAO', 'LOJA', 'ONLINE', 'WHATSAPP', 'TELEFONE', 'OUTRO') NOT NULL DEFAULT 'BALCAO',
-    `data_pedido` DATETIME(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
-    `data_confirmacao` DATETIME(0) NULL,
-    `data_previsao_entrega` DATETIME(0) NULL,
-    `data_conclusao` DATETIME(0) NULL,
-    `data_cancelamento` DATETIME(0) NULL,
-    `motivo_cancelamento` VARCHAR(255) NULL,
-    `valor_subtotal` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-    `valor_desconto` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-    `valor_frete` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-    `valor_acrescimo` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-    `valor_total` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-    `destinatario` VARCHAR(150) NULL,
-    `telefone_entrega` VARCHAR(30) NULL,
-    `endereco_entrega` VARCHAR(255) NULL,
-    `numero_entrega` VARCHAR(20) NULL,
-    `complemento_entrega` VARCHAR(100) NULL,
-    `bairro_entrega` VARCHAR(100) NULL,
-    `cidade_entrega` VARCHAR(100) NULL,
-    `estado_entrega` CHAR(2) NULL,
-    `cep_entrega` VARCHAR(10) NULL,
-    `referencia_entrega` VARCHAR(255) NULL,
-    `observacao` TEXT NULL,
-    `observacao_interna` TEXT NULL,
-    `data_cadastro` TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
-    `data_atualizacao` TIMESTAMP(0) NOT NULL,
-    `versao` INTEGER NOT NULL DEFAULT 1,
-    `chave_idempotencia` VARCHAR(128) NULL,
-    `hash_requisicao` CHAR(64) NULL,
 
-    INDEX `fk_pedido_cliente_cliente`(`id_cliente`),
-    INDEX `fk_pedido_cliente_usuario`(`id_usuario`),
-    INDEX `fk_pedido_cliente_condicao`(`id_condicao_pagamento`),
-    INDEX `fk_pedido_cliente_endereco`(`id_endereco_entrega`),
-    INDEX `idx_pedido_cliente_empresa_status`(`id_empresa`, `status`),
-    INDEX `idx_pedido_cliente_empresa_data`(`id_empresa`, `data_pedido`),
-    INDEX `idx_pedido_cliente_previsao`(`id_empresa`, `data_previsao_entrega`),
-    UNIQUE INDEX `uk_pedido_cliente_empresa_numero`(`id_empresa`, `numero`),
-    UNIQUE INDEX `uk_pedido_cliente_id_empresa_cliente`(`id`, `id_empresa`, `id_cliente`),
-    UNIQUE INDEX `uk_pedido_empresa_idempotencia`(`id_empresa`, `chave_idempotencia`),
-    PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `pedido_cliente_entrega` (
+CREATE TABLE IF NOT EXISTS `pedido_cliente_entrega` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_pedido_cliente` INTEGER NOT NULL,
     `id_usuario` INTEGER NOT NULL,
@@ -334,7 +238,7 @@ CREATE TABLE `pedido_cliente_entrega` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `pedido_cliente_entrega_item` (
+CREATE TABLE IF NOT EXISTS `pedido_cliente_entrega_item` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_pedido_cliente` INTEGER NOT NULL,
     `id_pedido_cliente_entrega` INTEGER NOT NULL,
@@ -348,7 +252,7 @@ CREATE TABLE `pedido_cliente_entrega_item` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `pedido_cliente_historico` (
+CREATE TABLE IF NOT EXISTS `pedido_cliente_historico` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `id_pedido_cliente` INTEGER NOT NULL,
     `id_usuario` INTEGER NOT NULL,
@@ -362,154 +266,279 @@ CREATE TABLE `pedido_cliente_historico` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
-CREATE TABLE `pedido_cliente_item` (
-    `id` INTEGER NOT NULL AUTO_INCREMENT,
-    `id_pedido_cliente` INTEGER NOT NULL,
-    `numero_item` INTEGER NOT NULL,
-    `id_produto` INTEGER NOT NULL,
-    `id_cor` INTEGER NULL,
-    `id_tamanho` INTEGER NULL,
-    `codigo_produto` VARCHAR(100) NULL,
-    `descricao` VARCHAR(255) NOT NULL,
-    `unidade` VARCHAR(20) NOT NULL,
-    `quantidade` DECIMAL(15, 3) NOT NULL,
-    `valor_unitario` DECIMAL(15, 2) NOT NULL,
-    `valor_desconto` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-    `valor_acrescimo` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-    `valor_total` DECIMAL(15, 2) NOT NULL,
-    `data_previsao_entrega` DATETIME(0) NULL,
-    `observacao` TEXT NULL,
-    `data_cadastro` TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0),
-    `data_atualizacao` TIMESTAMP(0) NOT NULL,
-    `id_variacao` INTEGER NULL,
 
-    INDEX `fk_pedido_item_produto`(`id_produto`),
-    INDEX `fk_pedido_item_cor`(`id_cor`),
-    INDEX `fk_pedido_item_tamanho`(`id_tamanho`),
-    INDEX `fk_pedido_item_variacao`(`id_variacao`),
-    UNIQUE INDEX `uk_pedido_cliente_numero_item`(`id_pedido_cliente`, `numero_item`),
-    UNIQUE INDEX `uk_pedido_item_id_pedido`(`id`, `id_pedido_cliente`),
-    UNIQUE INDEX `uk_pedido_item_produto_variacao`(`id_pedido_cliente`, `id_produto`, `id_variacao`),
-    PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- AddForeignKey
-ALTER TABLE `categoria_financeira` ADD CONSTRAINT `categoria_financeira_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'categoria_financeira' AND constraint_name = 'categoria_financeira_id_empresa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `categoria_financeira` ADD CONSTRAINT `categoria_financeira_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE CASCADE ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `cliente_contato` ADD CONSTRAINT `cliente_contato_id_cliente_fkey` FOREIGN KEY (`id_cliente`) REFERENCES `clientes`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'cliente_contato' AND constraint_name = 'cliente_contato_id_cliente_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `cliente_contato` ADD CONSTRAINT `cliente_contato_id_cliente_fkey` FOREIGN KEY (`id_cliente`) REFERENCES `clientes`(`id`) ON DELETE CASCADE ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `cliente_endereco` ADD CONSTRAINT `cliente_endereco_id_cliente_fkey` FOREIGN KEY (`id_cliente`) REFERENCES `clientes`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'cliente_endereco' AND constraint_name = 'cliente_endereco_id_cliente_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `cliente_endereco` ADD CONSTRAINT `cliente_endereco_id_cliente_fkey` FOREIGN KEY (`id_cliente`) REFERENCES `clientes`(`id`) ON DELETE CASCADE ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `condicoes_pagamento` ADD CONSTRAINT `condicoes_pagamento_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'condicoes_pagamento' AND constraint_name = 'condicoes_pagamento_id_empresa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `condicoes_pagamento` ADD CONSTRAINT `condicoes_pagamento_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE CASCADE ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `contas_bancarias` ADD CONSTRAINT `contas_bancarias_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'contas_bancarias' AND constraint_name = 'contas_bancarias_id_empresa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `contas_bancarias` ADD CONSTRAINT `contas_bancarias_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE CASCADE ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `contas_pagar` ADD CONSTRAINT `contas_pagar_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'contas_pagar' AND constraint_name = 'contas_pagar_id_empresa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `contas_pagar` ADD CONSTRAINT `contas_pagar_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `contas_pagar` ADD CONSTRAINT `contas_pagar_id_compra_fkey` FOREIGN KEY (`id_compra`) REFERENCES `compras`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'contas_pagar' AND constraint_name = 'contas_pagar_id_compra_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `contas_pagar` ADD CONSTRAINT `contas_pagar_id_compra_fkey` FOREIGN KEY (`id_compra`) REFERENCES `compras`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `contas_pagar` ADD CONSTRAINT `contas_pagar_id_categoria_fkey` FOREIGN KEY (`id_categoria`) REFERENCES `categoria_financeira`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'contas_pagar' AND constraint_name = 'contas_pagar_id_categoria_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `contas_pagar` ADD CONSTRAINT `contas_pagar_id_categoria_fkey` FOREIGN KEY (`id_categoria`) REFERENCES `categoria_financeira`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `contas_receber` ADD CONSTRAINT `contas_receber_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'contas_receber' AND constraint_name = 'contas_receber_id_empresa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `contas_receber` ADD CONSTRAINT `contas_receber_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `contas_receber` ADD CONSTRAINT `contas_receber_id_venda_fkey` FOREIGN KEY (`id_venda`) REFERENCES `venda`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'contas_receber' AND constraint_name = 'contas_receber_id_venda_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `contas_receber` ADD CONSTRAINT `contas_receber_id_venda_fkey` FOREIGN KEY (`id_venda`) REFERENCES `venda`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `contas_receber` ADD CONSTRAINT `contas_receber_id_categoria_fkey` FOREIGN KEY (`id_categoria`) REFERENCES `categoria_financeira`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'contas_receber' AND constraint_name = 'contas_receber_id_categoria_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `contas_receber` ADD CONSTRAINT `contas_receber_id_categoria_fkey` FOREIGN KEY (`id_categoria`) REFERENCES `categoria_financeira`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `contas_receber` ADD CONSTRAINT `fk_conta_receber_fechamento` FOREIGN KEY (`id_fechamento`, `id_empresa`, `id_venda`, `id_categoria`) REFERENCES `pedido_cliente_fechamento`(`id`, `id_empresa`, `id_venda`, `id_categoria`) ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE `despesas` ADD CONSTRAINT `despesas_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'despesas' AND constraint_name = 'despesas_id_empresa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `despesas` ADD CONSTRAINT `despesas_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `despesas` ADD CONSTRAINT `despesas_id_categoria_fkey` FOREIGN KEY (`id_categoria`) REFERENCES `categoria_financeira`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'despesas' AND constraint_name = 'despesas_id_categoria_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `despesas` ADD CONSTRAINT `despesas_id_categoria_fkey` FOREIGN KEY (`id_categoria`) REFERENCES `categoria_financeira`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `despesas` ADD CONSTRAINT `despesas_id_conta_pagar_fkey` FOREIGN KEY (`id_conta_pagar`) REFERENCES `contas_pagar`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'despesas' AND constraint_name = 'despesas_id_conta_pagar_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `despesas` ADD CONSTRAINT `despesas_id_conta_pagar_fkey` FOREIGN KEY (`id_conta_pagar`) REFERENCES `contas_pagar`(`id`) ON DELETE SET NULL ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'movimentacoes_financeiras' AND constraint_name = 'movimentacoes_financeiras_id_empresa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_conta_bancaria_fkey` FOREIGN KEY (`id_conta_bancaria`) REFERENCES `contas_bancarias`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'movimentacoes_financeiras' AND constraint_name = 'movimentacoes_financeiras_id_conta_bancaria_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_conta_bancaria_fkey` FOREIGN KEY (`id_conta_bancaria`) REFERENCES `contas_bancarias`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_pagamento_receber_fkey` FOREIGN KEY (`id_pagamento_receber`) REFERENCES `pagamentos_receber`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'movimentacoes_financeiras' AND constraint_name = 'movimentacoes_financeiras_id_pagamento_receber_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_pagamento_receber_fkey` FOREIGN KEY (`id_pagamento_receber`) REFERENCES `pagamentos_receber`(`id`) ON DELETE SET NULL ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_pagamento_pagar_fkey` FOREIGN KEY (`id_pagamento_pagar`) REFERENCES `pagamentos_pagar`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'movimentacoes_financeiras' AND constraint_name = 'movimentacoes_financeiras_id_pagamento_pagar_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_pagamento_pagar_fkey` FOREIGN KEY (`id_pagamento_pagar`) REFERENCES `pagamentos_pagar`(`id`) ON DELETE SET NULL ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_despesa_fkey` FOREIGN KEY (`id_despesa`) REFERENCES `despesas`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'movimentacoes_financeiras' AND constraint_name = 'movimentacoes_financeiras_id_despesa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `movimentacoes_financeiras` ADD CONSTRAINT `movimentacoes_financeiras_id_despesa_fkey` FOREIGN KEY (`id_despesa`) REFERENCES `despesas`(`id`) ON DELETE SET NULL ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pagamentos_pagar` ADD CONSTRAINT `pagamentos_pagar_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pagamentos_pagar' AND constraint_name = 'pagamentos_pagar_id_empresa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pagamentos_pagar` ADD CONSTRAINT `pagamentos_pagar_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pagamentos_pagar` ADD CONSTRAINT `pagamentos_pagar_id_conta_pagar_fkey` FOREIGN KEY (`id_conta_pagar`) REFERENCES `contas_pagar`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pagamentos_pagar' AND constraint_name = 'pagamentos_pagar_id_conta_pagar_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pagamentos_pagar` ADD CONSTRAINT `pagamentos_pagar_id_conta_pagar_fkey` FOREIGN KEY (`id_conta_pagar`) REFERENCES `contas_pagar`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pagamentos_receber` ADD CONSTRAINT `pagamentos_receber_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pagamentos_receber' AND constraint_name = 'pagamentos_receber_id_empresa_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pagamentos_receber` ADD CONSTRAINT `pagamentos_receber_id_empresa_fkey` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pagamentos_receber` ADD CONSTRAINT `pagamentos_receber_id_conta_receber_fkey` FOREIGN KEY (`id_conta_receber`) REFERENCES `contas_receber`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pagamentos_receber' AND constraint_name = 'pagamentos_receber_id_conta_receber_fkey' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pagamentos_receber` ADD CONSTRAINT `pagamentos_receber_id_conta_receber_fkey` FOREIGN KEY (`id_conta_receber`) REFERENCES `contas_receber`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_empresa` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente' AND constraint_name = 'fk_pedido_cliente_empresa' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_empresa` FOREIGN KEY (`id_empresa`) REFERENCES `empresas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `clientes`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente' AND constraint_name = 'fk_pedido_cliente_cliente' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `clientes`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente' AND constraint_name = 'fk_pedido_cliente_usuario' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_condicao` FOREIGN KEY (`id_condicao_pagamento`) REFERENCES `condicoes_pagamento`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente' AND constraint_name = 'fk_pedido_cliente_condicao' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_condicao` FOREIGN KEY (`id_condicao_pagamento`) REFERENCES `condicoes_pagamento`(`id`) ON DELETE SET NULL ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_endereco` FOREIGN KEY (`id_endereco_entrega`) REFERENCES `cliente_endereco`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente' AND constraint_name = 'fk_pedido_cliente_endereco' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente` ADD CONSTRAINT `fk_pedido_cliente_endereco` FOREIGN KEY (`id_endereco_entrega`) REFERENCES `cliente_endereco`(`id`) ON DELETE SET NULL ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_entrega` ADD CONSTRAINT `fk_pedido_entrega_pedido` FOREIGN KEY (`id_pedido_cliente`) REFERENCES `pedido_cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_entrega' AND constraint_name = 'fk_pedido_entrega_pedido' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_entrega` ADD CONSTRAINT `fk_pedido_entrega_pedido` FOREIGN KEY (`id_pedido_cliente`) REFERENCES `pedido_cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_entrega` ADD CONSTRAINT `fk_pedido_entrega_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_entrega' AND constraint_name = 'fk_pedido_entrega_usuario' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_entrega` ADD CONSTRAINT `fk_pedido_entrega_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_entrega_item` ADD CONSTRAINT `fk_pedido_entrega_item_entrega` FOREIGN KEY (`id_pedido_cliente_entrega`, `id_pedido_cliente`) REFERENCES `pedido_cliente_entrega`(`id`, `id_pedido_cliente`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_entrega_item' AND constraint_name = 'fk_pedido_entrega_item_entrega' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_entrega_item` ADD CONSTRAINT `fk_pedido_entrega_item_entrega` FOREIGN KEY (`id_pedido_cliente_entrega`, `id_pedido_cliente`) REFERENCES `pedido_cliente_entrega`(`id`, `id_pedido_cliente`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_entrega_item` ADD CONSTRAINT `fk_pedido_entrega_item_item` FOREIGN KEY (`id_pedido_cliente_item`, `id_pedido_cliente`) REFERENCES `pedido_cliente_item`(`id`, `id_pedido_cliente`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_entrega_item' AND constraint_name = 'fk_pedido_entrega_item_item' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_entrega_item` ADD CONSTRAINT `fk_pedido_entrega_item_item` FOREIGN KEY (`id_pedido_cliente_item`, `id_pedido_cliente`) REFERENCES `pedido_cliente_item`(`id`, `id_pedido_cliente`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_historico` ADD CONSTRAINT `fk_pedido_historico_pedido` FOREIGN KEY (`id_pedido_cliente`) REFERENCES `pedido_cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_historico' AND constraint_name = 'fk_pedido_historico_pedido' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_historico` ADD CONSTRAINT `fk_pedido_historico_pedido` FOREIGN KEY (`id_pedido_cliente`) REFERENCES `pedido_cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_historico` ADD CONSTRAINT `fk_pedido_historico_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_historico' AND constraint_name = 'fk_pedido_historico_usuario' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_historico` ADD CONSTRAINT `fk_pedido_historico_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_pedido` FOREIGN KEY (`id_pedido_cliente`) REFERENCES `pedido_cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_item' AND constraint_name = 'fk_pedido_item_pedido' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_pedido` FOREIGN KEY (`id_pedido_cliente`) REFERENCES `pedido_cliente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_item' AND constraint_name = 'fk_pedido_item_produto' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_cor` FOREIGN KEY (`id_cor`) REFERENCES `cores`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_item' AND constraint_name = 'fk_pedido_item_cor' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_cor` FOREIGN KEY (`id_cor`) REFERENCES `cores`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_tamanho` FOREIGN KEY (`id_tamanho`) REFERENCES `tamanhos`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_item' AND constraint_name = 'fk_pedido_item_tamanho' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_tamanho` FOREIGN KEY (`id_tamanho`) REFERENCES `tamanhos`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- AddForeignKey
-ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_variacao` FOREIGN KEY (`id_variacao`) REFERENCES `produto_variacoes`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'pedido_cliente_item' AND constraint_name = 'fk_pedido_item_variacao' AND constraint_type = 'FOREIGN KEY');
+SET @fk_sql = IF(@fk_exists = 0, 'ALTER TABLE `pedido_cliente_item` ADD CONSTRAINT `fk_pedido_item_variacao` FOREIGN KEY (`id_variacao`) REFERENCES `produto_variacoes`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE', 'SELECT 1');
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;

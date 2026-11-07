@@ -6,8 +6,9 @@ import os from "node:os"
 import path from "node:path"
 import { createGzip } from "node:zlib"
 import { pipeline } from "node:stream/promises"
-import { loadEnvConfig } from "@next/env"
+import nextEnv from "@next/env"
 
+const { loadEnvConfig } = nextEnv
 loadEnvConfig(process.cwd())
 
 function requiredDatabaseUrl() {
