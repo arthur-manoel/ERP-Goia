@@ -22,10 +22,14 @@ import {
 
 import * as fluxos from "../fluxos/fluxos.repository"
 import { validarFluxo } from "../fluxos/fluxos.service"
+import { consumoConclusaoComprovado } from "@/modules/reservas/fluxo.service"
+import { entradasProducaoComprovadas } from "./producao.efeitos"
 import {
   ready,
   confirmarQuantidades,
+  perdasIntegraisComprovadas,
   validarApontamentoLegado,
+  validarQuantidadesLegadas,
 } from "./ordem.validation"
 
 const limite = new Prisma.Decimal("999999999999.999")
@@ -62,10 +66,38 @@ function resposta(ordem: Ordem) {
   return {
     ordem,
     perdaAplicada: false,
-    // Encerramento administrativo não executa reserva, baixa nem consumo efetivo.
+    // A conclusão confirma separadamente a existência das entradas no livro.
     baixaEstoque: "pendente" as const,
     disponibilidadeEstoque: "nao_verificada" as const,
   }
+}
+async function comprovacaoEstoque(
+  tx: Transaction,
+  ctx: Contexto,
+  ordem: Ordem,
+  perdas?: ReadonlySet<number>,
+) {
+  if (ordem.status !== "CONCLUIDA") return "pendente" as const
+  perdas ??= await perdasIntegraisComprovadas(tx, ordem)
+  if (perdas.size > 0 && !(await consumoConclusaoComprovado(tx, ctx, ordem.id)))
+    return "pendente_regularizacao" as const
+  const entradas = await tx.movimentacao_estoque.findMany({
+    where: {
+      id_empresa: ctx.idEmpresa,
+      origem_tipo: "ORDEM_PRODUCAO",
+      origem_id: ordem.id,
+      tipo: "ENTRADA_PRODUCAO",
+    },
+    select: { chave_operacao: true, id_produto: true, quantidade: true },
+  })
+  return entradasProducaoComprovadas(
+    ordem.id,
+    ordem.ordem_producao_item,
+    entradas,
+    perdas,
+  )
+    ? ("efetivada" as const)
+    : ("pendente_regularizacao" as const)
 }
 async function finalizar(
   tx: Transaction,
@@ -74,10 +106,15 @@ async function finalizar(
   antes: Ordem | null,
 ) {
   const depois = await buscarOrdem(tx, ctx, id)
-  await auditar(tx, ctx, antes, depois)
+  const perdas =
+    depois.status === "CONCLUIDA"
+      ? await perdasIntegraisComprovadas(tx, depois)
+      : undefined
+  await auditar(tx, ctx, antes, depois, perdas)
   const snapshot = await fluxos.snapshot(tx, id)
   return {
     ...resposta(depois),
+    baixaEstoque: await comprovacaoEstoque(tx, ctx, depois, perdas),
     ...(snapshot
       ? { fluxoSnapshot: snapshot, etapas: await fluxos.etapas(tx, id) }
       : {}),
@@ -303,7 +340,7 @@ export async function avancarOrdemNaTransacao(
   const fluxo = ordem.ordem_producao_fluxo_setor
   if (input.statusDestino === "EM_PRODUCAO" && ordem.status !== "PAUSADA") {
     if (ordem.status === "LIBERADA") {
-      setor = fluxo[0]?.id_setor ?? null
+      setor = fluxo[0]?.id_setor ?? setor
     } else {
       const index = fluxo.findIndex((item) => item.id_setor === setor)
       if (index < 0 || index === fluxo.length - 1)
@@ -376,7 +413,8 @@ export async function encerrarOrdemNaTransacao(
       "Conclua a última etapa para encerrar esta ordem.",
     )
   validarApontamentoLegado(ordem)
-  await confirmarQuantidades(tx, ordem)
+  await validarQuantidadesLegadas(tx, ordem)
+  await confirmarQuantidades(tx, ordem, ctx)
   await atualizarEstado(tx, ctx, ordem, {
     status: "CONCLUIDA",
     data_conclusao: new Date(),
@@ -452,7 +490,7 @@ export async function executarEtapaNaTransacao(
         "Inicie a etapa atual antes de concluí-la e retome ordens pausadas.",
       )
     const ultima = atual.id === etapas[etapas.length - 1].id
-    if (ultima) await confirmarQuantidades(tx, ordem)
+    if (ultima) await confirmarQuantidades(tx, ordem, ctx)
     await fluxos.transicionarEtapa(tx, id, atual, false)
     // A etapa já tem lock e atualização condicional. Entre etapas não há
     // mudança no cabeçalho; evite depender da contagem de UPDATE sem alteração.
@@ -470,6 +508,7 @@ export function consultarOrdem(ctx: Contexto, id: number) {
     const snapshot = await fluxos.snapshot(tx, id)
     return {
       ...resposta(ordem),
+      baixaEstoque: await comprovacaoEstoque(tx, ctx, ordem),
       ...(snapshot
         ? { fluxoSnapshot: snapshot, etapas: await fluxos.etapas(tx, id) }
         : {}),

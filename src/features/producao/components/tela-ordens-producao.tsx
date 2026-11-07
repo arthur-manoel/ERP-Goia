@@ -1,5 +1,5 @@
-import { TelaModulo } from "@/features/erp/components/tela-modulo"
+import { OperacoesEstoque } from "@/features/reservas/components/operacoes-estoque"
 
 export function TelaOrdensProducao() {
-  return <TelaModulo module="producao" />
+  return <OperacoesEstoque origem="PRODUCAO" />
 }

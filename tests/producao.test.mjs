@@ -16,6 +16,7 @@ function setup(overrides = {}) {
     id_empresa: 10,
     id_usuario: 5,
     id_setor: null,
+    id_local_estoque: 4,
     status: "PLANEJADA",
     quantidade_planejada: new Decimal(2),
     data_inicio: null,
@@ -41,9 +42,30 @@ function setup(overrides = {}) {
     ],
   }
   const tx = {
+    locais_estoque: {
+      async findFirst() {
+        return { id: 4 }
+      },
+    },
+    estoque: {
+      async findFirst() {
+        return null
+      },
+    },
     usuario_empresa: {
       async findFirst() {
         return { id: 1 }
+      },
+    },
+    movimentacao_estoque: {
+      async findMany() {
+        return calls.some(([tipo]) => tipo === "entrada-producao")
+          ? ordem.ordem_producao_item.map((item) => ({
+              chave_operacao: `op:${ordem.id}:item:${item.id}`,
+              id_produto: item.id_produto,
+              quantidade: item.quantidade_produzida,
+            }))
+          : []
       },
     },
     reserva_estoque: {
@@ -182,6 +204,32 @@ function setup(overrides = {}) {
     }).outputText
     function localRequire(id) {
       if (Object.hasOwn(overrides, id)) return overrides[id]
+      // O efeito físico é exercitado por HTTP/MariaDB em operacoes-integradas.
+      // Aqui validamos que o orquestrador chama o mesmo colaborador transacional.
+      if (id === "@/modules/reservas/fluxo.service")
+        return {
+          async variacaoEntradaProducao() {},
+          async entradaConclusao(database, contexto, idOP) {
+            assert.equal(database, tx)
+            calls.push(["entrada-producao", contexto, idOP])
+            return []
+          },
+        }
+      if (id === "./producao.efeitos")
+        return {
+          ...load(path.join(path.dirname(file), "producao.efeitos.ts")),
+          async lerEfeitosProducao() {
+            return {
+              evento: "CONCLUSAO_PRODUCAO",
+              entradaProdutos: { situacao: "EFETIVADA", movimentos: [] },
+              consumoInsumos: {
+                situacao: "CONFIRMADO",
+                materiais: [],
+                movimentos: [],
+              },
+            }
+          },
+        }
       if (id === "server-only") return {}
       if (id === "@/generated/prisma/client")
         return { Prisma: { ...runtime, sql: runtime.sqltag } }
@@ -382,8 +430,14 @@ test("lock otimista inclui status, empresa e setor; falha não gera histórico",
   )
 })
 
-test("encerramento exige último setor e histórico completo; informa estoque pendente", async () => {
-  const { service, ordem, calls } = setup()
+test("encerramento exige último setor e histórico completo; chama entrada de estoque na transação", async () => {
+  const { service, ordem, calls, tx } = setup()
+  const atualizar = tx.ordem_producao.updateMany
+  tx.ordem_producao.updateMany = async (args) => {
+    const r = await atualizar(args)
+    Object.assign(ordem, args.data)
+    return r
+  }
   ordem.status = "EM_PRODUCAO"
   ordem.data_inicio = new Date()
   ordem.id_setor = 8
@@ -409,7 +463,11 @@ test("encerramento exige último setor e histórico completo; informa estoque pe
   // Produção efetivamente registrada, diferente do planejado.
   ordem.ordem_producao_item[0].quantidade_produzida = new Decimal("1.750")
   const result = await service.encerrarOrdem(ctx, 1, input)
-  assert.equal(result.baixaEstoque, "pendente")
+  assert.equal(result.baixaEstoque, "efetivada")
+  assert.deepEqual(
+    calls.filter(([tipo]) => tipo === "entrada-producao"),
+    [["entrada-producao", ctx, 1]],
+  )
   assert.equal(result.perdaAplicada, false)
   assert.equal(
     ordem.ordem_producao_item[0].quantidade_produzida.toString(),
@@ -647,6 +705,7 @@ function setupEtapas() {
     return { count: 1 }
   }
   state.ordem.status = "LIBERADA"
+  state.ordem.ordem_producao_fluxo_setor = etapas
   return { ...state, etapas, snapshot }
 }
 
@@ -1015,6 +1074,14 @@ test("Prisma 7: DriverAdapterError real e encapsulado são conflitos; schema/con
     { kind: "TransactionWriteConflict", originalCode: "1213" },
     {
       kind: "mysql",
+      code: 1020,
+      originalCode: "1020",
+      message:
+        "Record has changed since last read in table ordem_producao; try restarting transaction",
+      state: "HY000",
+    },
+    {
+      kind: "mysql",
       code: 1205,
       originalCode: "1205",
       message: "Lock timeout",
@@ -1043,6 +1110,13 @@ test("Prisma 7: DriverAdapterError real e encapsulado são conflitos; schema/con
     { kind: "ColumnNotFound", originalCode: "1054", column: "ausente" },
     { kind: "TableDoesNotExist", originalCode: "1146", table: "ausente" },
     { kind: "ConnectionClosed", originalCode: "2006" },
+    {
+      kind: "mysql",
+      code: 1644,
+      originalCode: "1644",
+      message: "Falha de trigger não concorrente",
+      state: "45000",
+    },
   ]) {
     const error = new DriverAdapterError(cause)
     prisma.$transaction = async () => {

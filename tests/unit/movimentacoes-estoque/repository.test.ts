@@ -13,6 +13,7 @@ const tx = {
   locais_estoque: { findFirst: vi.fn() },
   setores: { findFirst: vi.fn() },
   estoque: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+  estoque_variacao: { aggregate: vi.fn() },
   movimentacao_estoque: { groupBy: vi.fn(), create: vi.fn() },
   kardex: { create: vi.fn() },
   auditoria: { create: vi.fn() },
@@ -32,6 +33,9 @@ const estoque = {
   quantidade_reservada: new Prisma.Decimal(1),
 }
 beforeEach(() => {
+  tx.estoque_variacao.aggregate.mockResolvedValue({
+    _sum: { quantidade: null },
+  })
   db.$transaction.mockImplementation(async (run) => run(tx))
   tx.$queryRaw.mockResolvedValue([{ id: 1 }])
   tx.produto_empresa.findFirst.mockResolvedValue({ id: 1 })

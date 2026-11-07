@@ -3,7 +3,7 @@
 Entrega exclusivamente de back-end. Reutiliza pedidos/itens persistidos e o
 financeiro existente: `pedido_cliente` → `venda` → `contas_receber`. Cada parcela
 é um título independente; não há um segundo cadastro de cliente ou pedido.
-O front-end e seu adaptador temporário não foram conectados por esta entrega.
+A PR #121 conecta o fechamento e os recebimentos à interface autenticada; o adaptador temporário não participa desse fluxo.
 
 ## Evento comercial e elegibilidade
 
@@ -27,7 +27,7 @@ as datas reais de entrega das remessas, ficando nula se alguma não for conhecid
 não confunde confirmação do recebimento com data da entrega física.
 
 Não gera pagamentos, baixa, movimentação financeira, reserva, estoque, produção,
-cancelamento, estorno, notificação ou regularização retroativa.
+cancelamento, estorno, notificação ou regularização retroativa por si só. O fluxo explícito de [cancelamentos](../cancelamentos/README.md) preserva esta origem e acrescenta compensações e restituições vinculadas.
 
 ## Autenticação e permissões
 
@@ -165,7 +165,7 @@ Pedidos antigos com venda sem marcador, parcelas faltantes, soma incorreta ou
 vínculos divergentes recebem 409 com regularização necessária. Não há backfill,
 reparo por GET/retry ou cobrança retroativa por pressupor que CONCLUIDO é fechado.
 Pedido sem fechamento comprovado recebe 409 na consulta. Ajustes financeiros
-manuais, cancelamento e regularização exigem entrega própria.
+manuais e regularização exigem tratamento próprio. Cancelamentos e estornos acrescentados na PR #121 têm contrato em [cancelamentos](../cancelamentos/README.md).
 
 ## Banco, migration e implantação DB-first
 

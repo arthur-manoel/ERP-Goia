@@ -1,11 +1,29 @@
 import "server-only"
+import { liberarReservasOP } from "@/modules/reservas/reservas.service"
+import { conferir } from "@/modules/reservas/operacoes"
 import { Prisma } from "@/generated/prisma/client"
 import type { z } from "zod"
 import * as repo from "./ordem.repository"
+import { allowedCompanies } from "../../../modules/catalogos/repository"
+import {
+  fonteProducao,
+  validarProjecao,
+  protegerEfeitosFisicos,
+  identidadeConfirmacao,
+  confirmacaoPorChave,
+  registrarConfirmacao,
+} from "./producao.contabilizacao"
+import {
+  totais,
+  etapas as etapasApontadas,
+} from "../apontamentos/apontamentos.repository"
+import { validarDisponibilidade } from "../apontamentos/apontamentos.regras"
 import {
   relationships,
   ready,
   validarApontamentoLegado,
+  validarDestinoProducao,
+  posicaoIncompativel,
 } from "./ordem.validation"
 import {
   auditar,
@@ -30,6 +48,7 @@ import type {
   ordemItemSchema,
   apontarSchema,
   patchItemSchema,
+  regularizarOrdemSchema,
 } from "./ordem.schema"
 
 const conflict = (message: string): never => {
@@ -165,11 +184,164 @@ export function update(
   })
 }
 export const patch = update
+export function regularizar(
+  ctx: Contexto,
+  id: number,
+  input: z.output<typeof regularizarOrdemSchema>,
+) {
+  return repo.write(ctx, async (tx) => {
+    await conferir(tx, ctx, [
+      ["ORDENS_PRODUCAO", "editar"],
+      ["ESTOQUE", "editar"],
+    ])
+    await required(ctx, id, tx)
+    const antes = await buscarOrdem(tx, ctx, id)
+    if (["CONCLUIDA", "CANCELADA"].includes(antes.status))
+      conflict(
+        "Ordens encerradas não podem ser regularizadas por esta operação.",
+      )
+    if (
+      await tx.movimentacao_estoque.findFirst({
+        where: {
+          id_empresa: ctx.idEmpresa,
+          origem_id: id,
+          tipo: "ENTRADA_PRODUCAO",
+          origem_tipo: { in: ["ORDEM_PRODUCAO", "PRODUCAO"] },
+        },
+        select: { id: true },
+      })
+    )
+      conflict(
+        "Já existe entrada de produção. A regularização não pode alterar esse histórico.",
+      )
+    const localAnterior = antes.id_local_estoque
+    const setorFinal =
+      antes.ordem_producao_fluxo_setor.at(-1)?.id_setor ?? antes.id_setor
+    const setorDestino = setorFinal ?? input.idSetor
+    if (
+      input.idLocal &&
+      localAnterior !== null &&
+      (input.idLocal === localAnterior ||
+        ((await repo.local(ctx, localAnterior, tx)) &&
+          (setorDestino === undefined ||
+            !(await posicaoIncompativel(
+              tx,
+              ctx,
+              localAnterior,
+              setorDestino,
+              antes.ordem_producao_item.map((i) => i.id_produto),
+            )))))
+    )
+      conflict(
+        "A regularização só altera um local ausente, inativo ou incompatível.",
+      )
+    if (
+      input.idSetor &&
+      (antes.id_setor !== null || antes.ordem_producao_fluxo_setor.length)
+    )
+      conflict("O setor já está definido na ordem ou no fluxo.")
+
+    const dados = { id_local_estoque: input.idLocal, id_setor: input.idSetor }
+    if (input.idLocal || input.idSetor) await repo.update(ctx, id, dados, tx)
+    for (const selecao of input.variacoes) {
+      const item = antes.ordem_producao_item.find(
+        (i) => i.id === selecao.idItem,
+      )
+      if (!item)
+        throw new ProducaoError(404, "Item não encontrado nesta ordem.")
+      const variante = await tx.produto_variacoes.findFirst({
+        where: {
+          id: selecao.idVariacao,
+          id_empresa: ctx.idEmpresa,
+          id_produto: item.id_produto,
+          status: "ATIVO",
+        },
+        select: {
+          id_cor: true,
+          id_tamanho: true,
+          tamanhos: { select: { nome: true } },
+        },
+      })
+      if (!variante)
+        throw new ProducaoError(
+          400,
+          "Variação inválida para este produto e empresa.",
+        )
+      const tamanhoRegistrado = item.tamanho.trim().toLocaleLowerCase("pt-BR")
+      if (
+        item.id_tamanho === null &&
+        tamanhoRegistrado &&
+        !["unico", "único"].includes(tamanhoRegistrado) &&
+        variante.tamanhos?.nome.trim().toLocaleLowerCase("pt-BR") !==
+          tamanhoRegistrado
+      )
+        conflict(
+          "A variação precisa preservar o tamanho já registrado na ordem.",
+        )
+      if (item.id_pedido_cliente_item !== null) {
+        const itemPedido = await tx.pedido_cliente_item.findFirst({
+          where: {
+            id: item.id_pedido_cliente_item,
+            id_pedido_cliente: antes.id_pedido_cliente ?? undefined,
+            id_produto: item.id_produto,
+            pedido_cliente: { id_empresa: ctx.idEmpresa },
+          },
+          select: { id_variacao: true },
+        })
+        if (
+          !itemPedido ||
+          (itemPedido.id_variacao !== null &&
+            itemPedido.id_variacao !== selecao.idVariacao)
+        )
+          conflict(
+            "A variação precisa preservar a grade do item de pedido vinculado.",
+          )
+      }
+      if (
+        (item.id_cor !== null && item.id_cor !== variante.id_cor) ||
+        (item.id_tamanho !== null && item.id_tamanho !== variante.id_tamanho) ||
+        (item.id_cor === variante.id_cor &&
+          item.id_tamanho === variante.id_tamanho)
+      )
+        conflict(
+          "A variação deve preencher os dados ausentes e preservar a grade já registrada.",
+        )
+      await repo.updateItem(
+        ctx,
+        id,
+        item.id,
+        {
+          id_cor: variante.id_cor,
+          id_tamanho: variante.id_tamanho,
+        },
+        tx,
+      )
+    }
+    const depois = await buscarOrdem(tx, ctx, id)
+    await validarDestinoProducao(tx, ctx, depois)
+    const destino = (ordem: typeof antes) => ({
+      local: ordem.id_local_estoque,
+      setor: ordem.id_setor,
+      variacoes: ordem.ordem_producao_item.map(
+        ({ id, id_cor, id_tamanho }) => ({ id, id_cor, id_tamanho }),
+      ),
+    })
+    const auditoria = {
+      id,
+      ...destino(depois),
+      evento: "REGULARIZACAO_DESTINO",
+      motivo: input.motivo,
+    }
+    await auditar(tx, ctx, destino(antes), auditoria)
+    return depois
+  })
+}
 export function cancel(ctx: Contexto, id: number) {
   return repo.write(ctx, async (tx) => {
     const before = await required(ctx, id, tx)
     if (["CONCLUIDA", "CANCELADA"].includes(before.status))
       conflict("Não é permitido cancelar ordens concluídas ou já canceladas.")
+    await liberarReservasOP(tx, ctx, id)
     const effects = await repo.operationalCounts(ctx, id, tx)
     const reasons = [
       "reservas ativas",
@@ -328,7 +500,37 @@ export function addItem(
       await repo.createStages(ctx, id, fluxo.setores, tx)
       await fluxos.gravarSnapshot(tx, id, fluxo)
     }
-    const item = await repo.createItem(ctx, id, input, tx)
+    const { id_variacao, ...dadosItem } = input
+    const variacao = id_variacao
+      ? await tx.produto_variacoes.findFirst({
+          where: {
+            id: id_variacao,
+            id_empresa: ctx.idEmpresa,
+            id_produto: input.id_produto,
+            status: "ATIVO",
+          },
+          include: { tamanhos: true },
+        })
+      : null
+    if (id_variacao && !variacao)
+      conflict("Variação inválida para este produto e empresa.")
+    const item = await repo.createItem(
+      ctx,
+      id,
+      {
+        ...dadosItem,
+        ...(variacao
+          ? {
+              id_cor: variacao.id_cor,
+              id_tamanho: variacao.id_tamanho,
+              tamanho: variacao.tamanhos
+                ? Array.from(variacao.tamanhos.nome).slice(0, 30).join("")
+                : input.tamanho,
+            }
+          : {}),
+      },
+      tx,
+    )
     await repo.createPlan(
       ctx,
       id,
@@ -347,8 +549,32 @@ export function recordProduction(
   id: number,
   itemId: number,
   input: z.output<typeof apontarSchema>,
+  chave?: string,
 ) {
+  const identidade = identidadeConfirmacao(
+    ctx,
+    id,
+    itemId,
+    input.quantidade_produzida,
+    input.quantidade_esperada,
+    chave,
+    input.motivo_ajuste_legado,
+  )
   return repo.write(ctx, async (tx) => {
+    if (
+      !(
+        await allowedCompanies(
+          ctx.idUsuario,
+          "ORDENS_PRODUCAO",
+          "pode_editar",
+          tx,
+        )
+      ).includes(ctx.idEmpresa)
+    )
+      throw new ProducaoError(
+        403,
+        "Sem permissão de edição da produção nesta empresa.",
+      )
     const row = await required(ctx, id, tx)
     if (row.status !== "EM_PRODUCAO")
       conflict("Apontamentos exigem ordem em produção.")
@@ -368,43 +594,177 @@ export function recordProduction(
         return conflict("Registre a produção na última etapa em execução.")
       sector = stage.id_setor
     } else {
-      validarApontamentoLegado(await buscarOrdem(tx, ctx, id))
+      const legado = await buscarOrdem(tx, ctx, id)
+      validarApontamentoLegado(legado)
+      const ultima = legado.ordem_producao_fluxo_setor.at(-1)
+      // Havendo histórico quantitativo, o legado também usa a última etapa
+      // para registrar a produção final e validar a disponibilidade anterior.
+      if (ultima) {
+        const fonteLegada = await fonteProducao(
+          tx,
+          id,
+          itemId,
+          ultima.id_setor,
+          item.quantidade_produzida,
+        )
+        if (
+          fonteLegada.temDetalhamento ||
+          fonteLegada.temApontamentosAnteriores ||
+          fonteLegada.temHistoricoFinal
+        )
+          sector = ultima.id_setor
+      }
     }
     const total = new Prisma.Decimal(input.quantidade_produzida)
-    if (item.quantidade_produzida.eq(total)) return item
-    if (!item.quantidade_produzida.eq(input.quantidade_esperada))
-      conflict("A quantidade produzida mudou. Recarregue o item.")
-    const delta = total.minus(item.quantidade_produzida)
-    if (delta.lte(0))
-      conflict("Reduções de produção exigem um fluxo de ajuste ou estorno.")
+    const fonte = await fonteProducao(
+      tx,
+      id,
+      itemId,
+      sector,
+      item.quantidade_produzida,
+    )
+    const existente = await confirmacaoPorChave(
+      tx,
+      ctx.idEmpresa,
+      identidade.chave,
+    )
+    if (existente) {
+      if (
+        existente.id_usuario !== ctx.idUsuario ||
+        existente.hash_requisicao !== identidade.requisicao
+      )
+        conflict(
+          "Chave de idempotência já utilizada com outro conteúdo ou autor.",
+        )
+      if (existente.hash_estado !== fonte.hash)
+        conflict(
+          "Confirmação superada por outro registro, correção ou estorno. Consulte o estado atual e use uma nova chave para uma nova operação.",
+        )
+      return item
+    }
+    await protegerEfeitosFisicos(tx, ctx, id, row.status)
+    const legadoSemFato =
+      !snapshot && !fonte.temHistoricoFinal && item.quantidade_produzida.gt(0)
+    if (input.motivo_ajuste_legado && !legadoSemFato)
+      conflict(
+        "Ajuste legado exige produção já confirmada sem apontamento final.",
+      )
+    let delta = new Prisma.Decimal(0)
+    let apontamento: number | null = null
+    let quantidadeApontamento = new Prisma.Decimal(0)
+    let tipo: "CONFIRMACAO" | "REGISTRO" | "LEGADO" =
+      sector === null ? "LEGADO" : "CONFIRMACAO"
+    if (sector !== null && fonte.detalhado) {
+      if (fonte.semOrigem || fonte.manual)
+        conflict(
+          "Histórico misto sem vínculo inequívoco. Reconcilie os apontamentos antes de confirmar a produção.",
+        )
+      if (!total.eq(fonte.total))
+        conflict(
+          "A confirmação deve corresponder à produção válida da etapa final. Corrija ou estorne o apontamento identificado para alterar esse total.",
+        )
+      validarProjecao(item.quantidade_produzida, fonte.total, total)
+    } else {
+      if (
+        sector !== null &&
+        !legadoSemFato &&
+        !item.quantidade_produzida.eq(fonte.total)
+      )
+        conflict(
+          "Total do item diverge dos apontamentos. Reconcilie o histórico antes de registrar produção final.",
+        )
+      delta = total.minus(item.quantidade_produzida)
+      if (delta.lt(0) && !(legadoSemFato && input.motivo_ajuste_legado))
+        conflict(
+          "Reduções exigem correção do apontamento ou motivo de ajuste legado.",
+        )
+      if (!delta.isZero() || (sector !== null && legadoSemFato)) {
+        if (!item.quantidade_produzida.eq(input.quantidade_esperada))
+          conflict("A quantidade produzida mudou. Recarregue o item.")
+        if (sector !== null) {
+          const etapas = await etapasApontadas(tx, id)
+          const acumulados = await totais(tx, id, itemId)
+          // Sem detalhamento anterior, preserva o contrato acumulado já existente.
+          // Havendo detalhamento, não inventa disponibilidade nas etapas intermediárias.
+          if (
+            fonte.temDetalhamento ||
+            fonte.temApontamentosAnteriores ||
+            etapas.length === 1
+          )
+            validarDisponibilidade(etapas, item.quantidade, [
+              ...acumulados.filter((t) => t.id_setor !== sector),
+              {
+                id_setor: sector,
+                produzida: total,
+                perdida:
+                  acumulados.find((t) => t.id_setor === sector)?.perdida ??
+                  new Prisma.Decimal(0),
+              },
+            ])
+          // A confirmação substitui a projeção sem origem quantitativa.
+          // O histórico de confirmações permanece registrado para auditoria.
+          quantidadeApontamento = legadoSemFato ? total : delta
+          if (quantidadeApontamento.gt(0)) tipo = "REGISTRO"
+        }
+      }
+    }
     if (
+      !item.quantidade_produzida.eq(total) &&
       (
         await repo.produced(
           ctx,
           id,
           itemId,
           item.quantidade_produzida,
-          input.quantidade_produzida,
+          total.toFixed(3),
           tx,
         )
       ).count !== 1
     )
       conflict("Apontamento concorrente. Recarregue o item.")
-    // A FK de apontamento exige etapa. O fluxo legado registra o delta na
-    // auditoria, junto ao total persistido, sem inventar uma etapa histórica.
-    if (sector !== null)
-      await repo.registerProduction(ctx, id, itemId, sector, delta, tx)
+    if (quantidadeApontamento.gt(0) && sector !== null)
+      apontamento = (
+        await repo.registerProduction(
+          ctx,
+          id,
+          itemId,
+          sector,
+          quantidadeApontamento,
+          tx,
+        )
+      ).id
+    const estado = await fonteProducao(tx, id, itemId, sector, total)
+    await registrarConfirmacao(
+      tx,
+      ctx,
+      id,
+      itemId,
+      sector,
+      identidade,
+      estado.hash,
+      tipo,
+      total,
+      input.quantidade_esperada,
+      apontamento,
+    )
     const after = await repo.item(ctx, id, itemId, tx)
     const audit = {
       id,
       item: after,
       apontamento: {
         fluxo: snapshot ? "SNAPSHOT" : "LEGADO",
+        tipo,
+        chave: identidade.chave,
+        id_apontamento_novo: apontamento,
         id_item: itemId,
         id_setor: row.id_setor,
         quantidade_anterior: item.quantidade_produzida.toString(),
         quantidade_produzida: total.toString(),
         delta: delta.toString(),
+        ...(legadoSemFato ? { conciliacaoLegada: true } : {}),
+        ...(input.motivo_ajuste_legado
+          ? { motivoAjusteLegado: input.motivo_ajuste_legado }
+          : {}),
       },
     }
     await auditar(tx, ctx, { id, item }, audit)

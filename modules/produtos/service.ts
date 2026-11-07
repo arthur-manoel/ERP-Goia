@@ -90,37 +90,104 @@ export async function updateProduto(
   idInput: unknown,
   input: unknown,
   companies: number[],
+  selecionadas?: number[],
+  idUsuario?: number,
 ) {
   const id = validate(produtoIdSchema, idInput)
   const data = validate(updateProdutoSchema, input)
+  const autor: repository.AutorProduto | undefined =
+    idUsuario === undefined
+      ? undefined
+      : {
+          idUsuario,
+          acoes:
+            data.status === "INATIVO"
+              ? ["pode_editar", "pode_excluir"]
+              : ["pode_editar"],
+        }
   const categoryId = data.id_categoria
-  if (categoryId !== undefined && categoryId !== null) {
+  if (
+    (categoryId !== undefined && categoryId !== null) ||
+    data.unidade !== undefined
+  ) {
     return write(() =>
       withCompanyWriteLock(companies, async (database) => {
+        await database.$queryRaw`SELECT id FROM produtos WHERE id=${id} FOR UPDATE`
         const current = await repository.findWritableWithCompanies(
           id,
           companies,
           database,
+          selecionadas,
+          autor,
         )
         if (!current) throw new NotFoundError()
+        if (data.unidade !== undefined && data.unidade !== current.unidade) {
+          const historico = await database.ordem_producao_apontamento.count({
+            where: { ordem_producao_item: { id_produto: id } },
+          })
+          if (historico)
+            throw new ConflictError(
+              "A unidade não pode mudar após existir apontamento de produção, inclusive estornado.",
+            )
+          const history = await database.produtos.findUnique({
+            where: { id },
+            select: {
+              _count: {
+                select: {
+                  estoque: true,
+                  reserva_estoque: true,
+                  ordem_producao_item: true,
+                  ordem_producao_consumo_planejado: true,
+                  consumo_producao: true,
+                  pedido_cliente_item: true,
+                },
+              },
+            },
+          })
+          if (history && Object.values(history._count).some((n) => n > 0))
+            throw new ConflictError(
+              "Produto com posição, reserva, pedido ou produção não permite trocar a unidade do histórico.",
+            )
+        }
         const owners = [
           ...new Set(current.produto_empresa.map((link) => link.id_empresa)),
         ]
-        await assertProductCategory(categoryId, owners, database)
-        const produto = await repository.update(id, data, companies, database)
+        if (categoryId !== undefined && categoryId !== null)
+          await assertProductCategory(categoryId, owners, database)
+        const produto = await repository.update(
+          id,
+          data,
+          companies,
+          database,
+          selecionadas,
+          autor,
+        )
         if (!produto) throw new NotFoundError()
         return produto
       }),
     )
   }
-  const produto = await write(() => repository.update(id, data, companies))
+  const produto = await write(() =>
+    repository.update(id, data, companies, undefined, selecionadas, autor),
+  )
   if (!produto) throw new NotFoundError()
   return produto
 }
 
-export async function deleteProduto(idInput: unknown, companies: number[]) {
+export async function deleteProduto(
+  idInput: unknown,
+  companies: number[],
+  selecionadas?: number[],
+  idUsuario?: number,
+) {
   const id = validate(produtoIdSchema, idInput)
-  if (!(await write(() => repository.inactivate(id, companies))))
+  const autor: repository.AutorProduto | undefined =
+    idUsuario === undefined ? undefined : { idUsuario, acoes: ["pode_excluir"] }
+  if (
+    !(await write(() =>
+      repository.inactivate(id, companies, selecionadas, autor),
+    ))
+  )
     throw new NotFoundError()
   return { message: "Produto inativado com sucesso." }
 }

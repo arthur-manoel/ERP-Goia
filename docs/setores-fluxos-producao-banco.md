@@ -94,7 +94,7 @@ O DEFAULT PENDENTE existe tanto no schema quanto na migration; novas etapas são
 ## Aplicação e verificação
 
 1. Aplicar a migration entregue antes de publicar o back-end e regenerar o Prisma Client. Não existe fallback silencioso para tabelas/colunas ausentes.
-2. Não é necessário acrescentar recursos ao enum de permissões: os cadastros usam `ORDENS_PRODUCAO`; associação usa `PRODUTOS`.
+2. O enum ampliado em `20261022000000_ampliar_recursos_permissoes` fornece `SETORES` e `FLUXOS_PRODUCAO`; os cadastros exigem esses recursos, atribuídos explicitamente. Associação continua em `PRODUTOS`.
 3. Preparar um banco local descartável aplicando todas as migrations com `npx prisma migrate deploy`, sem utilizar produção para testes.
 4. Executar `PRODUCAO_TEST_DATABASE_URL='mysql://...' node tests/producao.integration.test.mjs`. Acrescentar `--http` para testar URLs no servidor Next real. O teste cria e remove somente fixtures, sem DDL.
 5. A integração cobre unicidade, FKs, concorrência, CRUD, auditoria/rollback, GET da associação e o ciclo da OP. Os testes com mocks também cobrem os formatos de erro do adapter MariaDB do Prisma 7.10.

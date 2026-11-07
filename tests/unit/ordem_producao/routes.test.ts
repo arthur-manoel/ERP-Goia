@@ -19,6 +19,8 @@ import {
   DELETE as removeItem,
 } from "../../../src/app/api/ordem_producao/[id]/itens/[itemId]/route"
 import * as flowRepository from "../../../src/modules/fluxos/fluxos.repository"
+import * as efeitosProducao from "../../../src/modules/producao/producao.efeitos"
+import * as estoqueProducao from "../../../src/modules/reservas/fluxo.service"
 import { db } from "../../helpers/prisma"
 import { request, context } from "../../helpers/http"
 import { resetRateLimitsForTests } from "../../../src/lib/api/rate-limit"
@@ -63,6 +65,8 @@ let snapshot: boolean
 let item: {
   id: number
   id_produto: number
+  id_cor: number | null
+  id_tamanho: number | null
   quantidade: Prisma.Decimal
   quantidade_produzida: Prisma.Decimal
   ordem_producao_consumo_planejado: object[]
@@ -84,6 +88,17 @@ function membership(
   }
 }
 beforeEach(() => {
+  // Estes testes isolam roteamento e estados. O serviço de estoque e seus
+  // efeitos indivisíveis são exercitados na integração HTTP com MariaDB real.
+  vi.spyOn(estoqueProducao, "entradaConclusao").mockResolvedValue([99])
+  vi.spyOn(efeitosProducao, "lerEfeitosProducao").mockResolvedValue({
+    evento: "CONCLUSAO_PRODUCAO",
+    entradaProdutos: { situacao: "EFETIVADA", movimentos: [] },
+    consumoInsumos: { situacao: "CONFIRMADO", materiais: [], movimentos: [] },
+  })
+  db.reserva_estoque.findMany.mockResolvedValue([])
+  db.movimentacao_estoque.findMany.mockResolvedValue([])
+  db.necessidade_producao.updateMany.mockResolvedValue({ count: 0 })
   resetRateLimitsForTests()
   row = {
     ...base,
@@ -97,6 +112,8 @@ beforeEach(() => {
   item = {
     id: 8,
     id_produto: 20,
+    id_cor: null,
+    id_tamanho: null,
     quantidade: decimal(10),
     quantidade_produzida: decimal(0),
     ordem_producao_consumo_planejado: [{ id_materia_prima: 22 }],
@@ -120,8 +137,49 @@ beforeEach(() => {
     ...base,
     ...data,
   }))
-  db.$queryRaw.mockImplementation(async (query) => {
+  const fatos: Array<{
+    id: number
+    id_setor: number
+    quantidade_produzida: Prisma.Decimal
+    quantidade_perdida: Prisma.Decimal
+    substituicao: null
+    evento: null
+    registro: null
+    confirmacao: number | null
+  }> = []
+  const confirmacoes: Array<{
+    id: number
+    id_usuario: number
+    chave_idempotencia: string
+    hash_requisicao: string
+    hash_estado: string
+  }> = []
+  db.ordem_producao_apontamento.create.mockImplementation(async ({ data }) => {
+    const id = fatos.length + 1
+    fatos.push({
+      id,
+      id_setor: data.id_setor,
+      quantidade_produzida: data.quantidade_produzida,
+      quantidade_perdida: decimal(0),
+      substituicao: null,
+      evento: null,
+      registro: null,
+      confirmacao: null,
+    })
+    return { id, ...data }
+  })
+  db.$queryRaw.mockImplementation(async (query, ...values) => {
     const sql = Array.from(query.strings ?? query).join("?")
+    if (sql.includes("SELECT a.id,a.id_setor"))
+      return fatos.map((f) => ({ ...f }))
+    if (sql.includes("FROM producao_confirmacao WHERE"))
+      return confirmacoes.filter((c) => c.chave_idempotencia === values[1])
+    if (sql.includes("SUM(a.quantidade_produzida)"))
+      return fatos.map((f) => ({
+        id_setor: f.id_setor,
+        produzida: f.quantidade_produzida,
+        perdida: f.quantidade_perdida,
+      }))
     if (sql.includes("SELECT snapshot"))
       return snapshot
         ? [{ snapshot: { fluxoId: 1, setores: [{ id: 3 }] } }]
@@ -131,6 +189,21 @@ beforeEach(() => {
     return [{ id: 1 }]
   })
   db.$executeRaw.mockImplementation(async (query, ...values) => {
+    if (
+      Array.from(query).join("").includes("INSERT INTO producao_confirmacao")
+    ) {
+      const id = confirmacoes.length + 1
+      confirmacoes.push({
+        id,
+        id_usuario: values[4],
+        chave_idempotencia: values[5],
+        hash_requisicao: values[6],
+        hash_estado: values[7],
+      })
+      const fato = fatos.find((f) => f.id === values[11])
+      if (fato) fato.confirmacao = id
+      return 1
+    }
     const current = stages.find((s) => s.id === values[0])
     if (!current) return 0
     const start = Array.from(query)
@@ -346,6 +419,9 @@ it("não libera ordem vazia e impede alterações fora do planejamento", async (
 })
 it("início, pausa e retomada preservam a data original e impedem duplicação", async () => {
   production()
+  row.id_local_estoque = 9
+  db.locais_estoque.findFirst.mockResolvedValue({ id: 9 })
+  db.produto_variacoes.findMany.mockResolvedValue([])
   row.status = "LIBERADA"
   row.data_inicio = null
   stages[0].status = "PENDENTE"
@@ -356,6 +432,20 @@ it("início, pausa e retomada preservam a data original e impedem duplicação",
   expect((await retomar(await req("POST"), context())).status).toBe(200)
   expect(row.data_inicio).toEqual(date)
 })
+it.each(["liberar", "iniciar"] as const)(
+  "impede %s com OP sem local de entrada",
+  async (acao) => {
+    production()
+    row.status = acao === "liberar" ? "PLANEJADA" : "LIBERADA"
+    row.id_local_estoque = null
+    const resposta = await (acao === "liberar" ? liberar : iniciar)(
+      await req("POST"),
+      context(),
+    )
+    expect(resposta.status).toBe(409)
+    expect((await resposta.json()).error).toContain("local de entrada")
+  },
+)
 it.each([
   "reserva_estoque",
   "consumo_producao",
@@ -398,6 +488,12 @@ it("conclusão exige produção real e respeita quantidades diferentes do plano"
   expect((await concluir(await req("POST"), context())).status).toBe(200)
   expect(item.quantidade_produzida.toString()).toBe("7.125")
   expect(row.status).toBe("CONCLUIDA")
+  expect(estoqueProducao.entradaConclusao).toHaveBeenCalledWith(
+    expect.anything(),
+    { idEmpresa: 10, idUsuario: 1 },
+    1,
+    new Set(),
+  )
   expect(db.ordem_producao_item.update).not.toHaveBeenCalled()
   expect(db.movimentacao_estoque.create).not.toHaveBeenCalled()
 })
@@ -565,6 +661,8 @@ it("item cria snapshot, etapas e consumo previsto na mesma transação", async (
   })
   expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function), {
     isolationLevel: "Serializable",
+    maxWait: 10000,
+    timeout: 30000,
   })
   expect(db.auditoria.create).toHaveBeenCalledOnce()
 })

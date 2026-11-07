@@ -104,7 +104,6 @@ it("valida o wrapper final da auditoria de produção e preserva seus metadados"
     JSON.stringify({
       ...registro,
       perdaAplicada: false,
-      baixaEstoque: "pendente",
     }),
   )
 })

@@ -190,7 +190,9 @@ export function activeProducts(
       status: "ATIVO",
       produtos: {
         status: "ATIVO",
-        ...(production ? { permite_producao: true } : {}),
+        ...(production
+          ? { permite_producao: true, controla_estoque: true }
+          : {}),
       },
     },
   })
@@ -394,7 +396,13 @@ export function item(
 export async function createItem(
   ctx: Contexto,
   id: number,
-  data: { id_produto: number; quantidade: string; tamanho: string },
+  data: {
+    id_produto: number
+    quantidade: string
+    tamanho: string
+    id_cor?: number | null
+    id_tamanho?: number | null
+  },
   tx: Transaction,
 ) {
   await assertParent(ctx, id, tx)
@@ -479,7 +487,12 @@ export function updateItem(
   ctx: Contexto,
   id: number,
   itemId: number,
-  data: { quantidade?: string; tamanho?: string },
+  data: {
+    quantidade?: string
+    tamanho?: string
+    id_cor?: number | null
+    id_tamanho?: number | null
+  },
   tx: Transaction,
 ) {
   return tx.ordem_producao_item.updateMany({
