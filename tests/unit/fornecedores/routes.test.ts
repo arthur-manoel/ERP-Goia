@@ -343,13 +343,13 @@ it("PUT verifica duplicidade de CNPJ e não altera data de cadastro", async () =
   ).toBe(409)
   expect(db.fornecedores.update).not.toHaveBeenCalled()
 })
-for (const [method, invoke] of [
-  ["GET", (r: Request) => collection.GET(r)],
-  ["POST", (r: Request) => collection.POST(r)],
-  ["GET", (r: Request) => item.GET(r, context())],
-  ["PUT", (r: Request) => item.PUT(r, context())],
-  ["PATCH", (r: Request) => item.PATCH(r, context())],
-  ["DELETE", (r: Request) => item.DELETE(r, context())],
+for (const [method, invoke, flag] of [
+  ["GET", (r: Request) => collection.GET(r), "pode_ler"],
+  ["POST", (r: Request) => collection.POST(r), "pode_criar"],
+  ["GET", (r: Request) => item.GET(r, context()), "pode_ler"],
+  ["PUT", (r: Request) => item.PUT(r, context()), "pode_editar"],
+  ["PATCH", (r: Request) => item.PATCH(r, context()), "pode_editar"],
+  ["DELETE", (r: Request) => item.DELETE(r, context()), "pode_excluir"],
 ] as const) {
   it(method + " exige token válido antes de consultar dados", async () => {
     for (const token of [null, "Bearer invalido"]) {
@@ -379,6 +379,15 @@ for (const [method, invoke] of [
         status: "ATIVO",
         usuarios: { status: "ATIVO" },
         empresas: { status: "ATIVA" },
+        OR: [
+          { usuarios: { nivel_acesso: "ADMIN" } },
+          { nivel_acesso: "EMPRESA" },
+          {
+            permissoes_usuario: {
+              some: { recurso: "FORNECEDORES", [flag]: true },
+            },
+          },
+        ],
       },
       select: { id_empresa: true },
     })

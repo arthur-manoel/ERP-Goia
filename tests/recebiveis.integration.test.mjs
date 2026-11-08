@@ -429,7 +429,17 @@ test("Recebíveis: fechamento atômico, parcelas, HTTP real e isolamento", async
         assert.equal(s.fechamentos.length, 1)
         assert.equal(s.vendas.length, 1)
         assert.equal(s.contas.length, 3)
-        assert.equal(s.auditoria.length, antes + 2)
+        assert.equal(s.auditoria.length, antes + 2 + s.contas.length)
+        for (const conta of s.contas)
+          assert.equal(
+            s.auditoria.filter(
+              (a) =>
+                a.tabela === "contas_receber" &&
+                a.id_registro === conta.id &&
+                a.acao === "INSERT",
+            ).length,
+            1,
+          )
         assert.equal(
           s.auditoria.filter(
             (a) =>
@@ -1158,21 +1168,26 @@ test("Recebíveis: fechamento atômico, parcelas, HTTP real e isolamento", async
     )
 
     await t.test(
-      "38 pagamento vinculado à parcela mas de outra empresa exige regularização",
+      "38 banco impede vincular pagamento a parcela de outra empresa",
       async () => {
         const p = await a.pedido()
         await sucesso(p)
         const conta = (await a.persistido(p)).contas[0]
-        await prisma.pagamentos_receber.create({
-          data: {
-            id_empresa: empresas[1],
-            id_conta_receber: conta.id,
-            valor: "1.00",
-            forma_pagamento: "PIX",
-          },
-        })
-        await semAlteracao(p, () => a.consultar(p))
-        await semAlteracao(p, () => a.fechar(p))
+        const antes = await a.persistido(p)
+        await assert.rejects(
+          prisma.pagamentos_receber.create({
+            data: {
+              id_empresa: empresas[1],
+              id_conta_receber: conta.id,
+              valor: "1.00",
+              forma_pagamento: "PIX",
+            },
+          }),
+          (erro) => erro.code === "P2003",
+        )
+        assert.deepEqual(await a.persistido(p), antes)
+        assert.equal((await a.consultar(p)).status, 200)
+        assert.equal((await a.fechar(p)).status, 200)
       },
     )
     await t.test(

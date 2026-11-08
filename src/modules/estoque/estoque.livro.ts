@@ -34,6 +34,7 @@ export async function bloquearProdutoEstoque(
     WHERE id_empresa = ${ctx.idEmpresa} AND id_produto = ${idProduto} FOR UPDATE`
   if (!rows.length)
     throw new NotFoundError("Produto não encontrado na empresa.")
+  await tx.$queryRaw`SELECT id FROM produtos WHERE id = ${idProduto} FOR UPDATE`
 }
 
 export async function apurarSaldoEstoque(

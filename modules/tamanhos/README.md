@@ -17,7 +17,7 @@ existente de `src/lib/prisma.ts`. Não altera o schema ou a configuração do ba
 
 Todas as rotas exigem `Authorization: Bearer <access_token>`, usuário, empresa e vínculo ativos, além da permissão da operação em `permissoes_usuario`. Sem token válido: 401; sem vínculo/permissão: 403. IDs fora do escopo retornam 404. O filtro `id_empresa` é opcional, mas somente empresas autorizadas entram na consulta. Veja [autorização dos catálogos](../catalogos/README.md).
 
-Tamanhos usa a permissão `PRODUTOS`. `busca` pesquisa parcialmente em `nome` OU `descricao`, combinado aos demais filtros. Exemplo: `GET /api/tamanhos?page=2&limit=10&busca=medio&status=ATIVO`. O banco entrega somente a página atual e conta todos os resultados filtrados autorizados.
+Tamanhos usa a permissão `TAMANHOS`. `busca` pesquisa parcialmente em `nome` OU `descricao`, combinado aos demais filtros. Exemplo: `GET /api/tamanhos?page=2&limit=10&busca=medio&status=ATIVO`. O banco entrega somente a página atual e conta todos os resultados filtrados autorizados.
 
 O schema real define `nome` com 50 caracteres, `descricao` com 255 e nullable,
 `ordem` Int NOT NULL com default 0 e `status` com default `ATIVO`.

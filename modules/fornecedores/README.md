@@ -22,7 +22,7 @@ embora o banco aceite null para registros legados. Não altera schema ou tabelas
 
 ## Autenticação e empresa
 
-Todas as operações usam o verificador JWT existente e exigem Authorization: Bearer <access_token>. O usuário, seu vínculo em usuario_empresa e a empresa devem estar ativos. O enum atual não possui FORNECEDORES: este módulo exige vínculo, sem reutilizar permissões de outros recursos.
+Todas as operações usam o verificador JWT existente e exigem Authorization: Bearer <access_token>. O usuário, seu vínculo em usuario_empresa e a empresa devem estar ativos. Cada operação exige a flag correspondente de `FORNECEDORES`; ausência de permissão nega acesso. ADMIN global e vínculo EMPRESA preservam a exceção administrativa existente, com vínculo ativo obrigatório. Inativação por POST/PUT/PATCH exige também `pode_excluir`.
 
 Sem token válido retorna 401; sem vínculo ativo ou com id_empresa não autorizado retorna 403. Leituras, contagem e UPDATE incluem o escopo de empresas no Prisma. IDs fora do escopo retornam 404; registros legados com empresa null ficam inacessíveis. Trocar empresa exige vínculo na origem e no destino. O filtro de empresa é opcional na listagem, mas o escopo do usuário sempre se aplica.
 

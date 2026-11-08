@@ -3,6 +3,7 @@ import {
   type produtos as Produto,
 } from "../../src/generated/prisma/client"
 import { prisma } from "../../src/lib/prisma"
+import { vinculoCatalogo, type Action } from "../catalogos/repository"
 import type {
   CreateProdutoData,
   UpdateProdutoData,
@@ -11,6 +12,7 @@ import type {
 } from "./schema"
 
 export type { Produto }
+export type AutorProduto = { idUsuario: number; acoes: Action[] }
 
 export async function create(
   data: CreateProdutoData,
@@ -79,10 +81,12 @@ export async function update(
   data: UpdateProdutoData,
   companies: number[],
   database: Prisma.TransactionClient = prisma,
+  selecionadas?: number[],
+  autor?: AutorProduto,
 ): Promise<Produto | null> {
   try {
     return await database.produtos.update({
-      where: { ...scope(companies, true), id },
+      where: { ...scope(companies, true, selecionadas, autor), id },
       data,
     })
   } catch (error: unknown) {
@@ -100,9 +104,11 @@ export function findWritableWithCompanies(
   id: number,
   companies: number[],
   database: Prisma.TransactionClient,
+  selecionadas?: number[],
+  autor?: AutorProduto,
 ) {
   return database.produtos.findFirst({
-    where: { ...scope(companies, true), id },
+    where: { ...scope(companies, true, selecionadas, autor), id },
     include: { produto_empresa: { select: { id_empresa: true } } },
   })
 }
@@ -110,18 +116,50 @@ export function findWritableWithCompanies(
 export async function inactivate(
   id: number,
   companies: number[],
+  selecionadas?: number[],
+  autor?: AutorProduto,
 ): Promise<boolean> {
-  return (await update(id, { status: "INATIVO" }, companies)) !== null
+  return (
+    (await update(
+      id,
+      { status: "INATIVO" },
+      companies,
+      prisma,
+      selecionadas,
+      autor,
+    )) !== null
+  )
 }
 
 function scope(
   companies: number[],
   writing = false,
+  selecionadas = companies,
+  autor?: AutorProduto,
 ): Prisma.produtosWhereInput {
   return {
     produto_empresa: {
-      some: { id_empresa: { in: companies } },
-      ...(writing ? { every: { id_empresa: { in: companies } } } : {}),
+      some: { id_empresa: { in: selecionadas } },
+      ...(writing
+        ? {
+            every: {
+              id_empresa: { in: companies },
+              ...(autor
+                ? {
+                    empresas: {
+                      usuario_empresa: {
+                        some: vinculoCatalogo(
+                          autor.idUsuario,
+                          "PRODUTOS",
+                          autor.acoes,
+                        ),
+                      },
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
     },
   }
 }

@@ -36,6 +36,7 @@ const tx = vi.hoisted(() => ({
     create: vi.fn(),
   },
   produto_empresa: { findFirst: vi.fn() },
+  estoque_variacao: { aggregate: vi.fn() },
   locais_estoque: { findFirst: vi.fn() },
   setores: { findFirst: vi.fn() },
   auditoria: { create: vi.fn() },
@@ -100,6 +101,9 @@ function semGravacoes() {
 }
 
 beforeEach(() => {
+  tx.estoque_variacao.aggregate.mockResolvedValue({
+    _sum: { quantidade: null },
+  })
   tx.$queryRaw.mockResolvedValue([{ id: 1 }])
   tx.movimentacao_estoque.groupBy.mockResolvedValue([])
   tx.movimentacao_estoque.findMany.mockResolvedValue([])

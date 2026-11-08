@@ -2,10 +2,13 @@ import { vi } from "vitest"
 function model() {
   return {
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn(),
     count: vi.fn(),
     aggregate: vi.fn(),
+    groupBy: vi.fn(),
+    upsert: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
@@ -21,6 +24,9 @@ export const db = {
   produtos: model(),
   categorias: model(),
   estoque: model(),
+  estoque_variacao: model(),
+  operacao_erp: model(),
+  transferencia_estoque: model(),
   locais_estoque: model(),
   setores: model(),
   produto_empresa: model(),

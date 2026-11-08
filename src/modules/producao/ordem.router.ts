@@ -20,6 +20,7 @@ type Operation =
   | "create"
   | "update"
   | "patch"
+  | "regularizar"
   | "cancel"
   | "items"
   | "stages"
@@ -98,6 +99,7 @@ async function execute(
             id,
             itemId,
             validate(schemas.apontarSchema, await readJson(request)),
+            request.headers.get("Idempotency-Key") ?? undefined,
           )
         }
         if (operation === "startStage" || operation === "finishStage") {
@@ -111,6 +113,12 @@ async function execute(
         }
         const { id } = validate(schemas.ordemParamsSchema, params)
         if (operation === "get") return service.findById(ctx, id)
+        if (operation === "regularizar")
+          return service.regularizar(
+            ctx,
+            id,
+            validate(schemas.regularizarOrdemSchema, await readJson(request)),
+          )
         if (operation === "cancel") return service.cancel(ctx, id)
         if (operation === "items")
           return service.listItems(
@@ -158,6 +166,8 @@ export const updateHandler = (request: Request, context: RouteContext) =>
   execute(request, "update", context)
 export const patchHandler = (request: Request, context: RouteContext) =>
   execute(request, "patch", context)
+export const regularizarHandler = (request: Request, context: RouteContext) =>
+  execute(request, "regularizar", context)
 export const cancelHandler = (request: Request, context: RouteContext) =>
   execute(request, "cancel", context)
 export const listItemsHandler = (request: Request, context: RouteContext) =>

@@ -84,6 +84,27 @@ export const patchOrdemSchema = z
     (value) => Object.values(value).some((v) => v !== undefined),
     "Informe campos para atualizar.",
   )
+export const regularizarOrdemSchema = z
+  .strictObject({
+    idLocal: idSchema.optional(),
+    idSetor: idSchema.optional(),
+    variacoes: z
+      .array(z.strictObject({ idItem: idSchema, idVariacao: idSchema }))
+      .max(200)
+      .default([]),
+    motivo: z.string().trim().min(1).max(255),
+  })
+  .refine(
+    (dados) =>
+      Boolean(dados.idLocal || dados.idSetor || dados.variacoes.length),
+    "Informe os dados ausentes para regularizar.",
+  )
+  .refine(
+    (dados) =>
+      new Set(dados.variacoes.map((v) => v.idItem)).size ===
+      dados.variacoes.length,
+    "Informe uma variação por item.",
+  )
 const pagination = {
   page: ordemIdSchema.default(1),
   limit: ordemIdSchema.pipe(z.number().max(100)).default(20),
@@ -152,6 +173,7 @@ export const listOrdemSchema = z
 export const ordemItemSchema = z
   .object({
     id_produto: idSchema,
+    id_variacao: idSchema.optional(),
     quantidade: decimalSchema.refine((v) => Number(v) > 0),
     tamanho: z.string().trim().min(1).max(30).default("UNICO"),
   })
@@ -165,6 +187,7 @@ export const apontarSchema = z
   .object({
     quantidade_produzida: decimalSchema,
     quantidade_esperada: decimalSchema,
+    motivo_ajuste_legado: z.string().trim().min(1).max(255).optional(),
   })
   .strict()
 export type OrdemInput = z.output<typeof createOrdemSchema>

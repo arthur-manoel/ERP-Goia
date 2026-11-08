@@ -1,3 +1,4 @@
+import { disputaPersistencia } from "@/lib/prisma-concorrencia"
 import { Prisma } from "@/generated/prisma/client"
 
 function registro(value: unknown): value is Record<string, unknown> {
@@ -26,7 +27,9 @@ function conflitoAdapter(error: unknown): boolean {
 // consultas raw, ou dentro de meta.driverAdapterError. Não classificar falhas
 // de schema/conexão como conflito de negócio.
 export function conflitoPersistencia(error: unknown): boolean {
-  if (conflitoAdapter(error)) return true
+  // Inclui ER_CHECKREAD/1020 de MariaDB, inclusive encapsulado por P2010/P2039.
+  // O classificador compartilhado não trata P2010 desconhecido como conflito.
+  if (disputaPersistencia(error) || conflitoAdapter(error)) return true
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
   if (["P2002", "P2003", "P2004", "P2025", "P2034"].includes(error.code))
     return true

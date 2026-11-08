@@ -29,6 +29,7 @@ export function bancoLocal(value) {
 export function typescript() {
   return registerHooks({
     resolve(specifier, context, next) {
+      if (specifier === "next/server") return next("next/server.js", context)
       if (specifier === "server-only")
         return { url: "data:text/javascript,export {};", shortCircuit: true }
       const base = specifier.startsWith("@/")
