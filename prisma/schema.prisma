@@ -603,9 +603,9 @@ model item_venda {
   valor_unitario         Decimal              @db.Decimal(15, 2)
   valor_total            Decimal              @db.Decimal(15, 2)
   id_produto_sem_pedido  Int?                 @ignore
-  cores                  cores?               @relation("item_venda_cor_empresa", fields: [id_empresa, id_cor], references: [id_empresa, id], onDelete: Restrict, map: "fk_item_venda_cor")
+  cores                  cores?               @relation("item_venda_cor_empresa", fields: [id_empresa, id_cor], references: [id_empresa, id], onDelete: Restrict, onUpdate: Restrict, map: "fk_item_venda_cor")
   produtos               produtos             @relation(fields: [id_produto], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_item_venda_produto_restrict")
-  tamanhos               tamanhos?            @relation("item_venda_tamanho_empresa", fields: [id_empresa, id_tamanho], references: [id_empresa, id], onDelete: Restrict, map: "fk_item_venda_tamanho")
+  tamanhos               tamanhos?            @relation("item_venda_tamanho_empresa", fields: [id_empresa, id_tamanho], references: [id_empresa, id], onDelete: Restrict, onUpdate: Restrict, map: "fk_item_venda_tamanho")
   venda                  venda                @relation(fields: [id_empresa, id_venda], references: [id_empresa, id], onDelete: Cascade, map: "fk_item_venda_venda_empresa")
   pedido_cliente_item    pedido_cliente_item? @relation(fields: [id_pedido_cliente_item], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_item_venda_pedido_item_restrict")
 

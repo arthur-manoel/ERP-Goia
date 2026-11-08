@@ -15,6 +15,7 @@
 
 # banco e ferramentas locais isolados
 /.local/
+/.backups/
 
 # next.js
 /.next/
