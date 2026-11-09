@@ -1,6 +1,5 @@
 import "server-only"
 import type { z } from "zod"
-import { requireRole } from "@/lib/authorize"
 import { autorizar } from "../producao/producao.authorization"
 import { ProducaoError } from "../producao/producao.repository"
 import { HttpError } from "@/lib/api/errors"
@@ -28,6 +27,15 @@ function validar<T>(schema: z.ZodType<T>, value: unknown) {
       parsed.error.issues[0]?.message ?? "Dados inválidos.",
     )
   return parsed.data
+}
+/** Sem permissão de exclusão não é erro aqui: só vira 403 se houver ATIVO -> INATIVO. */
+async function podeExcluir(request: Request) {
+  try {
+    return !((await autorizar(request, "excluir")) instanceof Response)
+  } catch (error) {
+    if (error instanceof ProducaoError && error.status === 403) return false
+    throw error
+  }
 }
 type OperacaoColecao = "criar" | "listar"
 export function handler(
@@ -127,6 +135,7 @@ export function handler(tipo: Entidade, operacao: Operacao) {
                   : schemas.editarFluxoSchema,
                 body,
               )
+<<<<<<< HEAD
         // Inativação também exige permissão de exclusão, como no módulo de clientes.
         if (input.ativo === false) {
           const autorizado = await autorizar(
@@ -136,14 +145,20 @@ export function handler(tipo: Entidade, operacao: Operacao) {
           )
           if (autorizado instanceof Response) return autorizado
         }
+=======
+        // Inativar (ATIVO -> INATIVO) exige permissão de exclusão, como no módulo de
+        // clientes; o serviço aplica isso só na transição, e não em qualquer edição.
+        // O guard de `tipo` usa o vínculo administrativo, nunca o perfil do JWT, que
+        // deriva do nome/tipo do setor e é editável.
+        const inativando = input.ativo === false && operacao === "editar"
+        const podeInativar = inativando ? await podeExcluir(request) : false
+>>>>>>> 97ec6fd (style(setores): formata arquivos com prettier)
         result = await service.salvar(
           ctx,
           tipo,
           input,
           operacao === "editar" ? id : undefined,
-          {
-            ehAdmin: !(await requireRole(request, ["ADMINISTRACAO"])).error,
-          },
+          { ehAdmin: ctx.admin === true, podeInativar },
         )
       }
       return Response.json(result, {

@@ -85,7 +85,8 @@ export function FormularioSetor({
       const salvo = setor
         ? await editarSetor(requisitar, setor, dados)
         : await criarSetor(requisitar, dados)
-      toast.success(setor ? "Setor atualizado." : "Setor cadastrado.")
+      if (setor && salvo === setor) toast.info("Nenhuma alteração para salvar.")
+      else toast.success(setor ? "Setor atualizado." : "Setor cadastrado.")
       await onSaved(salvo)
       onClose()
     } catch (causa) {

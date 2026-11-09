@@ -76,6 +76,11 @@ export function TelaSetores() {
   } = useAutenticacao()
   const [setores, setSetores] = useState<SetorApi[]>([])
   const [paginacao, setPaginacao] = useState<Paginacao | null>(null)
+  // Empresa dona da lista em memória: setores de outra empresa nunca são exibidos.
+  const [listaDe, setListaDe] = useState<number | null>(null)
+  const [empresaAnterior, setEmpresaAnterior] = useState<number | null>(
+    empresa?.id ?? null,
+  )
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<{
     mensagem: string
@@ -92,6 +97,25 @@ export function TelaSetores() {
   const novoRef = useRef<HTMLButtonElement>(null)
   const focoAnterior = useRef<HTMLElement | null>(null)
   const versaoRequisicao = useRef(0)
+  const empresaAtualRef = useRef<number | null>(empresa?.id ?? null)
+  useEffect(() => {
+    empresaAtualRef.current = empresa?.id ?? null
+  }, [empresa?.id])
+
+  // Troca de empresa: descarta a lista anterior, volta à primeira página e fecha
+  // qualquer diálogo aberto, tudo no mesmo render (sem quadro com dados antigos).
+  if ((empresa?.id ?? null) !== empresaAnterior) {
+    setEmpresaAnterior(empresa?.id ?? null)
+    setSetores([])
+    setPaginacao(null)
+    setListaDe(null)
+    setCarregando(true)
+    setErro(null)
+    setPagina(1)
+    setFormulario(null)
+    setDetalhe(null)
+    setExcluindo(null)
+  }
 
   // Busca com atraso para não consultar a API a cada tecla.
   useEffect(() => {
@@ -103,7 +127,8 @@ export function TelaSetores() {
   }, [busca])
 
   const recarregar = useCallback(async () => {
-    if (!empresa) return
+    if (!empresa || empresaAtualRef.current !== empresa.id) return
+    const idEmpresa = empresa.id
     const versao = ++versaoRequisicao.current
     setCarregando(true)
     try {
@@ -114,11 +139,14 @@ export function TelaSetores() {
         limite: limitePorPagina,
       })
       if (versao !== versaoRequisicao.current) return
+      if (empresaAtualRef.current !== idEmpresa) return
       setSetores(resposta.setores)
       setPaginacao(resposta.paginacao)
+      setListaDe(idEmpresa)
       setErro(null)
     } catch (causa) {
       if (versao !== versaoRequisicao.current) return
+      if (empresaAtualRef.current !== idEmpresa) return
       setErro({
         mensagem:
           causa instanceof Error
@@ -166,7 +194,7 @@ export function TelaSetores() {
       toast.success("Setor excluído.")
       setExcluindo(null)
       // Ao excluir o último item de uma página, volta para a anterior.
-      if (setores.length === 1 && pagina > 1) setPagina(pagina - 1)
+      if (setoresVisiveis.length === 1 && pagina > 1) setPagina(pagina - 1)
       else await recarregar()
     } catch (causa) {
       toast.error(
@@ -203,7 +231,7 @@ export function TelaSetores() {
         <Button
           ref={novoRef}
           onClick={() => abrirFormulario()}
-          disabled={!empresa}
+          disabled={!empresa || (carregando && listaDe !== empresa.id)}
         >
           <Plus />
           Novo setor
@@ -252,6 +280,9 @@ export function TelaSetores() {
       </>
     )
 
+  const listaAtual = listaDe === empresa.id
+  const setoresVisiveis = listaAtual ? setores : []
+  const aguardandoLista = carregando || !listaAtual
   const semAutorizacao = erro?.status === 401 || erro?.status === 403
   const filtrando = buscaAplicada.trim() !== "" || status !== "TODOS"
   const totalPaginas = Math.max(1, paginacao?.totalPaginas ?? 1)
@@ -318,7 +349,7 @@ export function TelaSetores() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {carregando && !setores.length ? (
+                {aguardandoLista && !setoresVisiveis.length ? (
                   <TableRow>
                     <TableCell
                       colSpan={5}
@@ -328,8 +359,8 @@ export function TelaSetores() {
                       Carregando setores…
                     </TableCell>
                   </TableRow>
-                ) : setores.length ? (
-                  setores.map((setor) => (
+                ) : setoresVisiveis.length ? (
+                  setoresVisiveis.map((setor) => (
                     <TableRow key={setor.id}>
                       <TableCell className="font-medium">
                         {setor.nome}
@@ -430,8 +461,8 @@ export function TelaSetores() {
 
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="text-sm text-muted-foreground" aria-live="polite">
-              {paginacao?.total ?? 0}{" "}
-              {paginacao?.total === 1 ? "setor" : "setores"}
+              {listaAtual ? (paginacao?.total ?? 0) : 0}{" "}
+              {listaAtual && paginacao?.total === 1 ? "setor" : "setores"}
             </p>
             <div className="flex items-center gap-2">
               <span className="mr-2 text-sm text-muted-foreground">
@@ -440,7 +471,7 @@ export function TelaSetores() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={pagina <= 1 || carregando}
+                disabled={pagina <= 1 || aguardandoLista}
                 onClick={() => setPagina(pagina - 1)}
               >
                 Anterior
@@ -448,7 +479,7 @@ export function TelaSetores() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={pagina >= totalPaginas || carregando}
+                disabled={pagina >= totalPaginas || aguardandoLista}
                 onClick={() => setPagina(pagina + 1)}
               >
                 Próxima

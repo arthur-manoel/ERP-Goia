@@ -106,7 +106,7 @@ export function salvar(
   tipo: repo.Entidade,
   input: Edicao,
   id?: number,
-  opcoes: { ehAdmin?: boolean } = {},
+  opcoes: { ehAdmin?: boolean; podeInativar?: boolean } = {},
 ) {
   return transacao(async (tx) => {
     const antes =
@@ -147,11 +147,13 @@ export function salvar(
         input.descricao === undefined ? antes?.descricao : input.descricao,
       ativo: input.ativo ?? (antes ? antes.status === "ATIVO" : true),
     }
+    const inativando = antes?.status === "ATIVO" && dados.ativo === false
+    if (inativando && !opcoes.podeInativar)
+      throw new ProducaoError(403, "Acesso negado.")
     if (
       tipo === "setor" &&
       id !== undefined &&
-      antes?.status === "ATIVO" &&
-      dados.ativo === false &&
+      inativando &&
       (await repo.setorEmFluxoAtivo(tx, id))
     )
       throw new ProducaoError(

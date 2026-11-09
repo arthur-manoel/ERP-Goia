@@ -14,7 +14,15 @@ export class ProducaoError extends HttpError {
     super(status, message)
   }
 }
-export type Contexto = { idUsuario: number; idEmpresa: number }
+export type Contexto = {
+  idUsuario: number
+  idEmpresa: number
+  /**
+   * Administrador do vínculo (usuario_empresa.nivel_acesso = EMPRESA ou
+   * usuarios.nivel_acesso = ADMIN). Não depende de nome/tipo de setor nem de cargo.
+   */
+  admin?: boolean
+}
 export type Transaction = Prisma.TransactionClient
 
 const include = {

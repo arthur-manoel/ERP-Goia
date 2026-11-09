@@ -82,20 +82,25 @@ export async function criarSetor(
   return (await ler(resposta, z.object({ setor: setorApiSchema }))).setor
 }
 
-/** `tipo` só é enviado quando mudou: alterá-lo exige perfil de administração. */
+/**
+ * Envia apenas os campos alterados. Nunca reenvia `ativo`: inativar exige
+ * permissão de exclusão e é feito por `alterarAtivoSetor`. `tipo` só vai quando
+ * muda, pois alterá-lo exige perfil administrativo.
+ */
 export async function editarSetor(
   requisitar: Requisitar,
   atual: SetorApi,
   dados: DadosFormularioSetor,
 ): Promise<SetorApi> {
+  const alteracoes: Record<string, unknown> = {}
+  if (dados.nome !== atual.nome) alteracoes.nome = dados.nome
+  if (dados.tipo && dados.tipo !== atual.tipo) alteracoes.tipo = dados.tipo
+  if ((dados.descricao || null) !== atual.descricao)
+    alteracoes.descricao = dados.descricao || null
+  if (!Object.keys(alteracoes).length) return atual
   const resposta = await requisitar(`/api/setores/${atual.id}`, {
     method: "PATCH",
-    ...corpo({
-      nome: dados.nome,
-      ...(dados.tipo && dados.tipo !== atual.tipo ? { tipo: dados.tipo } : {}),
-      descricao: dados.descricao || null,
-      ativo: dados.ativo,
-    }),
+    ...corpo(alteracoes),
   })
   return (await ler(resposta, z.object({ setor: setorApiSchema }))).setor
 }
