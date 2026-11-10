@@ -39,6 +39,8 @@ import {
 import { formatarMoeda } from "@/lib/formatacao"
 import {
   lerPedido,
+  itemPedidoInputSchema,
+  podeDescartarTentativa,
   rascunhoPedidoSchema,
   statusPedidos,
   type PedidoApi,
@@ -296,7 +298,8 @@ function EditorPedido({
       const tentativa = JSON.parse(salvo) as { chave: string; body: string }
       if (
         typeof tentativa.chave !== "string" ||
-        typeof tentativa.body !== "string"
+        typeof tentativa.body !== "string" ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(tentativa.chave)
       )
         return null
       const corpo = rascunhoPedidoSchema.parse(JSON.parse(tentativa.body))
@@ -337,8 +340,14 @@ function EditorPedido({
   )
   const [repetir, setRepetir] = useState(!!tentativaInicial)
   const [revisao, setRevisao] = useState(0)
+  const [revisaoOpcoes, setRevisaoOpcoes] = useState(0)
   const headers = { "X-Empresa-Id": String(empresaId) }
   const podeEditar = id === "novo" || pedido?.status === "RASCUNHO"
+  const cabecalhoAlterado =
+    !!pedido &&
+    (cliente !== String(pedido.idCliente) ||
+      data !== (pedido.dataEntregaPrevista ?? "") ||
+      observacao !== (pedido.observacao ?? ""))
 
   useEffect(() => {
     if (id === "novo") return
@@ -393,7 +402,7 @@ function EditorPedido({
       clearTimeout(timer)
       controller.abort()
     }
-  }, [busca, empresaId, requisitar, revisao])
+  }, [busca, empresaId, requisitar, revisaoOpcoes])
 
   async function gravar(url: string, metodo: string, body?: unknown) {
     if (trava.current) return
@@ -407,8 +416,9 @@ function EditorPedido({
           chave: crypto.randomUUID(),
           body: JSON.stringify(body),
         }
-        sessionStorage.setItem(chaveStorage, JSON.stringify(pendente.current))
       }
+      if (criacao)
+        sessionStorage.setItem(chaveStorage, JSON.stringify(pendente.current))
       const resposta = await requisitar(url, {
         method: metodo,
         headers: {
@@ -424,12 +434,7 @@ function EditorPedido({
             ? undefined
             : JSON.stringify(body),
       })
-      if (
-        criacao &&
-        resposta.status >= 400 &&
-        resposta.status < 500 &&
-        ![408, 429].includes(resposta.status)
-      ) {
+      if (criacao && podeDescartarTentativa(resposta.status, repetir)) {
         sessionStorage.removeItem(chaveStorage)
         pendente.current = null
         setRepetir(false)
@@ -444,8 +449,10 @@ function EditorPedido({
       } else {
         setPedido(null)
         setRevisao((v) => v + 1)
-        setEditandoItem(null)
-        setItens([novaLinha()])
+        if (url.includes("/itens")) {
+          setEditandoItem(null)
+          setItens([novaLinha()])
+        }
       }
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível salvar.")
@@ -465,6 +472,24 @@ function EditorPedido({
         precoPraticado: i.precoPraticado,
       },
     ])
+  }
+  function salvarItem(e: FormEvent) {
+    e.preventDefault()
+    const entrada = itemPedidoInputSchema.safeParse(prepararItem(itens[0]))
+    const produto = opcoes.produtos.find(
+      (p) => String(p.id) === itens[0].idProduto,
+    )
+    if (!entrada.success || (produto?.temGrade && !itens[0].idVariacao)) {
+      setErro(
+        "Revise o produto, a variação, a quantidade positiva e o preço do item. Use ponto para os decimais.",
+      )
+      return
+    }
+    void gravar(
+      `/api/pedidos/${id}/itens${editandoItem ? `/${editandoItem}` : ""}`,
+      editandoItem ? "PATCH" : "POST",
+      entrada.data,
+    )
   }
   function salvar(e: FormEvent) {
     e.preventDefault()
@@ -569,33 +594,37 @@ function EditorPedido({
                       {erroOpcoes}
                       <Button
                         type="button"
-                        onClick={() => setRevisao((v) => v + 1)}
+                        onClick={() => setRevisaoOpcoes((v) => v + 1)}
                       >
                         Tentar novamente
                       </Button>
                     </AlertDescription>
                   </Alert>
                 )}
-                <SearchSelect
-                  label="Cliente"
-                  value={cliente}
-                  onValueChange={setCliente}
-                  options={[
-                    ...(pedido &&
-                    !opcoes.clientes.some((c) => c.id === pedido.idCliente)
-                      ? [
-                          {
-                            value: String(pedido.idCliente),
-                            label: `Cliente do pedido #${pedido.idCliente}`,
-                          },
-                        ]
-                      : []),
-                    ...opcoes.clientes.map((c) => ({
-                      value: String(c.id),
-                      label: c.nome_razao_social,
-                    })),
-                  ]}
-                />
+                <Field>
+                  <FieldLabel htmlFor="cliente-pedido">Cliente</FieldLabel>
+                  <SearchSelect
+                    id="cliente-pedido"
+                    label="Cliente"
+                    value={cliente}
+                    onValueChange={setCliente}
+                    options={[
+                      ...(pedido &&
+                      !opcoes.clientes.some((c) => c.id === pedido.idCliente)
+                        ? [
+                            {
+                              value: String(pedido.idCliente),
+                              label: `Cliente do pedido #${pedido.idCliente}`,
+                            },
+                          ]
+                        : []),
+                      ...opcoes.clientes.map((c) => ({
+                        value: String(c.id),
+                        label: c.nome_razao_social,
+                      })),
+                    ]}
+                  />
+                </Field>
                 <Field>
                   <FieldLabel htmlFor="entrega-pedido">
                     Previsão de entrega
@@ -641,6 +670,11 @@ function EditorPedido({
             {pedido && (
               <section className="space-y-3">
                 <h3 className="font-semibold">Itens do pedido</h3>
+                {cabecalhoAlterado && podeEditar && (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    Salve os dados do pedido antes de alterar os itens.
+                  </p>
+                )}
                 {pedido.itens.map((i) => (
                   <div
                     key={i.idItem}
@@ -654,14 +688,18 @@ function EditorPedido({
                     {podeEditar && (
                       <>
                         <Button
-                          disabled={ocupado}
+                          disabled={ocupado || cabecalhoAlterado}
                           variant="outline"
                           onClick={() => editar(i)}
                         >
                           Editar item
                         </Button>
                         <Button
-                          disabled={ocupado || pedido.itens.length <= 1}
+                          disabled={
+                            ocupado ||
+                            cabecalhoAlterado ||
+                            pedido.itens.length <= 1
+                          }
                           variant="outline"
                           onClick={() => setRemover(i)}
                         >
@@ -672,17 +710,11 @@ function EditorPedido({
                   </div>
                 ))}
                 {podeEditar && (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      void gravar(
-                        `/api/pedidos/${id}/itens${editandoItem ? `/${editandoItem}` : ""}`,
-                        editandoItem ? "PATCH" : "POST",
-                        prepararItem(itens[0]),
-                      )
-                    }}
-                  >
-                    <fieldset disabled={ocupado} className="space-y-3">
+                  <form onSubmit={salvarItem}>
+                    <fieldset
+                      disabled={ocupado || cabecalhoAlterado}
+                      className="space-y-3"
+                    >
                       <h3>
                         {editandoItem
                           ? "Editar item selecionado"
@@ -694,7 +726,7 @@ function EditorPedido({
                         opcoes={opcoes}
                         unico
                       />
-                      <Button disabled={!itens[0].idProduto}>
+                      <Button type="submit" disabled={!itens[0].idProduto}>
                         {editandoItem ? "Salvar item" : "Adicionar ao pedido"}
                       </Button>
                       {editandoItem && (
@@ -720,6 +752,9 @@ function EditorPedido({
                 disabled={ocupado}
                 onClick={() => {
                   setErro("")
+                  setPedido(null)
+                  setEditandoItem(null)
+                  setItens([novaLinha()])
                   setRevisao((v) => v + 1)
                 }}
               >
@@ -785,56 +820,68 @@ function Itens({
         )
         return (
           <div key={index} className="space-y-3 rounded-md border p-3">
-            <SearchSelect
-              label={`Produto do item ${index + 1}`}
-              value={i.idProduto}
-              onValueChange={(v) =>
-                campo(index, {
-                  idProduto: v,
-                  idVariacao: "",
-                  precoPraticado:
-                    opcoes.produtos.find((p) => String(p.id) === v)?.preco ??
-                    "0.00",
-                })
-              }
-              options={[
-                ...(i.idProduto && !produto
-                  ? [
-                      {
-                        value: i.idProduto,
-                        label: `Produto atual #${i.idProduto}`,
-                      },
-                    ]
-                  : []),
-                ...opcoes.produtos.map((p) => ({
-                  value: String(p.id),
-                  label: `${p.codigo} · ${p.nome}`,
-                })),
-              ]}
-            />
-            <SearchSelect
-              label={`Cor / tamanho do item ${index + 1}`}
-              value={i.idVariacao}
-              onValueChange={(v) => campo(index, { idVariacao: v })}
-              options={[
-                ...(!produto?.temGrade
-                  ? [{ value: "", label: "Sem variação" }]
-                  : []),
-                ...(i.idVariacao &&
-                !produto?.variacoes.some((v) => String(v.id) === i.idVariacao)
-                  ? [
-                      {
-                        value: i.idVariacao,
-                        label: `Variação atual #${i.idVariacao}`,
-                      },
-                    ]
-                  : []),
-                ...(produto?.variacoes ?? []).map((v) => ({
-                  value: String(v.id),
-                  label: `${v.cor} / ${v.tamanho}`,
-                })),
-              ]}
-            />
+            <Field>
+              <FieldLabel htmlFor={`produto-pedido-${index}`}>
+                Produto do item {index + 1}
+              </FieldLabel>
+              <SearchSelect
+                id={`produto-pedido-${index}`}
+                label={`Produto do item ${index + 1}`}
+                value={i.idProduto}
+                onValueChange={(v) =>
+                  campo(index, {
+                    idProduto: v,
+                    idVariacao: "",
+                    precoPraticado:
+                      opcoes.produtos.find((p) => String(p.id) === v)?.preco ??
+                      "0.00",
+                  })
+                }
+                options={[
+                  ...(i.idProduto && !produto
+                    ? [
+                        {
+                          value: i.idProduto,
+                          label: `Produto atual #${i.idProduto}`,
+                        },
+                      ]
+                    : []),
+                  ...opcoes.produtos.map((p) => ({
+                    value: String(p.id),
+                    label: `${p.codigo} · ${p.nome}`,
+                  })),
+                ]}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`variacao-pedido-${index}`}>
+                Cor / tamanho
+              </FieldLabel>
+              <SearchSelect
+                id={`variacao-pedido-${index}`}
+                label={`Cor / tamanho do item ${index + 1}`}
+                value={i.idVariacao}
+                onValueChange={(v) => campo(index, { idVariacao: v })}
+                options={[
+                  ...(!produto?.temGrade
+                    ? [{ value: "", label: "Sem variação" }]
+                    : []),
+                  ...(i.idVariacao &&
+                  !produto?.variacoes.some((v) => String(v.id) === i.idVariacao)
+                    ? [
+                        {
+                          value: i.idVariacao,
+                          label: `Variação atual #${i.idVariacao}`,
+                        },
+                      ]
+                    : []),
+                  ...(produto?.variacoes ?? []).map((v) => ({
+                    value: String(v.id),
+                    label: `${v.cor} / ${v.tamanho}`,
+                  })),
+                ]}
+              />
+            </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor={`quantidade-pedido-${index}`}>
