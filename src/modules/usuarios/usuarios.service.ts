@@ -18,6 +18,7 @@ export async function cadastrarFuncionario(
       usuario_empresa: [
         {
           status: "ATIVO",
+          nivel_acesso: "USUARIO",
           empresas: { status: "ATIVA" },
           cargos: cargo,
           setores: setor,

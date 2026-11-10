@@ -95,7 +95,11 @@ export async function buscarSetor(
   if (id == null) return null
   const setor = await tx.setores.findFirst({
     where: { id, id_empresa: ctx.idEmpresa, status: "ATIVO" },
-    select: { id: true, nome: true, tipo: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      permissoes_setor: { select: { recurso: true } },
+    },
   })
   if (!setor)
     throw new UsuarioError(404, "Setor ativo não encontrado nesta empresa.")

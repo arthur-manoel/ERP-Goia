@@ -125,15 +125,8 @@ export function handler(tipo: Entidade, operacao: Operacao) {
                   : schemas.editarFluxoSchema,
                 body,
               )
-        // Inativação também exige permissão de exclusão, como no módulo de clientes.
-        if (input.ativo === false) {
-          const autorizado = await autorizar(
-            request,
-            "excluir",
-            tipo === "setor" ? "SETORES" : "FLUXOS_PRODUCAO",
-          )
-          if (autorizado instanceof Response) return autorizado
-        }
+        // A permissão de exclusão para inativar é exigida no serviço, somente
+        // na transição ATIVO → INATIVO (ver `salvar`).
         result = await service.salvar(
           ctx,
           tipo,

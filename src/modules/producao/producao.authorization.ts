@@ -61,5 +61,16 @@ export async function autorizar(
   )
   if (!admin && !permissao?.[`pode_${acao}`])
     throw new ProducaoError(403, "Acesso negado.")
-  return { idUsuario, idEmpresa: vinculo.id_empresa }
+  const pode = {
+    ler: admin || permissao?.pode_ler === true,
+    criar: admin || permissao?.pode_criar === true,
+    editar: admin || permissao?.pode_editar === true,
+    excluir: admin || permissao?.pode_excluir === true,
+  }
+  return {
+    idUsuario,
+    idEmpresa: vinculo.id_empresa,
+    pode,
+    administrador: admin,
+  }
 }
