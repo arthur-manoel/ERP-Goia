@@ -548,7 +548,8 @@ it.each([401, 403])(
         }
         return Response.json({ data: { rows: [], count: 0, totalPages: 1 } })
       }
-      if (url.startsWith("/api/tipos_produto?"))
+      const rota = url.split("?")[0]
+      if (rota === "/api/tipos_produto" || rota === "/api/produtos/tipos")
         return Response.json({
           data: {
             rows: [{ id: 11, nome: "Teste", status: "ATIVO" }],
