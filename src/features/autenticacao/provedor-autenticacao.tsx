@@ -10,6 +10,7 @@ import {
 } from "react"
 import {
   comBloqueioSessao,
+  cabecalhosDaSessao,
   renovarToken,
   solicitarLogin,
 } from "./requisicoes-sessao"
@@ -170,18 +171,11 @@ export function ProvedorAutenticacao({
       if (!empresaAtual.current)
         throw new Error("Selecione uma empresa para continuar.")
       const idEmpresa = empresaAtual.current.id
-      const empresaSolicitada = new Headers(init.headers).get("X-Empresa-Id")
-      if (empresaSolicitada !== null && empresaSolicitada !== String(idEmpresa))
-        throw new Error("A empresa selecionada mudou. Repita a operação.")
       const executar = (accessToken: string) =>
         fetch(url, {
           ...init,
           cache: "no-store",
-          headers: {
-            ...Object.fromEntries(new Headers(init.headers)),
-            Authorization: `Bearer ${accessToken}`,
-            "X-Empresa-Id": String(idEmpresa),
-          },
+          headers: cabecalhosDaSessao(init.headers, accessToken, idEmpresa),
         })
       let response = await executar(token.current)
       if (versaoSessao.current !== versaoRequisicao) return response
