@@ -10,6 +10,7 @@ import {
 } from "react"
 import {
   comBloqueioSessao,
+  instanteDaSessao,
   renovarToken,
   solicitarLogin,
 } from "./requisicoes-sessao"
@@ -36,6 +37,8 @@ const AutenticacaoContexto = createContext<Contexto | null>(null)
 const chaveAntiga = "erp-goia-empresa-ativa"
 const chaveEmpresa = (id: number) => `${chaveAntiga}:${id}`
 const nomeCanalSessao = "erp-goia-sessao"
+type MudancaSessao = { tipo: "login" | "logout"; instante: number }
+const erroRenovacao = "Não foi possível renovar a sessão. Tente novamente."
 // Preferência opcional: restrições de armazenamento não podem impedir o login.
 function lembrar(id: number, empresa: number | null) {
   try {
@@ -78,6 +81,15 @@ export function ProvedorAutenticacao({
     resultado: Promise<boolean | null>
   } | null>(null)
   const consulta = useRef<AbortController | null>(null)
+  const canalSessao = useRef<BroadcastChannel | null>(null)
+  const ultimaMudanca = useRef(0)
+  const loginPendente = useRef<number | null>(null)
+
+  const avisarMudanca = useCallback((tipo: MudancaSessao["tipo"]) => {
+    const instante = instanteDaSessao()
+    ultimaMudanca.current = instante
+    canalSessao.current?.postMessage({ tipo, instante } satisfies MudancaSessao)
+  }, [])
 
   const esvaziar = useCallback(() => {
     consulta.current?.abort()
@@ -92,17 +104,15 @@ export function ProvedorAutenticacao({
   const limpar = useCallback(() => {
     if (usuarioAtual.current) lembrar(usuarioAtual.current.id, null)
     versaoSessao.current += 1
+    loginPendente.current = null
     esvaziar()
     setEstado("anonimo")
   }, [esvaziar])
   const falhaAcesso = useCallback(() => {
-    empresaAtual.current = null
-    setEmpresa(null)
-    setEmpresas([])
     setErroAcesso(
       "Não foi possível carregar suas empresas. Verifique a conexão e tente novamente.",
     )
-    setEstado("erro")
+    setEstado(empresaAtual.current ? "autenticado" : "erro")
   }, [])
   const carregarAcesso = useCallback(
     async (
@@ -110,6 +120,7 @@ export function ProvedorAutenticacao({
       versao: number,
       silencioso = false,
       idUsuarioEsperado?: number,
+      instante?: number,
     ) => {
       if (versaoSessao.current !== versao) return false
       consulta.current?.abort()
@@ -143,10 +154,20 @@ export function ProvedorAutenticacao({
           limpar()
           return false
         }
+        // Consulte a seleção depois da resposta: ela pode ter mudado durante o refresh.
+        const atual = empresaAtual.current
+        const mesmaSessao = usuarioAtual.current?.id === body.usuario.id
+        const idEmpresa = mesmaSessao ? atual?.id : preferida(body.usuario.id)
+        const validada =
+          body.empresas.find((e) => e.id === idEmpresa) ??
+          (!mesmaSessao && body.empresas.length === 1 ? body.empresas[0] : null)
         const escolhida =
-          body.empresas.find((e) => e.id === preferida(body.usuario.id)) ??
-          (body.empresas.length === 1 ? body.empresas[0] : null)
-        if (empresaAtual.current?.id !== escolhida?.id) versaoEmpresa.current++
+          atual?.id === validada?.id && atual?.nome === validada?.nome
+            ? atual
+            : validada
+        if (atual?.id !== escolhida?.id) versaoEmpresa.current++
+        if (instante !== undefined && usuarioAtual.current === null)
+          ultimaMudanca.current = Math.max(ultimaMudanca.current, instante)
         token.current = accessToken
         usuarioAtual.current = body.usuario
         empresaAtual.current = escolhida
@@ -161,7 +182,7 @@ export function ProvedorAutenticacao({
         if (controller.signal.aborted || versaoSessao.current !== versao)
           return false
         falhaAcesso()
-        return true // Sessão válida, descoberta falhou: a tela oferece nova tentativa.
+        return !silencioso
       }
     },
     [falhaAcesso, limpar],
@@ -175,13 +196,19 @@ export function ProvedorAutenticacao({
       const idUsuario = usuarioAtual.current?.id
       const resultado = renovarToken()
         .then(
-          async (accessToken) => {
+          async (sessao) => {
             if (versaoSessao.current !== versao) return false
-            if (!accessToken) {
+            if (!sessao) {
               limpar()
               return null
             }
-            return carregarAcesso(accessToken, versao, silencioso, idUsuario)
+            return carregarAcesso(
+              sessao.accessToken,
+              versao,
+              silencioso,
+              idUsuario,
+              sessao.instante,
+            )
           },
           () => {
             if (versaoSessao.current === versao) falhaAcesso()
@@ -206,19 +233,43 @@ export function ProvedorAutenticacao({
   }, [restaurar])
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return
-    const canal = new BroadcastChannel(nomeCanalSessao)
+    let canal: BroadcastChannel
+    try {
+      canal = new BroadcastChannel(nomeCanalSessao)
+    } catch {
+      return
+    }
+    canalSessao.current = canal
     canal.addEventListener("message", (evento: MessageEvent<unknown>) => {
-      if (evento.data === "logout") limpar()
+      if (evento.data === "logout") {
+        if (loginPendente.current === null) limpar()
+        return
+      }
+      const mudanca = evento.data as Partial<MudancaSessao> | null
+      if (
+        (mudanca?.tipo !== "logout" && mudanca?.tipo !== "login") ||
+        typeof mudanca.instante !== "number" ||
+        !Number.isFinite(mudanca.instante) ||
+        mudanca.instante < ultimaMudanca.current
+      )
+        return
+      ultimaMudanca.current = mudanca.instante
+      // O POST de login que aguarda a fila recebe o cookie depois do aviso anterior.
+      if (loginPendente.current === null) limpar()
     })
-    return () => canal.close()
+    return () => {
+      canalSessao.current = null
+      canal.close()
+    }
   }, [limpar])
 
   const recarregarAcesso = useCallback(async () => {
-    versaoSessao.current++
-    setEstado("carregando")
-    setErroAcesso(null)
-    consulta.current?.abort()
-    await restaurar()
+    const silencioso = empresaAtual.current !== null
+    if (!silencioso) {
+      setEstado("carregando")
+      setErroAcesso(null)
+    }
+    await restaurar(silencioso)
   }, [restaurar])
   const selecionarEmpresa = useCallback(
     (id: number) => {
@@ -235,16 +286,23 @@ export function ProvedorAutenticacao({
     async (email: string, password: string) => {
       const versao = ++versaoSessao.current
       esvaziar()
+      loginPendente.current = versao
       setEstado("carregando")
       let response: Response
       try {
-        response = await solicitarLogin(email, password)
+        response = await solicitarLogin(email, password, () => {
+          if (loginPendente.current === versao) loginPendente.current = null
+          // A confirmação HTTP troca o cookie mesmo se a UI cancelou este login.
+          avisarMudanca("login")
+        })
       } catch {
         if (versaoSessao.current === versao) {
           setEstado("anonimo")
           throw new Error("Não foi possível entrar. Verifique sua conexão.")
         }
         throw new Error("A autenticação foi cancelada.")
+      } finally {
+        if (loginPendente.current === versao) loginPendente.current = null
       }
       if (versaoSessao.current !== versao)
         throw new Error("A autenticação foi cancelada.")
@@ -260,29 +318,20 @@ export function ProvedorAutenticacao({
       if (!(await carregarAcesso(body.accessToken, versao)))
         throw new Error("A sessão expirou ou foi cancelada. Entre novamente.")
     },
-    [carregarAcesso, esvaziar],
+    [avisarMudanca, carregarAcesso, esvaziar],
   )
   const sair = useCallback(async () => {
     // Limpar imediatamente, mesmo quando a resposta de logout estiver atrasada.
     limpar()
     const versao = versaoSessao.current
-    try {
-      const response = await comBloqueioSessao(() =>
-        fetch("/api/auth/logout", { method: "POST" }),
-      )
+    await comBloqueioSessao(async () => {
+      if (versaoSessao.current !== versao) return
+      const response = await fetch("/api/auth/logout", { method: "POST" })
       if (!response.ok) throw new Error(await mensagemErro(response))
-    } finally {
-      // Um logout antigo não pode apagar o login que entrou depois dele.
-      if (
-        versaoSessao.current === versao &&
-        typeof BroadcastChannel !== "undefined"
-      ) {
-        const canal = new BroadcastChannel(nomeCanalSessao)
-        canal.postMessage("logout")
-        canal.close()
-      }
-    }
-  }, [limpar])
+      // Só a confirmação HTTP limpa o cookie compartilhado.
+      avisarMudanca("logout")
+    })
+  }, [avisarMudanca, limpar])
   const requisitar = useCallback(
     async (url: string, init: RequestInit = {}) => {
       const versao = versaoSessao.current
@@ -312,8 +361,9 @@ export function ProvedorAutenticacao({
       }
       const emCurso = renovacaoAcesso.current
       if (emCurso?.versao === versao) {
-        await emCurso.resultado
+        const resultado = await emCurso.resultado
         conferir()
+        if (!resultado) throw new Error(erroRenovacao)
       }
       const enviado = token.current!
       let response = await executar(enviado)
@@ -323,10 +373,7 @@ export function ProvedorAutenticacao({
           const resultado = await restaurar(true)
           if (resultado === null) return response
           conferir()
-          if (!resultado)
-            throw new Error(
-              "Não foi possível renovar a sessão. Tente novamente.",
-            )
+          if (!resultado) throw new Error(erroRenovacao)
         }
         conferir()
         response = await executar(token.current!)

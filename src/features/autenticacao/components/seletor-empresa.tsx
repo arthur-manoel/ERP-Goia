@@ -4,7 +4,12 @@ import { useAutenticacao } from "../provedor-autenticacao"
 
 export function SeletorEmpresa() {
   const { estado, empresas, empresa, selecionarEmpresa } = useAutenticacao()
-  if (estado !== "autenticado" || empresas.length < 2) return null
+  if (
+    estado !== "autenticado" ||
+    empresas.length === 0 ||
+    (empresa && empresas.length === 1)
+  )
+    return null
   return (
     <SearchSelect
       label="Empresa ativa"

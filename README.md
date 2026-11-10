@@ -53,13 +53,6 @@ Associações empresa–fornecedor: backend e tela disponíveis em `/cadastros/e
 
 Backend de ordens de produção: CRUD multiempresa, ciclo de vida, itens e apontamentos efetivos disponíveis em `/api/ordem_producao`, preservando os endpoints anteriores. Liberação de reservas e estornos de consumo/estoque permanecem pendentes; cancelamentos que dependem dessas integrações são bloqueados. Contrato e limites em [src/modules/producao/README.md](src/modules/producao/README.md).
 
-### Descoberta de empresas da sessão — issue #12
-
-Autenticação consulta `/api/auth/empresas` antes de selecionar empresa. A lista
-usa vínculos ativos, sem permissões de módulo; seleção válida é lembrada por
-usuário. Não há alteração de schema ou concessão automática. Contrato e comandos
-de teste em [src/modules/auth/README.md](src/modules/auth/README.md).
-
 ### Interface de pedidos de venda
 
 O formulário de novo pedido e edição em `/vendas/pedidos` possui seleção de cliente, produto, tamanho e cor, preço sugerido pelo cadastro, subtotais e total automático. A disponibilidade por variação considera o saldo, outros pedidos abertos e ordens planejadas ou em produção com conclusão até a entrega. Uma insuficiência gera aviso e permite salvar para planejamento.
@@ -382,6 +375,13 @@ O cliente envia `Authorization: Bearer <accessToken>` nas rotas protegidas e
 chama refresh para renovar o acesso; serialize as renovações, inclusive entre
 abas, pois reuso concorrente também causa revogação. Logout e alteração de perfil
 não invalidam JWTs já emitidos: eles permanecem válidos até expirar.
+
+A autenticação consulta `/api/auth/empresas` antes de selecionar a empresa. A
+lista usa vínculos ativos e dispensa permissões de módulo. A renovação mantém
+em memória a empresa selecionada enquanto o vínculo estiver válido, mesmo
+com o armazenamento bloqueado. A preferência por usuário pode restaurar a
+escolha após uma recarga completa. O [contrato da API](src/modules/auth/README.md)
+inclui os comandos de teste da issue #12.
 
 O `src/instrumentation.ts` registra automaticamente o adapter Prisma em cada
 instância Node.js do Next, antes de atender requisições, usando o singleton de

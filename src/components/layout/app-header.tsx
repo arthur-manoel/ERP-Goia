@@ -11,8 +11,8 @@ export function AppHeader({ usuario }: { usuario: UsuarioLogado | null }) {
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="my-4" />
       <div className="ml-auto flex items-center gap-2">
-        <SeletorEmpresa />
         <ThemeToggle />
+        <SeletorEmpresa />
         <MenuUsuario usuario={usuario} />
       </div>
     </header>

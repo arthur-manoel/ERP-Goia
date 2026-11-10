@@ -44,21 +44,30 @@ o provedor de autenticação usa exclusivamente `/api/auth/empresas`.
 Login e restauração/renovação consultam a nova rota usando o token, sem passar
 pelo helper que exige empresa. Tokens de acesso continuam somente em memória;
 a renovação continua usando o cookie HttpOnly e a fila de sessão existente.
-Uma empresa única é selecionada automaticamente. Com várias empresas, restaura
+Na inicialização, uma empresa única é selecionada automaticamente. Com várias empresas, restaura
 somente uma escolha válida ou pede seleção explícita antes de montar os módulos.
 O cabeçalho comum permite trocar de empresa.
 
 A preferência usa sessionStorage `erp-goia-empresa-ativa:<idUsuario>`. A chave
-antiga sem identidade é descartada. Escolha que saiu da lista é removida; não
-se escolhe a primeira empresa arbitrariamente. Sem armazenamento disponível,
-o fluxo funciona em memória. Logout limpa o contexto imediatamente, cancela a
+antiga sem identidade é descartada. Quando o vínculo ativo sai da lista, a
+operação pendente é interrompida e a pessoa escolhe novamente, mesmo quando
+resta uma só empresa. A renovação preserva a última
+empresa selecionada em memória se a consulta confirmar que ela continua válida.
+Com armazenamento indisponível, a seleção funciona na página aberta. Após
+uma recarga completa, a empresa única é selecionada automaticamente e, se
+houver várias empresas, a interface pede uma nova escolha. Logout limpa o
+contexto imediatamente, cancela a
 consulta e remove a preferência do usuário. Respostas atrasadas são descartadas
 por cancelamento e geração/identidade da sessão, inclusive após outro login.
+O canal de sessão, quando disponível, informa às outras abas sobre login e logout.
 
 Carregamento, ausência de vínculos, erro e expiração têm tratamentos diferentes.
 Lista vazia mostra orientação sobre o vínculo; erro de rede/servidor oferece
 nova tentativa. Refresh 401 encerra a sessão; falha de infraestrutura não se
-passa por credencial inválida. A rota protegida não monta módulos enquanto falta
+passa por credencial inválida. Durante uma falha temporária de renovação ou
+consulta, a página e a seleção em memória permanecem. A requisição informa a
+falha e só repete a operação depois de validar a identidade e os vínculos.
+A rota protegida não monta módulos enquanto falta
 um contexto válido. Renovação revalida a lista e não repete uma operação antiga
 se a pessoa ou a empresa mudou. O helper normaliza Headers sem duplicar
 X-Empresa-Id quando a tela já o informou.

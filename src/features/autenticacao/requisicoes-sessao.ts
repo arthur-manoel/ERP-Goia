@@ -1,5 +1,9 @@
 const nomeBloqueioSessao = "erp-goia-sessao"
 
+export function instanteDaSessao() {
+  return performance.timeOrigin + performance.now()
+}
+
 // A fila local também protege navegadores sem Web Locks dentro da mesma aba.
 // Com Web Locks, o mesmo nome serializa as operações entre abas.
 let filaLocal: Promise<void> = Promise.resolve()
@@ -20,7 +24,10 @@ export function comBloqueioSessao<T>(operacao: () => Promise<T>): Promise<T> {
 
 // O refresh token é rotativo. Requisições simultâneas compartilham uma única
 // rotação para não revogar a sessão por reutilização acidental do cookie.
-let renovacao: Promise<string | null> | null = null
+let renovacao: Promise<{
+  accessToken: string
+  instante: number
+} | null> | null = null
 export function renovarToken() {
   renovacao ??= comBloqueioSessao(async () => {
     const response = await fetch("/api/auth/refresh", { method: "POST" })
@@ -28,19 +35,25 @@ export function renovarToken() {
     if (!response.ok) throw new Error("Não foi possível renovar a sessão.")
     const body: { accessToken?: string } = await response.json()
     if (!body.accessToken) throw new Error("Resposta de sessão inválida.")
-    return body.accessToken
+    return { accessToken: body.accessToken, instante: instanteDaSessao() }
   }).finally(() => {
     renovacao = null
   })
   return renovacao
 }
 
-export function solicitarLogin(email: string, password: string) {
-  return comBloqueioSessao(() =>
-    fetch("/api/auth/login", {
+export function solicitarLogin(
+  email: string,
+  password: string,
+  confirmar?: () => void,
+) {
+  return comBloqueioSessao(async () => {
+    const resposta = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
-    }),
-  )
+    })
+    if (resposta.ok) confirmar?.()
+    return resposta
+  })
 }
