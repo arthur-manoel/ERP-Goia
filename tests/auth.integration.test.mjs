@@ -236,7 +236,7 @@ test(
           },
         })
         userIds.push(target.id)
-        await prisma.usuario_empresa.create({
+        const vinculo = await prisma.usuario_empresa.create({
           data: {
             id_usuario: target.id,
             id_empresa: empresaId,
@@ -246,6 +246,7 @@ test(
         })
         alvos.push({
           email: target.email,
+          vinculoId: vinculo.id,
           session: await service.login({ email: target.email, password }),
         })
       }
@@ -266,7 +267,7 @@ test(
           }),
           roles,
         )
-      const alterar = (accessToken, nome) =>
+      const alterar = (accessToken, dados) =>
         handler("setor", "editar")(
           new Request("http://localhost/api/setores/1", {
             method: "PATCH",
@@ -274,16 +275,41 @@ test(
               Authorization: `Bearer ${accessToken}`,
               "X-Empresa-Id": String(empresaId),
             },
-            body: JSON.stringify({ nome }),
+            body: JSON.stringify(dados),
           }),
           { params: Promise.resolve({ id: String(setor.id) }) },
         )
       assert.ok((await validacao(alvo.accessToken, ["PRODUCAO"])).user)
-      assert.equal((await alterar(alvo.accessToken, "Financeiro")).status, 403)
+      assert.equal(
+        (await alterar(alvo.accessToken, { nome: "Financeiro" })).status,
+        403,
+      )
+      await prisma.permissoes_usuario.create({
+        data: {
+          id_usuario_empresa: alvos[0].vinculoId,
+          recurso: "SETORES",
+          pode_editar: true,
+        },
+      })
+      assert.equal(
+        (await alterar(alvo.accessToken, { descricao: "Edição delegada" }))
+          .status,
+        200,
+      )
+      assert.equal(
+        (await alterar(alvo.accessToken, { nome: "Financeiro" })).status,
+        403,
+      )
+      assert.equal(
+        (await prisma.setores.findUniqueOrThrow({ where: { id: setor.id } }))
+          .nome,
+        "Produção",
+      )
       assert.ok(await service.verifyAccessToken(alvo.accessToken))
+      assert.ok(await service.verifyAccessToken(alvos[1].session.accessToken))
       const [reperfil, edit] = await Promise.all([
         service.refresh(alvo.refreshToken),
-        alterar(admin.accessToken, "Financeiro"),
+        alterar(admin.accessToken, { nome: "Financeiro" }),
       ])
       assert.equal(edit.status, 200, await edit.text())
       for (const { session: antigo } of alvos) {
@@ -307,7 +333,10 @@ test(
         (await validacao(novo.accessToken, ["PRODUCAO"])).error.status,
         403,
       )
-      assert.equal((await alterar(admin.accessToken, "Produção")).status, 200)
+      assert.equal(
+        (await alterar(admin.accessToken, { nome: "Produção" })).status,
+        200,
+      )
       assert.equal(await service.verifyAccessToken(alvo.accessToken), null)
       assert.equal(await service.verifyAccessToken(novo.accessToken), null)
     } finally {

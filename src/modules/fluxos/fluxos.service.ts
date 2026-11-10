@@ -95,10 +95,10 @@ export function salvar(
       tipo === "setor" &&
       antes &&
       (antes.nome !== dados.nome || (antes.status === "ATIVO") !== dados.ativo)
-        ? await perfisAntesDeAlterarSetor(tx, antes.id)
+        ? await perfisAntesDeAlterarSetor(tx, antes.id, ctx.idUsuario)
         : null
     const salvo = await repo.gravar(tx, ctx, tipo, dados, id)
-    if (perfis) await revogarPerfisAlterados(tx, perfis)
+    if (perfis) await revogarPerfisAlterados(tx, ctx, perfis)
     if (tipo === "fluxo" && input.setores)
       await repo.substituirSetores(tx, salvo, input.setores)
     const depois = await detalhe(

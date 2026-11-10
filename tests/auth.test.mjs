@@ -404,6 +404,7 @@ test("rotas: sessão divergente e falha de revogação preservam o cookie", asyn
       headers: { Authorization: `Bearer ${token}` },
     })
   assert.equal((await logoutHandler(request(anterior.accessToken))).status, 409)
+  assert.equal((await logoutHandler(request("bearer-invalido"))).status, 401)
   assert.equal(
     (await refreshHandler(request(anterior.accessToken))).status,
     401,

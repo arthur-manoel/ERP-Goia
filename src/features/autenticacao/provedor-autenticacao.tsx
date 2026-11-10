@@ -33,6 +33,22 @@ const AutenticacaoContexto = createContext<Contexto | null>(null)
 const chaveEmpresa = "erp-goia-empresa-ativa"
 const nomeCanalSessao = "erp-goia-sessao"
 
+// Usado apenas para endereçar o aviso local entre abas. O servidor valida o JWT.
+function idSessao(accessToken: string) {
+  const payload = accessToken.split(".")[1]
+  if (!payload) return null
+  try {
+    const { sid } = JSON.parse(
+      atob(payload.replaceAll("-", "+").replaceAll("_", "/")),
+    ) as {
+      sid?: unknown
+    }
+    return typeof sid === "string" ? sid : null
+  } catch {
+    return null
+  }
+}
+
 async function mensagemErro(response: Response) {
   const body: { error?: string } = await response.json().catch(() => ({}))
   return body.error ?? `Falha na requisição (${response.status}).`
@@ -48,12 +64,14 @@ export function ProvedorAutenticacao({
   const [empresas, setEmpresas] = useState<Empresa[]>([])
   const [empresa, setEmpresa] = useState<Empresa | null>(null)
   const token = useRef<string | null>(null)
+  const sessaoAtual = useRef<string | null>(null)
   const empresaAtual = useRef<Empresa | null>(null)
   const versaoSessao = useRef(0)
 
   const limpar = useCallback(() => {
     versaoSessao.current += 1
     token.current = null
+    sessaoAtual.current = null
     empresaAtual.current = null
     sessionStorage.removeItem(chaveEmpresa)
     setUsuario(null)
@@ -65,6 +83,7 @@ export function ProvedorAutenticacao({
   const carregarAcesso = useCallback(
     async (accessToken: string, versaoEsperada: number) => {
       if (versaoSessao.current !== versaoEsperada) return false
+      sessaoAtual.current = idSessao(accessToken)
       const response = await fetch("/api/auth/contexto", {
         headers: { Authorization: `Bearer ${accessToken}` },
         cache: "no-store",
@@ -118,8 +137,11 @@ export function ProvedorAutenticacao({
     if (typeof BroadcastChannel === "undefined") return
     const canal = new BroadcastChannel(nomeCanalSessao)
     canal.addEventListener("message", (evento: MessageEvent<unknown>) => {
-      if (evento.data !== "logout") return
-      limpar()
+      if (
+        sessaoAtual.current &&
+        evento.data === `logout:${sessaoAtual.current}`
+      )
+        limpar()
     })
     return () => canal.close()
   }, [limpar])
@@ -151,6 +173,7 @@ export function ProvedorAutenticacao({
   const sair = useCallback(async () => {
     const versaoLogout = ++versaoSessao.current
     const accessToken = token.current
+    const sid = sessaoAtual.current
     const response = await comBloqueioSessao(() =>
       fetch("/api/auth/logout", {
         method: "POST",
@@ -159,16 +182,19 @@ export function ProvedorAutenticacao({
           : undefined,
       }),
     )
-    if (versaoSessao.current !== versaoLogout) return
     if (!response.ok) {
-      if (response.status === 409) limpar()
+      if (
+        versaoSessao.current === versaoLogout &&
+        (response.status === 401 || response.status === 409)
+      )
+        limpar()
       throw new Error(await mensagemErro(response))
     }
 
-    limpar()
-    if (typeof BroadcastChannel !== "undefined") {
+    if (versaoSessao.current === versaoLogout) limpar()
+    if (sid && typeof BroadcastChannel !== "undefined") {
       const canal = new BroadcastChannel(nomeCanalSessao)
-      canal.postMessage("logout")
+      canal.postMessage(`logout:${sid}`)
       canal.close()
     }
   }, [limpar])

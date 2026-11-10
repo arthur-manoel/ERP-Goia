@@ -213,6 +213,8 @@ export async function logout(
   accessToken?: string,
 ): Promise<void> {
   const claims = accessToken ? readAccessToken(accessToken, true) : null
+  if (accessToken !== undefined && !claims)
+    throw new HttpError(401, "Não foi possível identificar a sessão.")
   const cookieSession = token
     ? await repository.findSessionByRefreshHash(tokenHash(token))
     : null

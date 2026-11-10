@@ -378,8 +378,9 @@ o cookie deve pertencer à mesma sessão.
 
 `POST /api/auth/logout` encerra a sessão identificada pelo cookie ou por um
 Bearer ainda válido. Um refresh antigo da mesma sessão também identifica a
-sessão após a rotação. Quando as duas credenciais identificam sessões diferentes,
-a API retorna 409. A API só confirma o logout depois de persistir a revogação.
+sessão após a rotação. Um Bearer inválido recebe 401. Quando as duas credenciais
+identificam sessões diferentes, a API retorna 409. A API só confirma o logout
+depois de persistir a revogação.
 O sucesso limpa o cookie de refresh e o antigo cookie `session_id`. Outras
 sessões do usuário permanecem válidas.
 
@@ -425,8 +426,10 @@ revogado mesmo que já tenha emitido um JWT. A versão por usuário seria
 adequada para revogar todos os dispositivos, mas o logout atual é por sessão.
 
 A alteração de nome ou status pela API de setores compara o perfil antes e
-depois, sob o mesmo bloqueio e na mesma transação que grava o setor. Quem tiver
-o perfil alterado perde todas as sessões e precisa entrar novamente. A API de
+depois, sob o mesmo bloqueio e na mesma transação que grava o setor. Quando
+um perfil efetivo mudaria, a API exige administração global ou vínculo de
+administrador ativo na empresa. Quem tiver o perfil alterado perde todas as
+sessões e precisa entrar novamente. A API de
 usuários em `develop` cadastra funcionários. Alterações diretas de nível global,
 status da conta, vínculos, empresa, cargos ou setores exigem que o responsável
 pelo banco identifique os usuários afetados e bloqueie suas linhas em
