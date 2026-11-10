@@ -10,7 +10,7 @@ O teste pela interface revelou a duplicação do cabeçalho de empresa no client
 
 Capturas da interface com dados de QA
 
-- [Desktop claro](pr131-claro.png)
+- [Tema claro na resolução nativa do painel](pr131-claro.png)
 - [Desktop escuro](pr131-escuro.png)
 - [Editor no celular](pr131-mobile.png)
 - [Segunda empresa sem acesso aos pedidos da primeira](pr131-isolamento.png)
