@@ -1366,6 +1366,7 @@ model refresh_tokens {
   id             Int       @id @default(autoincrement())
   id_usuario     Int
   token          String    @unique(map: "uk_refresh_token") @db.VarChar(255)
+  sessao_id      String?   @db.Char(36)
   data_criacao   DateTime  @db.DateTime(0)
   data_expiracao DateTime  @db.DateTime(0)
   revogado       Boolean   @default(false)
@@ -1377,6 +1378,7 @@ model refresh_tokens {
 
   @@index([data_expiracao], map: "idx_refresh_expiracao")
   @@index([id_usuario], map: "idx_refresh_usuario")
+  @@index([sessao_id, id_usuario, revogado], map: "idx_refresh_sessao")
 }
 
 model requisicao_compra {

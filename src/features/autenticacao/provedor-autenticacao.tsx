@@ -55,6 +55,7 @@ export function ProvedorAutenticacao({
     versaoSessao.current += 1
     token.current = null
     empresaAtual.current = null
+    sessionStorage.removeItem(chaveEmpresa)
     setUsuario(null)
     setEmpresas([])
     setEmpresa(null)
@@ -63,6 +64,7 @@ export function ProvedorAutenticacao({
 
   const carregarAcesso = useCallback(
     async (accessToken: string, versaoEsperada: number) => {
+      if (versaoSessao.current !== versaoEsperada) return false
       const response = await fetch("/api/auth/contexto", {
         headers: { Authorization: `Bearer ${accessToken}` },
         cache: "no-store",
@@ -117,7 +119,6 @@ export function ProvedorAutenticacao({
     const canal = new BroadcastChannel(nomeCanalSessao)
     canal.addEventListener("message", (evento: MessageEvent<unknown>) => {
       if (evento.data !== "logout") return
-      sessionStorage.removeItem(chaveEmpresa)
       limpar()
     })
     return () => canal.close()
@@ -136,25 +137,34 @@ export function ProvedorAutenticacao({
 
   const entrar = useCallback(
     async (email: string, password: string) => {
-      const versaoLogin = versaoSessao.current + 1
-      versaoSessao.current = versaoLogin
+      limpar()
+      const versaoLogin = versaoSessao.current
       const response = await solicitarLogin(email, password)
       if (!response.ok) throw new Error(await mensagemErro(response))
       const body: { accessToken: string } = await response.json()
       const carregado = await carregarAcesso(body.accessToken, versaoLogin)
       if (!carregado) throw new Error("A autenticação foi cancelada.")
     },
-    [carregarAcesso],
+    [carregarAcesso, limpar],
   )
 
   const sair = useCallback(async () => {
-    versaoSessao.current += 1
+    const versaoLogout = ++versaoSessao.current
+    const accessToken = token.current
     const response = await comBloqueioSessao(() =>
-      fetch("/api/auth/logout", { method: "POST" }),
+      fetch("/api/auth/logout", {
+        method: "POST",
+        headers: accessToken
+          ? { Authorization: `Bearer ${accessToken}` }
+          : undefined,
+      }),
     )
-    if (!response.ok) throw new Error(await mensagemErro(response))
+    if (versaoSessao.current !== versaoLogout) return
+    if (!response.ok) {
+      if (response.status === 409) limpar()
+      throw new Error(await mensagemErro(response))
+    }
 
-    sessionStorage.removeItem(chaveEmpresa)
     limpar()
     if (typeof BroadcastChannel !== "undefined") {
       const canal = new BroadcastChannel(nomeCanalSessao)
@@ -166,7 +176,8 @@ export function ProvedorAutenticacao({
   const requisitar = useCallback(
     async (url: string, init: RequestInit = {}) => {
       const versaoRequisicao = versaoSessao.current
-      if (!token.current) throw new Error("Entre para acessar o ERP.")
+      const accessToken = token.current
+      if (!accessToken) throw new Error("Entre para acessar o ERP.")
       if (!empresaAtual.current)
         throw new Error("Selecione uma empresa para continuar.")
       const idEmpresa = empresaAtual.current.id
@@ -183,17 +194,27 @@ export function ProvedorAutenticacao({
             "X-Empresa-Id": String(idEmpresa),
           },
         })
-      let response = await executar(token.current)
+      let response = await executar(accessToken)
       if (versaoSessao.current !== versaoRequisicao) return response
       if (response.status === 401) {
-        const novoToken = await renovarToken()
+        const novoToken =
+          token.current === accessToken
+            ? await renovarToken(accessToken)
+            : token.current
         if (versaoSessao.current !== versaoRequisicao) return response
         if (!novoToken) {
           limpar()
           return response
         }
         token.current = novoToken
+        if (empresaAtual.current?.id !== idEmpresa)
+          throw new Error("A empresa selecionada mudou. Repita a operação.")
         response = await executar(novoToken)
+        if (
+          response.status === 401 &&
+          versaoSessao.current === versaoRequisicao
+        )
+          limpar()
       }
       return response
     },

@@ -2,8 +2,21 @@ import "server-only"
 import { cookies } from "next/headers"
 import { REFRESH_TOKEN_SECONDS, login, refresh, logout } from "./auth.service"
 import { loginSchema } from "./auth.schema"
+import { readBearer } from "@/lib/authorize"
+import { HttpError } from "@/lib/api/errors"
 
 export const REFRESH_COOKIE = "refresh_token"
+const headers = { "Cache-Control": "no-store" }
+
+function sessionError(error: unknown, message: string) {
+  if (error instanceof HttpError)
+    return Response.json(
+      { error: error.message },
+      { status: error.status, headers },
+    )
+  console.error(message)
+  return Response.json({ error: message }, { status: 500, headers })
+}
 
 export async function setRefreshCookie(token: string) {
   const jar = await cookies()
@@ -54,29 +67,33 @@ export async function loginHandler(request: Request) {
   return Response.json(response, { headers: { "Cache-Control": "no-store" } })
 }
 
-export async function refreshHandler() {
-  const result = await refresh((await cookies()).get(REFRESH_COOKIE)?.value)
-  await setRefreshCookie(result?.refreshToken ?? "")
-  if (!result) {
-    return Response.json(
-      { error: "Não autenticado." },
-      {
-        status: 401,
-        headers: { "Cache-Control": "no-store" },
-      },
+export async function refreshHandler(request: Request) {
+  try {
+    const result = await refresh(
+      (await cookies()).get(REFRESH_COOKIE)?.value,
+      readBearer(request),
     )
+    await setRefreshCookie(result?.refreshToken ?? "")
+    if (!result)
+      return Response.json(
+        { error: "Não autenticado." },
+        { status: 401, headers },
+      )
+    return Response.json({ accessToken: result.accessToken }, { headers })
+  } catch (error) {
+    return sessionError(error, "Não foi possível renovar a sessão.")
   }
-  return Response.json(
-    { accessToken: result.accessToken },
-    { headers: { "Cache-Control": "no-store" } },
-  )
 }
 
-export async function logoutHandler() {
-  await logout((await cookies()).get(REFRESH_COOKIE)?.value)
-  await setRefreshCookie("")
-  return Response.json(
-    { ok: true },
-    { headers: { "Cache-Control": "no-store" } },
-  )
+export async function logoutHandler(request: Request) {
+  try {
+    await logout(
+      (await cookies()).get(REFRESH_COOKIE)?.value,
+      readBearer(request),
+    )
+    await setRefreshCookie("")
+    return Response.json({ ok: true }, { headers })
+  } catch (error) {
+    return sessionError(error, "Não foi possível encerrar a sessão.")
+  }
 }

@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import path from "node:path"
 import ts from "typescript"
+import { tokenDeSessao } from "./helpers/sessao-integracao.mjs"
 
 const databaseUrl = process.env.ESTOQUE_MINIMO_TEST_DATABASE_URL
 
@@ -183,14 +184,15 @@ test(
         await import("../src/modules/estoque-minimo/estoque-minimo.repository.ts")
       const { listarHandler, configurarHandler, empresasHandler } =
         await import("../src/modules/estoque-minimo/router.ts")
-      const { signAccessToken, hashPassword } =
+      const { hashPassword } =
         await import("../src/modules/auth/auth.service.ts")
+      const tokens = new Map()
 
       const request = (idUsuario, idEmpresa, method = "GET", body) =>
         new Request("http://localhost/api/estoque-minimo", {
           method,
           headers: {
-            Authorization: `Bearer ${signAccessToken({ id: idUsuario, role: "PRODUCAO" })}`,
+            Authorization: `Bearer ${tokens.get(idUsuario)}`,
             "X-Empresa-Id": String(idEmpresa),
             ...(body ? { "Content-Type": "application/json" } : {}),
           },
@@ -225,7 +227,7 @@ test(
       })
       usuarios.push(admin.id, usuario.id)
       const cargo = await prisma.cargos.create({
-        data: { id_empresa: empresas[0], nome: `Estoque ${marker}` },
+        data: { id_empresa: empresas[0], nome: "PRODUCAO" },
       })
       await prisma.usuario_empresa.create({
         data: {
@@ -241,6 +243,14 @@ test(
           id_cargo: cargo.id,
         },
       })
+      tokens.set(
+        admin.id,
+        await tokenDeSessao(prisma, admin.id, "ADMINISTRACAO"),
+      )
+      tokens.set(
+        usuario.id,
+        await tokenDeSessao(prisma, usuario.id, "PRODUCAO"),
+      )
 
       const tipoInsumo = await prisma.tipos_produto.create({
         data: { nome: `Tecido ${marker}` },

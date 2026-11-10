@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import ts from "typescript"
 import { createRequire } from "node:module"
+import { randomUUID } from "node:crypto"
 const nativeRequire = createRequire(import.meta.url)
 
 // Executa os módulos reais com cookies e persistência isolados do servidor Next.
@@ -24,11 +25,38 @@ function setup() {
     },
   }
   let sequence = 0
+  const usuario = (id) => {
+    const user = users.get(id)
+    return (
+      user && {
+        id,
+        nome: user.name,
+        status: "ATIVO",
+        nivel_acesso: user.role === "ADMINISTRACAO" ? "ADMIN" : "USUARIO",
+        usuario_empresa: [
+          {
+            status: "ATIVO",
+            empresas: { status: "ATIVA" },
+            cargos: { nome: user.role, status: "ATIVO" },
+            setores: null,
+          },
+        ],
+      }
+    )
+  }
   const matches = (row, where) =>
-    Object.entries(where).every(([key, value]) => row[key] === value)
+    Object.entries(where).every(([key, value]) => {
+      if (value?.in) return value.in.includes(row[key])
+      if (value?.gt) return row[key] > value.gt
+      return row[key] === value
+    })
   const table = {
     async findUnique({ where }) {
       return [...tokens.values()].find((row) => matches(row, where)) ?? null
+    },
+    async findFirst({ where }) {
+      const row = await this.findUnique({ where })
+      return row ? { ...row, usuarios: usuario(row.id_usuario) } : null
     },
     async create({ data }) {
       const row = {
@@ -58,12 +86,15 @@ function setup() {
   }
   let queue = Promise.resolve()
   const prisma = {
+    refresh_tokens: table,
+    usuarios: { findUnique: async ({ where }) => usuario(where.id) },
     async $transaction(fn) {
       const result = queue.then(async () => {
         const snapshot = structuredClone(tokens)
         try {
           return await fn({
             refresh_tokens: table,
+            usuarios: prisma.usuarios,
             $queryRaw: async (parts, ...values) => {
               rawQueries.push({ sql: parts.join("?"), values })
               return []
@@ -93,6 +124,8 @@ function setup() {
     }).outputText
     const localRequire = (id) => {
       if (id === "./prisma" || id === "@/lib/prisma") return { prisma }
+      if (id === "@/generated/prisma/client")
+        return { Prisma: { join: (ids) => ids } }
       if (id === "server-only") return {}
       if (id === "next/headers")
         return {
@@ -131,31 +164,44 @@ test("Argon2id: senha correta, incorreta e hash inválido", async () => {
   assert.equal(await verifyPassword("senha", "inválido"), false)
 })
 
-test("JWT: validade, expiração, assinatura, algoritmo e RBAC sem banco", async () => {
-  const { load } = setup()
+test("JWT: assinatura, expiração, sessão persistida e RBAC", async () => {
+  const { load, prisma, users } = setup()
   const { signAccessToken, verifyAccessToken } = load("src/lib/jwt.ts")
   const { requireRole } = load("src/lib/authorize.ts")
   const jwt = nativeRequire("jsonwebtoken")
-  const token = signAccessToken({ id: 1, role: "VENDAS" })
+  const claims = { id: 1, role: "VENDAS", sid: randomUUID() }
+  const token = signAccessToken(claims)
   const payload = jwt.decode(token)
   assert.equal(payload.exp - payload.iat, 900)
-  assert.deepEqual(verifyAccessToken(token), { id: 1, role: "VENDAS" })
+  assert.equal(await verifyAccessToken(token), null)
+  users.set(1, { role: "VENDAS" })
+  await prisma.refresh_tokens.create({
+    data: {
+      id_usuario: 1,
+      sessao_id: claims.sid,
+      data_expiracao: new Date(Date.now() + 60_000),
+    },
+  })
+  assert.deepEqual(await verifyAccessToken(token), claims)
   for (const invalid of [
     "bad",
     token + "x",
-    jwt.sign({ id: 1, role: "VENDAS" }, process.env.ACCESS_TOKEN_SECRET, {
+    jwt.sign(claims, process.env.ACCESS_TOKEN_SECRET, {
       expiresIn: -1,
     }),
-    jwt.sign({ id: 1, role: "ADMIN" }, process.env.ACCESS_TOKEN_SECRET, {
+    jwt.sign({ ...claims, role: "ADMIN" }, process.env.ACCESS_TOKEN_SECRET, {
       expiresIn: 900,
     }),
-    jwt.sign({ id: 1, role: "VENDAS" }, process.env.ACCESS_TOKEN_SECRET, {
+    jwt.sign(claims, process.env.ACCESS_TOKEN_SECRET, {
       algorithm: "HS384",
       expiresIn: 900,
     }),
-    jwt.sign({ id: 1, role: "VENDAS" }, process.env.ACCESS_TOKEN_SECRET),
+    jwt.sign(claims, process.env.ACCESS_TOKEN_SECRET),
+    jwt.sign({ id: 1, role: "VENDAS" }, process.env.ACCESS_TOKEN_SECRET, {
+      expiresIn: 900,
+    }),
   ])
-    assert.equal(verifyAccessToken(invalid), null)
+    assert.equal(await verifyAccessToken(invalid), null)
   const req = (value) =>
     new Request("http://localhost", {
       headers: value ? { Authorization: value } : {},
@@ -173,10 +219,18 @@ test("JWT: validade, expiração, assinatura, algoritmo e RBAC sem banco", async
     (await requireRole(req(`Bearer ${token}`), ["VENDAS"])).user.id,
     1,
   )
+  prisma.refresh_tokens.findFirst = async () => {
+    throw new Error("storage offline")
+  }
+  assert.equal(
+    (await requireRole(req(`Bearer ${token}`), ["VENDAS"])).error.status,
+    500,
+  )
 })
 
 test("refresh: hash, rotação, reuso revoga todo o usuário, expiração e logout", async () => {
-  const { load, tokens } = setup()
+  const { load, tokens, users } = setup()
+  for (const id of [1, 2, 3, 4]) users.set(id, { role: "VENDAS" })
   const { issueRefreshToken, rotateRefreshToken, revokeRefreshToken } = load(
     "src/lib/refreshToken.ts",
   )
@@ -217,7 +271,8 @@ test("refresh: hash, rotação, reuso revoga todo o usuário, expiração e logo
 })
 
 test("rotação concorrente: somente uma vence e o reuso revoga a sucessora", async () => {
-  const { load, tokens } = setup()
+  const { load, tokens, users } = setup()
+  users.set(1, { role: "VENDAS" })
   const { issueRefreshToken, rotateRefreshToken } = load(
     "src/lib/refreshToken.ts",
   )
@@ -238,10 +293,15 @@ test("rotas: login, refresh, perfil atual, cookies, reuso e logout", async () =>
   const logout = load("src/app/api/auth/logout/route.ts").POST
   const request = (body) =>
     new Request("http://localhost/api/auth/login", { method: "POST", body })
+  const requestAuth = (token) =>
+    new Request("http://localhost/api/auth", {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
   for (const body of ["{", "null", "{}", '{"email":123,"password":"x"}']) {
     assert.equal((await login(request(body))).status, 400)
   }
-  assert.equal((await refresh()).status, 401)
+  assert.equal((await refresh(requestAuth())).status, 401)
   const credentials = (password) =>
     request(JSON.stringify({ email: "ana@example.com", password }))
   assert.equal((await login(credentials("senha"))).status, 401)
@@ -256,7 +316,8 @@ test("rotas: login, refresh, perfil atual, cookies, reuso e logout", async () =>
   assert.equal(tokens.size, 0)
   const success = await login(credentials("senha"))
   assert.equal(success.status, 200)
-  assert.ok((await success.json()).accessToken)
+  const original = (await success.json()).accessToken
+  assert.ok(original)
   const first = jar.get("refresh_token")
   assert.deepEqual(options.get("refresh_token"), {
     httpOnly: true,
@@ -266,26 +327,35 @@ test("rotas: login, refresh, perfil atual, cookies, reuso e logout", async () =>
     maxAge: 604800,
   })
   users.get(1).role = "FINANCEIRO"
-  const renewed = await refresh()
+  assert.equal(await load("src/lib/jwt.ts").verifyAccessToken(original), null)
+  const renewed = await refresh(requestAuth())
   assert.equal(renewed.status, 200)
   assert.equal(
-    load("src/lib/jwt.ts").verifyAccessToken((await renewed.json()).accessToken)
-      .role,
+    (
+      await load("src/lib/jwt.ts").verifyAccessToken(
+        (await renewed.json()).accessToken,
+      )
+    ).role,
     "FINANCEIRO",
   )
   assert.notEqual(jar.get("refresh_token"), first)
   jar.set("refresh_token", first)
-  assert.equal((await refresh()).status, 401)
+  assert.equal((await refresh(requestAuth())).status, 401)
   assert.ok([...tokens.values()].every((t) => t.revogado))
-  await login(credentials("senha"))
-  assert.deepEqual(await (await logout()).json(), { ok: true })
+  const logged = await login(credentials("senha"))
+  const bearer = (await logged.json()).accessToken
+  jar.delete("refresh_token")
+  assert.deepEqual(await (await logout(requestAuth(bearer))).json(), {
+    ok: true,
+  })
+  assert.equal(await load("src/lib/jwt.ts").verifyAccessToken(bearer), null)
   assert.equal(options.get("refresh_token").maxAge, 0)
   assert.equal(options.get("refresh_token").path, "/api/auth")
   assert.ok([...tokens.values()].every((t) => t.revogado))
-  assert.equal((await logout()).status, 200)
+  assert.equal((await logout(requestAuth())).status, 200)
   await login(credentials("senha"))
   users.delete(1)
-  assert.equal((await refresh()).status, 401)
+  assert.equal((await refresh(requestAuth())).status, 401)
   assert.ok([...tokens.values()].every((t) => t.revogado))
 })
 
@@ -312,6 +382,44 @@ test("schema: limites e normalização preservam o contrato de login", () => {
     assert.equal(loginSchema.safeParse(input).success, false)
 })
 
+test("rotas: sessão divergente e falha de revogação preservam o cookie", async () => {
+  const { load, users, prisma, jar } = setup()
+  const service = load("src/modules/auth/auth.service.ts")
+  const { logoutHandler, refreshHandler } = load("src/modules/auth/router.ts")
+  const password = "senha"
+  users.set(1, {
+    id: 1,
+    name: "Ana",
+    email: "ana@example.com",
+    role: "VENDAS",
+    passwordHash: await service.hashPassword(password),
+  })
+  const input = { email: "ana@example.com", password }
+  const anterior = await service.login(input)
+  const atual = await service.login(input)
+  jar.set("refresh_token", atual.refreshToken)
+  const request = (token) =>
+    new Request("http://localhost/api/auth", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  assert.equal((await logoutHandler(request(anterior.accessToken))).status, 409)
+  assert.equal(
+    (await refreshHandler(request(anterior.accessToken))).status,
+    401,
+  )
+  assert.equal(jar.get("refresh_token"), atual.refreshToken)
+  assert.ok(await service.verifyAccessToken(anterior.accessToken))
+  assert.ok(await service.verifyAccessToken(atual.accessToken))
+
+  prisma.refresh_tokens.updateMany = async () => {
+    throw new Error("gravação indisponível")
+  }
+  assert.equal((await logoutHandler(request(atual.accessToken))).status, 500)
+  assert.equal(jar.get("refresh_token"), atual.refreshToken)
+  assert.ok(await service.verifyAccessToken(atual.accessToken))
+})
+
 test("repository: rollback desfaz criação e revogação na mesma transação", async () => {
   const { load, tokens } = setup()
   const service = load("src/modules/auth/auth.service.ts")
@@ -322,6 +430,7 @@ test("repository: rollback desfaz criação e revogação na mesma transação",
     repository.withUserTokens(1, async (db) => {
       await db.rotateRefreshToken(original[0].id, {
         userId: 1,
+        sessionId: original[0].sessao_id,
         tokenHash: "next",
         expiresAt: new Date(Date.now() + 10000),
       })
@@ -497,8 +606,8 @@ test("MySQL: bloqueio de rotação parametriza o ID do usuário", async () => {
   await load("src/modules/auth/auth.service.ts").issueRefreshToken(42)
   assert.deepEqual(rawQueries, [
     {
-      sql: "SELECT id FROM usuarios WHERE id = ? FOR UPDATE",
-      values: [42],
+      sql: "SELECT id FROM usuarios WHERE id IN (?) ORDER BY id FOR UPDATE",
+      values: [[42]],
     },
   ])
 })

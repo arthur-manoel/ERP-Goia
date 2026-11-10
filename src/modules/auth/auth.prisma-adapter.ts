@@ -4,7 +4,7 @@ import type { AuthDb, Role } from "@/lib/auth-db"
 
 import { resolveUserRole } from "./auth.role"
 
-const userInclude = {
+export const userInclude = {
   usuario_empresa: {
     include: {
       empresas: { select: { status: true } },
@@ -20,11 +20,18 @@ export type ResolveUserRole = (
   user: AuthUser,
 ) => Role | null | Promise<Role | null>
 
+export function toSessionUser(user: AuthUser | null) {
+  if (!user || user.status !== "ATIVO") return null
+  const role = resolveUserRole(user)
+  return role ? { id: user.id, name: user.nome, role } : null
+}
+
 export function createPrismaAuthDb(
   prisma: Pick<PrismaClient, "usuarios">,
-  resolveRole: ResolveUserRole = resolveUserRole,
+  resolveRole?: ResolveUserRole,
 ): AuthDb {
-  async function toSessionUser(user: AuthUser | null) {
+  async function sessionUser(user: AuthUser | null) {
+    if (!resolveRole) return toSessionUser(user)
     if (!user || user.status !== "ATIVO") return null
     const role = await resolveRole(user)
     if (!role) return null
@@ -37,13 +44,13 @@ export function createPrismaAuthDb(
         where: { email },
         include: userInclude,
       })
-      const session = await toSessionUser(user)
+      const session = await sessionUser(user)
       return user && session ? { ...session, passwordHash: user.senha } : null
     },
     async getUserById(id) {
       const userId = Number(id)
       if (!Number.isSafeInteger(userId) || userId <= 0) return null
-      return toSessionUser(
+      return sessionUser(
         await prisma.usuarios.findUnique({
           where: { id: userId },
           include: userInclude,
