@@ -37,4 +37,10 @@ Consultas, relatórios e telas ainda em construção não criam eventos de alter
 
 ## Validação
 
-`npm test -- tests/unit/auditoria` cobre autorização no banco, isolamento, filtros, paginação, sigilo, autoria, concorrência de contexto e propagação de falhas na transação. Os testes unitários usam Prisma simulado; o rollback físico deve ser validado em MySQL isolado antes de implantação, sem provocar falhas no banco compartilhado.
+`npm test -- tests/unit/auditoria` cobre autorização no banco, isolamento, filtros, paginação, sigilo, autoria, concorrência de contexto e propagação de falhas na transação. Os testes unitários usam Prisma simulado.
+
+`tests/auditoria.integration.test.mjs` exercita os Route Handlers reais com Request/Response e Prisma real. Exige `AUDITORIA_TEST_DATABASE_URL` apontando para MySQL local dedicado, vazio e com sufixo `_test`, com o schema atual já preparado. Não lê `.env` e recusa hosts remotos. Executar com `node --test tests/auditoria.integration.test.mjs`; sem URL explícita, o teste fica ignorado.
+
+Os testes de integração verificam commit, autor/snapshots, rollback físico de criação e edição nos seis catálogos quando um trigger rejeita o INSERT em auditoria, consulta protegida e cadeia de snapshots após duas edições simultâneas. Os triggers temporários e os registros fictícios são removidos no `finally`. Não executar em banco compartilhado.
+
+Validação local em 11/11/2026: **9 testes de integração aprovados no MySQL 8.0.46**, em instância própria na porta 3347, e **1.701 testes unitários aprovados**. O build padrão com Turbopack passou em recompilação sem cache e sem instrumentação; nenhuma configuração de bundler foi alterada. A inspeção visual com dados fictícios registrou [tema claro](../../../docs/imagens/auditoria/claro.png); as demais verificações visuais foram interrompidas pelo usuário via Escape.
