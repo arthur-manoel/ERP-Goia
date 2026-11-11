@@ -20,24 +20,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-
-type Evento = {
-  id: number
-  data_evento: string
-  usuario: string
-  id_usuario: number | null
-  tabela: string
-  id_registro: number | null
-  acao: string
-  antes: unknown
-  depois: unknown
-}
-type Resultado = {
-  itens: Evento[]
-  total: number
-  pagina: number
-  totalPaginas: number
-}
+import {
+  validarResultadoAuditoria,
+  type EventoAuditoria as Evento,
+  type ResultadoAuditoria as Resultado,
+} from "./api"
 const iniciais = {
   inicio: "",
   fim: "",
@@ -130,7 +117,12 @@ function Consulta({ idEmpresa }: { idEmpresa: number }) {
           throw new Error(
             body.error ?? "Não foi possível consultar a auditoria.",
           )
-        if (!controller.signal.aborted) setResultado(body)
+        const resultado = validarResultadoAuditoria(
+          body,
+          idEmpresa,
+          consulta.pagina,
+        )
+        if (!controller.signal.aborted) setResultado(resultado)
       } catch (e) {
         if (!controller.signal.aborted)
           setErro(
@@ -191,6 +183,8 @@ function Consulta({ idEmpresa }: { idEmpresa: number }) {
             <option value="INSERT">Criação</option>
             <option value="UPDATE">Alteração</option>
             <option value="DELETE">Exclusão</option>
+            <option value="LOGIN">Entrada no sistema</option>
+            <option value="LOGOUT">Saída do sistema</option>
           </select>
         </label>
         <div className="flex items-end gap-2">
@@ -283,6 +277,8 @@ function Consulta({ idEmpresa }: { idEmpresa: number }) {
                           INSERT: "Criação",
                           UPDATE: "Alteração",
                           DELETE: "Exclusão",
+                          LOGIN: "Entrada no sistema",
+                          LOGOUT: "Saída do sistema",
                         } as Record<string, string>
                       )[item.acao] ?? item.acao}
                     </Badge>

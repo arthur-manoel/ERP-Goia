@@ -53,7 +53,7 @@ it("revalida vínculo e administração mesmo com JWT administrativo", async () 
     }),
   )
 })
-it.each([null, "0", "abc", "10.5"])(
+it.each([null, "0", "abc", "10.5", "2147483648", "9007199254740991"])(
   "rejeita seleção de empresa inválida: %s",
   async (empresa) => {
     expect((await consultar("", "test-token", empresa)).status).toBe(400)
@@ -148,3 +148,12 @@ it("valida datas e protege conteúdo legado não estruturado", () => {
   expect(lerSnapshot("senha=segredo")).not.toContain("segredo")
   expect(lerSnapshot('{"ok":true}')).toEqual({ ok: true })
 })
+it.each(["LOGIN", "LOGOUT"])(
+  "permite filtrar ação existente de sessão: %s",
+  async (acao) => {
+    expect((await consultar(`?acao=${acao}`)).status).toBe(200)
+    expect(db.auditoria.count).toHaveBeenCalledWith({
+      where: { id_empresa: 10, acao },
+    })
+  },
+)

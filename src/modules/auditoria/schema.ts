@@ -2,6 +2,13 @@ import { z } from "zod"
 
 const inteiro = z.coerce.number().int().min(1).max(2_147_483_647)
 const dia = z.iso.date()
+export const acoesAuditoria = [
+  "INSERT",
+  "UPDATE",
+  "DELETE",
+  "LOGIN",
+  "LOGOUT",
+] as const
 export const filtrosAuditoria = z
   .strictObject({
     inicio: dia.optional(),
@@ -9,7 +16,7 @@ export const filtrosAuditoria = z
     usuario: inteiro.optional(),
     tabela: z.string().trim().min(1).max(100).optional(),
     registro: inteiro.optional(),
-    acao: z.enum(["INSERT", "UPDATE", "DELETE"]).optional(),
+    acao: z.enum(acoesAuditoria).optional(),
     pagina: inteiro.max(100_000).default(1),
   })
   .refine((v) => !v.inicio || !v.fim || v.inicio <= v.fim, {

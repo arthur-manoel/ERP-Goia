@@ -20,13 +20,18 @@ export async function listarHandler(request: Request) {
       return auth.error
     }
     const idUsuario = Number(auth.user.id)
-    if (!Number.isSafeInteger(idUsuario) || idUsuario <= 0)
+    if (
+      !Number.isSafeInteger(idUsuario) ||
+      idUsuario <= 0 ||
+      idUsuario > 2_147_483_647
+    )
       throw new HttpError(401, "Não autenticado.")
     const empresa = request.headers.get("X-Empresa-Id")
     if (
       !empresa ||
       !/^[1-9]\d*$/.test(empresa) ||
-      !Number.isSafeInteger(Number(empresa))
+      !Number.isSafeInteger(Number(empresa)) ||
+      Number(empresa) > 2_147_483_647
     )
       throw new HttpError(400, "Selecione uma empresa válida.")
     const parsed = filtrosAuditoria.safeParse(readQuery(request))

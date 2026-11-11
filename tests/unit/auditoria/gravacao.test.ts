@@ -88,6 +88,27 @@ it("produto compartilhado gera evento em todos os proprietários, sem duplicar",
     db.auditoria.create.mock.calls.map(([args]) => args.data.id_empresa),
   ).toEqual([10, 20])
 })
+it("bloqueia todas as empresas do produto em ordem antes de bloquear o cadastro", async () => {
+  db.produtos.findUnique.mockResolvedValue({ id: 7, nome: "Camisa" })
+  db.produto_empresa.findMany.mockResolvedValue([
+    { id_empresa: 20 },
+    { id_empresa: 10 },
+    { id_empresa: 20 },
+  ])
+  await contextoAuditoriaCatalogo.run({ idUsuario: 1, empresas: [20] }, () =>
+    gravarCatalogo("produtos", 7, undefined, async () => ({
+      id: 7,
+      nome: "Camisa nova",
+    })),
+  )
+  const [empresa, cadastro] = db.$queryRaw.mock.calls
+  expect(empresa[0].join("")).toContain("FROM empresas")
+  expect(empresa[1].values).toEqual([10, 20])
+  expect(cadastro[0].join("")).toContain("FROM produtos")
+  expect(db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    db.produtos.findUnique.mock.invocationCallOrder[0],
+  )
+})
 it("transferência de categoria preserva evento nas empresas anterior e nova", async () => {
   db.categorias.findUnique.mockResolvedValue(antes)
   await gravarCatalogo("categorias", 7, undefined, async () => ({

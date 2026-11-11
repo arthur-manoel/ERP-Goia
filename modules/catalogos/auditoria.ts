@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks"
-import type { Prisma } from "../../src/generated/prisma/client"
+import { Prisma } from "../../src/generated/prisma/client"
 import { prisma } from "../../src/lib/prisma"
 import { serializarJsonTextMysql } from "../../src/lib/limites-texto"
 import { ValidationError } from "../../src/lib/api/errors"
@@ -24,6 +24,22 @@ export async function gravarCatalogo<T extends Registro>(
 ): Promise<T> {
   const executar = async (tx: Prisma.TransactionClient) => {
     const ctx = contextoAuditoriaCatalogo.getStore()
+    // A auditoria referencia empresas por FK. Bloquear primeiro o cadastro e
+    // depois essa FK pode formar um ciclo com produção/categorias (empresa → cadastro).
+    // As transações recebidas já seguem essa ordem em withCompanyWriteLock.
+    if (database === undefined) {
+      const empresas = new Set(ctx?.empresas ?? [])
+      if (tabela === "produtos" && id !== null) {
+        const links = await tx.produto_empresa.findMany({
+          where: { id_produto: id },
+          select: { id_empresa: true },
+        })
+        for (const link of links) empresas.add(link.id_empresa)
+      }
+      const ids = [...empresas].sort((a, b) => a - b)
+      if (ids.length)
+        await tx.$queryRaw`SELECT id FROM empresas WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`
+    }
     // O lock do registro protege o snapshot anterior contra outra edição concorrente.
     if (id !== null) {
       switch (tabela) {

@@ -6,9 +6,9 @@ Tela em `/admin/auditoria` e consulta em `GET /api/auditoria`. Usa a tabela exis
 
 JWT válido e `X-Empresa-Id` obrigatório. O vínculo, usuário e empresa devem estar ativos. Somente proprietário (`usuario_empresa.nivel_acesso = EMPRESA`) ou administrador (`usuarios.nivel_acesso = ADMIN`) consulta o histórico. A autorização é relida na transação da consulta, sem depender apenas do perfil no JWT. Eventos sem empresa não são expostos.
 
-Filtros opcionais: `inicio` e `fim` (`YYYY-MM-DD`, dias completos em America/Fortaleza), `usuario` (ID), `tabela` (nome exato), `registro` (ID), `acao` (`INSERT`, `UPDATE`, `DELETE`) e `pagina` (padrão 1). Parâmetros desconhecidos, repetidos, datas inválidas e intervalos invertidos retornam 400.
+Filtros opcionais: `inicio` e `fim` (`YYYY-MM-DD`, dias completos em America/Fortaleza), `usuario` (ID), `tabela` (nome exato), `registro` (ID), `acao` (`INSERT`, `UPDATE`, `DELETE`, `LOGIN`, `LOGOUT`) e `pagina` (padrão 1). Parâmetros desconhecidos, repetidos, datas inválidas e intervalos invertidos retornam 400.
 
-Retorno: `{ itens, total, pagina, totalPaginas }`. Página de 25 eventos, ordenada por data e ID decrescentes, contagem e leitura no mesmo snapshot RepeatableRead. Sem cache. A tela cancela consultas antigas e reinicia seu estado ao mudar empresa ou sessão.
+Retorno: `{ itens, total, pagina, totalPaginas }`. Página de 25 eventos, ordenada por data e ID decrescentes, contagem e leitura no mesmo snapshot RepeatableRead. Sem cache. A tela cancela consultas antigas e reinicia seu estado ao mudar empresa ou sessão. Valida a estrutura da resposta, as datas, a empresa de cada evento e a página antes de renderizar; respostas incompatíveis exibem erro com opção de repetição.
 
 `antes` e `depois` são JSON interpretado. Chaves de senha, hash de senha, token, segredo, autorização e cookie são ocultadas recursivamente na resposta. Texto legado que não seja JSON é substituído por uma mensagem, evitando expor segredos não estruturados. O conteúdo original no banco permanece intacto.
 
@@ -29,7 +29,7 @@ Retorno: `{ itens, total, pagina, totalPaginas }`. Página de 25 eventos, ordena
 
 Os catálogos registram criação e alteração/inativação com snapshots completos e usuário do JWT. `AsyncLocalStorage` propaga exclusivamente o autor e as empresas da requisição autenticada, sem alterar contratos dos services. Chamadas internas sem sessão registram autor nulo (sistema).
 
-O helper reutiliza a transação recebida ou abre uma para a escrita isolada. Atualizações bloqueiam o registro antes do snapshot anterior. Falha do log ou JSON acima de 65.535 bytes rejeita a mesma transação. Alterações sem efeito não geram evento. Inativação é `UPDATE`, preservando o cadastro.
+O helper reutiliza a transação recebida ou abre uma para a escrita isolada. Nas requisições de escrita isolada, bloqueia as empresas em ordem de ID antes do cadastro, seguindo a ordem dos demais módulos e evitando inversão com a FK de auditoria. Produtos compartilhados incluem todas as empresas proprietárias nesse bloqueio. Atualizações bloqueiam o registro antes do snapshot anterior. Falha do log ou JSON acima de 65.535 bytes rejeita a mesma transação. Alterações sem efeito não geram evento. Inativação é `UPDATE`, preservando o cadastro.
 
 Produtos compartilhados geram um evento por empresa proprietária. Transferências de cadastros preservam o evento na origem e no destino. Tipos de produto são globais: o evento é atribuído às empresas do contexto do autor, sem publicar eventos globais a outras empresas.
 
