@@ -2,6 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { randomBytes, randomUUID } from "node:crypto"
 import { bancoLocal, typescript } from "./helpers/integracao-pedidos.mjs"
+import { tokenDeSessao } from "./helpers/sessao-integracao.mjs"
 
 const url = process.env.AUDITORIA_TEST_DATABASE_URL
 test(
@@ -25,8 +26,8 @@ test(
       user: decodeURIComponent(banco.username),
       password: decodeURIComponent(banco.password),
       database: banco.pathname.slice(1),
+      allowPublicKeyRetrieval: true, // Conexão somente ao banco local dedicado, validado acima.
     })
-    const { signAccessToken } = await import("../src/lib/jwt.ts")
     const { GET: consultar } = await import("../src/app/api/auditoria/route.ts")
     const marker = randomUUID().replaceAll("-", "").slice(0, 12)
     const trigger = `audit_fail_${marker}`
@@ -99,7 +100,7 @@ test(
           },
         })
       }
-      const token = signAccessToken({ id: usuarios[0], role: "ADMINISTRACAO" })
+      const token = await tokenDeSessao(prisma, usuarios[0], "ADMINISTRACAO")
       function req(path, method = "GET", body, empresa = empresas[0]) {
         return new Request(`http://localhost${path}`, {
           method,
@@ -371,6 +372,9 @@ test(
         await prisma.empresas.deleteMany({ where: { id: scope } })
       }
       await prisma.tipos_produto.deleteMany({ where: { id: { in: tipos } } })
+      await prisma.refresh_tokens.deleteMany({
+        where: { id_usuario: { in: usuarios } },
+      })
       await prisma.usuarios.deleteMany({ where: { id: { in: usuarios } } })
       await prisma.$disconnect()
       await ddl.end()
