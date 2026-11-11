@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import path from "node:path"
 import ts from "typescript"
 import nextEnv from "@next/env"
+import { tokenDeSessao } from "./helpers/sessao-integracao.mjs"
 
 const configured = process.argv.includes("--configured-db")
 if (configured) nextEnv.loadEnvConfig(process.cwd())
@@ -88,8 +89,6 @@ test(
       const schemas = await import("../src/modules/producao/producao.schema.ts")
       const auth =
         await import("../src/modules/producao/producao.authorization.ts")
-      const { signAccessToken } =
-        await import("../src/modules/auth/auth.service.ts")
       process.env.ACCESS_TOKEN_SECRET = "production-integration-only-secret"
       for (let i = 0; i < 2; i++) {
         const empresa = await prisma.empresas.create({
@@ -119,7 +118,7 @@ test(
           id_cargo: cargo.id,
         },
       })
-      const authorization = `Bearer ${signAccessToken({ id: usuario.id, role: "ADMINISTRACAO" })}`
+      const authorization = `Bearer ${await tokenDeSessao(prisma, usuario.id, "ADMINISTRACAO")}`
       const request = (empresa) =>
         new Request("http://localhost", {
           headers: { authorization, "X-Empresa-Id": String(empresa) },

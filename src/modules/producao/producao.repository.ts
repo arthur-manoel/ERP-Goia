@@ -38,12 +38,15 @@ export function vinculosAtivos(idUsuario: number) {
     },
   })
 }
-export async function transacao<T>(operation: (tx: Transaction) => Promise<T>) {
+export async function transacao<T>(
+  operation: (tx: Transaction) => Promise<T>,
+  isolationLevel: Prisma.TransactionIsolationLevel = "Serializable",
+) {
   try {
     // Serializable protege também edição/recalculo e o histórico de setores.
     // Não repetir automaticamente uma transação que perdeu a disputa de estado.
     return await prisma.$transaction(operation, {
-      isolationLevel: "Serializable",
+      isolationLevel,
       maxWait: 10000,
       timeout: 30000,
     })

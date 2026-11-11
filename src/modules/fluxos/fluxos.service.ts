@@ -7,6 +7,10 @@ import {
 } from "../producao/producao.repository"
 import type { Cadastro, Edicao, Listagem } from "./fluxos.schema"
 import type { Transaction } from "../producao/producao.repository"
+import {
+  perfisAntesDeAlterarSetor,
+  revogarPerfisAlterados,
+} from "../auth/auth.perfis"
 
 function apresentar(row: repo.Registro) {
   const { status, ...dados } = row
@@ -66,6 +70,10 @@ export function salvar(
   input: Edicao,
   id?: number,
 ) {
+  // A edição bloqueia a linha do setor e os usuários afetados. Após esperar
+  // pelo usuário, precisa ler e revogar o refresh confirmado pela rotação.
+  const isolamento =
+    tipo === "setor" && id !== undefined ? "ReadCommitted" : undefined
   return transacao(async (tx) => {
     const antes =
       id === undefined ? undefined : await repo.buscar(tx, ctx, tipo, id)
@@ -83,7 +91,14 @@ export function salvar(
         input.descricao === undefined ? antes?.descricao : input.descricao,
       ativo: input.ativo ?? (antes ? antes.status === "ATIVO" : true),
     }
+    const perfis =
+      tipo === "setor" &&
+      antes &&
+      (antes.nome !== dados.nome || (antes.status === "ATIVO") !== dados.ativo)
+        ? await perfisAntesDeAlterarSetor(tx, antes.id, ctx.idUsuario)
+        : null
     const salvo = await repo.gravar(tx, ctx, tipo, dados, id)
+    if (perfis) await revogarPerfisAlterados(tx, ctx, perfis)
     if (tipo === "fluxo" && input.setores)
       await repo.substituirSetores(tx, salvo, input.setores)
     const depois = await detalhe(
@@ -101,7 +116,7 @@ export function salvar(
       depois,
     )
     return { [tipo]: depois }
-  })
+  }, isolamento)
 }
 export function excluir(ctx: Contexto, tipo: repo.Entidade, id: number) {
   return transacao(async (tx) => {

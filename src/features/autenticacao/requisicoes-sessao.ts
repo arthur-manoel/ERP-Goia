@@ -34,16 +34,25 @@ export function comBloqueioSessao<T>(operacao: () => Promise<T>): Promise<T> {
 
 // O refresh token é rotativo. Requisições simultâneas compartilham uma única
 // rotação para não revogar a sessão por reutilização acidental do cookie.
-let renovacao: Promise<string | null> | null = null
-export function renovarToken() {
-  renovacao ??= comBloqueioSessao(async () => {
-    const response = await fetch("/api/auth/refresh", { method: "POST" })
-    if (!response.ok) return null
+const renovacoes = new Map<string | undefined, Promise<string | null>>()
+export function renovarToken(accessToken?: string) {
+  const pendente = renovacoes.get(accessToken)
+  if (pendente) return pendente
+  const renovacao = comBloqueioSessao(async () => {
+    const response = await fetch("/api/auth/refresh", {
+      method: "POST",
+      headers: accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
+        : undefined,
+    })
+    if (response.status === 401) return null
+    if (!response.ok) throw new Error("Não foi possível renovar a sessão.")
     const body: { accessToken?: string } = await response.json()
     return body.accessToken ?? null
   }).finally(() => {
-    renovacao = null
+    renovacoes.delete(accessToken)
   })
+  renovacoes.set(accessToken, renovacao)
   return renovacao
 }
 

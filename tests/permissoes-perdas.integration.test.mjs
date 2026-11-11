@@ -2,6 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import mariadb from "mariadb"
+import { tokenDeSessao } from "./helpers/sessao-integracao.mjs"
 import {
   bancoLocal,
   typescript,
@@ -15,7 +16,6 @@ delete process.env.DEV_ID_USUARIO
 delete process.env.DEV_ID_EMPRESA
 const hooks = typescript()
 const { prisma } = await import("../src/lib/prisma.ts")
-const { signAccessToken } = await import("../src/modules/auth/auth.service.ts")
 const { allowedCompanies } = await import("../modules/catalogos/repository.ts")
 const { RECURSOS_PERMISSAO } = await import("../src/lib/permissoes.ts")
 const { diaOperacional } =
@@ -112,8 +112,8 @@ test("Permissões e perdas: persistência, constraints, concorrência e contrato
       prisma.permissoes_usuario.deleteMany({
         where: { id_usuario_empresa: vinculos[0] },
       })
-    const tokens = usuarios.map((id) =>
-      signAccessToken({ id, role: "ADMINISTRACAO" }),
+    const tokens = await Promise.all(
+      usuarios.map((id) => tokenDeSessao(prisma, id, "PRODUCAO")),
     )
     let httpAnunciado = false
     // O banco permanece igual entre cenários; os contadores são isolados.

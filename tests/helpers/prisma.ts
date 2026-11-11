@@ -18,6 +18,7 @@ function model() {
   }
 }
 export const db = {
+  refresh_tokens: model(),
   usuario_empresa: model(),
   tamanhos: model(),
   cores: model(),
