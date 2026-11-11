@@ -201,6 +201,12 @@ model compras {
   nota_fiscal             nota_fiscal[]
   contas_pagar            contas_pagar[]
 
+  planos_pagamento_compra planos_pagamento_compra[]
+  chave_criacao           String?                   @db.VarChar(64)
+  hash_criacao            String?                   @db.Char(64)
+
+  @@unique([id_empresa, chave_criacao], map: "uk_compra_empresa_chave_criacao")
+  @@unique([id, id_empresa], map: "uk_compra_id_empresa")
   @@unique([id_empresa, codigo], map: "uk_compra_empresa_codigo")
   @@index([id_local_estoque], map: "fk_compra_estoque")
   @@index([id_fornecedor], map: "fk_compra_fornecedor")
@@ -280,10 +286,29 @@ model contas_bancarias {
   @@index([id_empresa], map: "idx_conta_bancaria_empresa")
 }
 
+model planos_pagamento_compra {
+  id                Int            @id @default(autoincrement())
+  id_empresa        Int
+  id_compra         Int
+  id_categoria      Int
+  id_usuario        Int
+  valor_total       Decimal        @db.Decimal(15, 2)
+  vencimentos       Json
+  data_confirmacao  DateTime       @default(now()) @db.DateTime(3)
+  data_cancelamento DateTime?      @db.DateTime(3)
+  compras           compras        @relation(fields: [id_compra, id_empresa], references: [id, id_empresa], onDelete: Restrict, map: "fk_plano_pagamento_compra")
+  contas_pagar      contas_pagar[]
+
+  @@unique([id_empresa, id_compra], map: "uk_plano_pagamento_empresa_compra")
+  @@unique([id, id_empresa, id_compra, id_categoria], map: "uk_plano_pagamento_parcela_fk")
+  @@index([id_compra, id_empresa], map: "idx_plano_pagamento_compra")
+}
+
 model contas_pagar {
   id                   Int                         @id @default(autoincrement())
   id_empresa           Int
   id_compra            Int
+  id_plano_pagamento   Int?
   id_categoria         Int
   numero_parcela       Int                         @default(1)
   total_parcelas       Int                         @default(1)
@@ -304,6 +329,10 @@ model contas_pagar {
   pagamentos_pagar     pagamentos_pagar[]
   despesas             despesas[]
 
+  planos_pagamento_compra planos_pagamento_compra? @relation(fields: [id_plano_pagamento, id_empresa, id_compra, id_categoria], references: [id, id_empresa, id_compra, id_categoria], onDelete: Restrict, map: "fk_contas_pagar_plano_pagamento")
+
+  @@unique([id_plano_pagamento, numero_parcela], map: "uk_contas_pagar_plano_parcela")
+  @@index([id_plano_pagamento, id_empresa, id_compra, id_categoria], map: "idx_contas_pagar_plano_fk")
   @@index([id_empresa], map: "idx_contas_pagar_empresa")
   @@index([id_compra], map: "idx_contas_pagar_compra")
   @@index([id_categoria], map: "idx_contas_pagar_categoria")

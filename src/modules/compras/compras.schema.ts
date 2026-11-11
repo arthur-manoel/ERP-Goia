@@ -89,6 +89,7 @@ export const listarNotasSchema = z
 export const opcoesSchema = z
   .object({
     tipo: z.enum([
+      "categorias_financeiras",
       "insumos",
       "fornecedores",
       "locais",
@@ -182,6 +183,11 @@ export const acaoPedidoSchema = z
 // ------------------------------------------------------------------- compra
 export const criarCompraSchema = z
   .object({
+    rascunho: z.boolean().optional(),
+    chaveIdempotencia: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{8,64}$/)
+      .optional(),
     idPedidoCompra: idSchema.nullable().optional(),
     idFornecedor: idSchema.nullable().optional(),
     idLocalEstoque: idSchema,
@@ -235,9 +241,26 @@ export const receberCompraSchema = z
       .optional(),
   })
   .strict()
-export const acaoCompraSchema = z
-  .object({ acao: z.enum(["cancelar"]) })
-  .strict()
+const dadosPlano = {
+  idCategoria: idSchema,
+  vencimentos: z
+    .array(diaSchema)
+    .min(1)
+    .max(120)
+    .refine(
+      (datas) => new Set(datas).size === datas.length,
+      "Informe vencimentos distintos.",
+    ),
+}
+export const acaoCompraSchema = z.discriminatedUnion("acao", [
+  z.object({ acao: z.literal("cancelar") }).strict(),
+  z.object({ acao: z.literal("prever_plano"), ...dadosPlano }).strict(),
+  z.object({ acao: z.literal("confirmar"), ...dadosPlano }).strict(),
+])
+export type PlanoCompraInput = Pick<
+  Extract<z.infer<typeof acaoCompraSchema>, { acao: "confirmar" }>,
+  "idCategoria" | "vencimentos"
+>
 
 // -------------------------------------------------------------- nota fiscal
 const chaveSchema = z

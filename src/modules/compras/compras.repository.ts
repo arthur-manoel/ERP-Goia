@@ -50,6 +50,7 @@ export function leitura<T>(operation: (tx: Transaction) => Promise<T>) {
 export async function gravacao<T>(
   ctx: Contexto,
   operation: (tx: Transaction) => Promise<T>,
+  { repetirConflito = false } = {},
 ) {
   try {
     return await prisma.$transaction(
@@ -61,12 +62,18 @@ export async function gravacao<T>(
           throw new ComprasError(403, "Acesso negado à empresa.")
         return operation(tx)
       },
-      { isolationLevel: "Serializable" },
+      { isolationLevel: "Serializable", timeout: 15000 },
     )
   } catch (error) {
     if (
+      repetirConflito &&
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2034"
+    )
+      return gravacao(ctx, operation)
+    if (
       error instanceof HttpError &&
-      (error.status === 404 || error.status === 409)
+      (error.status === 400 || error.status === 404 || error.status === 409)
     )
       throw new ComprasError(error.status, error.message)
     if (disputaPersistencia(error))

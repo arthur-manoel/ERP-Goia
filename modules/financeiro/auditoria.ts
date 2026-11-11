@@ -33,7 +33,8 @@ function snapshot(record: RecordSnapshot, event: FinancialEvent) {
 export function auditFinancial(
   database: Prisma.TransactionClient,
   actor: FinancialActor,
-  table: "despesas" | "contas_pagar" | "contas_receber",
+  table:
+    "despesas" | "contas_pagar" | "contas_receber" | "planos_pagamento_compra",
   before: RecordSnapshot | null,
   after: RecordSnapshot,
   event: FinancialEvent,

@@ -1,4 +1,9 @@
-import { randomUUID } from "node:crypto"
+import {
+  gerarPlanoCompra,
+  cancelarPlanoCompra,
+  prepararPlanoCompra,
+} from "../../../modules/contas_pagar/plano-compra"
+import { createHash, randomUUID } from "node:crypto"
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
 import {
@@ -32,6 +37,8 @@ import {
   paraEscala,
   proximoStatus,
   quantidadePendente,
+  quantidadeValida,
+  valorValido,
   somarValores,
   situacaoRecebimento,
   somarQuantidades,
@@ -54,6 +61,7 @@ import type {
   ListarPedidosInput,
   ListarRequisicoesInput,
   OpcoesInput,
+  PlanoCompraInput,
   ReceberCompraInput,
 } from "./compras.schema"
 
@@ -943,6 +951,32 @@ export function consultarCompra(ctx: Contexto, id: number) {
 
 export function criarCompra(ctx: Contexto, input: CriarCompraInput) {
   return gravacao(ctx, async (tx) => {
+    const chave = input.chaveIdempotencia
+    const hash = chave
+      ? createHash("sha256")
+          .update(JSON.stringify([ctx.idUsuario, input]))
+          .digest("hex")
+      : null
+    if (chave) {
+      const existente = await tx.compras.findUnique({
+        where: {
+          id_empresa_chave_criacao: {
+            id_empresa: ctx.idEmpresa,
+            chave_criacao: chave,
+          },
+        },
+        select: { id: true, hash_criacao: true },
+      })
+      if (existente) {
+        if (existente.hash_criacao !== hash)
+          throw conflito(
+            "A chave de criação já foi utilizada com dados diferentes.",
+          )
+        return {
+          compra: detalheCompra(await carregarCompra(tx, ctx, existente.id)),
+        }
+      }
+    }
     await exigirLocal(tx, ctx, input.idLocalEstoque)
     let idFornecedor: number
     let idOrdemProducao: number | null = null
@@ -1011,7 +1045,9 @@ export function criarCompra(ctx: Contexto, input: CriarCompraInput) {
         id_pedido_compra_legado: input.idPedidoCompra ?? null,
         codigo: await proximoNumero(tx, ctx.idEmpresa, "compras"),
         origem: idOrdemProducao ? "ORDEM_PRODUCAO" : "MANUAL",
-        status: "EMITIDA",
+        status: input.rascunho ? "RASCUNHO" : "EMITIDA",
+        chave_criacao: chave,
+        hash_criacao: hash,
         data_emissao: new Date(),
         observacao: input.observacao || null,
         compra_itens: { create: itens },
@@ -1228,6 +1264,124 @@ export function receberCompra(
   })
 }
 
+async function prepararConfirmacao(
+  tx: Transaction,
+  ctx: Contexto,
+  id: number,
+  input: PlanoCompraInput,
+) {
+  const compra = await tx.compras.findFirst({
+    where: { id, id_empresa: ctx.idEmpresa },
+    include: { compra_itens: true },
+  })
+  if (!compra) throw new ComprasError(404, "Compra não encontrada.")
+  const existente = await tx.planos_pagamento_compra.findUnique({
+    where: {
+      id_empresa_id_compra: { id_empresa: ctx.idEmpresa, id_compra: id },
+    },
+  })
+  const vencimentos = [...input.vencimentos].sort()
+  if (existente) {
+    if (
+      existente.id_categoria !== input.idCategoria ||
+      JSON.stringify(existente.vencimentos) !== JSON.stringify(vencimentos)
+    )
+      throw conflito("A compra já possui plano financeiro confirmado.")
+    return { compra, existente } as const
+  }
+  if (
+    await tx.contas_pagar.count({
+      where: { id_compra: id, id_empresa: ctx.idEmpresa },
+    })
+  )
+    throw conflito(
+      "A compra possui títulos legados. Concilie os registros antes de confirmar.",
+    )
+  if (compra.status !== "RASCUNHO")
+    throw conflito("Somente compras em rascunho podem ser confirmadas.")
+  await exigirFornecedor(tx, ctx, compra.id_fornecedor)
+  await exigirLocal(tx, ctx, compra.id_local_estoque)
+  await exigirInsumos(
+    tx,
+    ctx,
+    compra.compra_itens.map((item) => item.id_produto),
+  )
+  if (
+    !compra.compra_itens.length ||
+    compra.compra_itens.some(
+      (item) =>
+        !quantidadeValida(qtd(item.quantidade)) ||
+        !valorValido(dinheiro(item.valor_unitario)),
+    )
+  )
+    throw new ComprasError(
+      400,
+      "A compra precisa ter itens com quantidades e valores válidos.",
+    )
+  const total = somarValores(
+    compra.compra_itens.map((item) =>
+      totalItem(qtd(item.quantidade), dinheiro(item.valor_unitario)),
+    ),
+  )
+  const plano = await prepararPlanoCompra(
+    tx,
+    ctx.idEmpresa,
+    input.idCategoria,
+    total,
+    vencimentos,
+  )
+  return { compra, plano } as const
+}
+
+export function preverPlanoCompra(
+  ctx: Contexto,
+  id: number,
+  input: PlanoCompraInput,
+) {
+  return leitura(async (tx) => {
+    const resultado = await prepararConfirmacao(tx, ctx, id, input)
+    if (!resultado.plano)
+      throw conflito("A compra já possui plano financeiro confirmado.")
+    return { plano: resultado.plano }
+  })
+}
+
+export function confirmarCompra(
+  ctx: Contexto,
+  id: number,
+  input: PlanoCompraInput,
+) {
+  return gravacao(
+    ctx,
+    async (tx) => {
+      const resultado = await prepararConfirmacao(tx, ctx, id, input)
+      if (resultado.existente)
+        return {
+          idCompra: id,
+          status: resultado.compra.status,
+          confirmada: true,
+        }
+      await gerarPlanoCompra(tx, ctx, id, input.idCategoria, resultado.plano)
+      const atualizada = await tx.compras.updateMany({
+        where: { id, id_empresa: ctx.idEmpresa, status: "RASCUNHO" },
+        data: { status: "EMITIDA", data_atualizacao: new Date() },
+      })
+      if (atualizada.count !== 1)
+        throw conflito("A compra foi alterada por outra operação.")
+      await auditar(
+        tx,
+        ctx,
+        "compras",
+        id,
+        { status: "RASCUNHO" },
+        { status: "EMITIDA" },
+      )
+      return { idCompra: id, status: "EMITIDA", confirmada: true }
+    },
+    { repetirConflito: true },
+  )
+}
+
 export function acaoCompra(ctx: Contexto, id: number, acao: string) {
   return gravacao(ctx, async (tx) => {
     const antes = detalheCompra(await carregarCompra(tx, ctx, id))
@@ -1247,6 +1401,7 @@ export function acaoCompra(ctx: Contexto, id: number, acao: string) {
       novo === "CANCELADA" && antes.pedido
         ? dadosSoltarPedido(antes.pedido.numero, antes.observacao)
         : {}
+    if (novo === "CANCELADA") await cancelarPlanoCompra(tx, ctx, id)
     const r = await tx.compras.updateMany({
       where: { id, id_empresa: ctx.idEmpresa, status: antes.status },
       data: {
@@ -1525,6 +1680,25 @@ export function listarOpcoes(ctx: Contexto, input: OpcoesInput) {
         temMais: skip + opcoes.length < total,
       },
     })
+    if (input.tipo === "categorias_financeiras") {
+      const where: Prisma.categoria_financeiraWhereInput = {
+        id_empresa: ctx.idEmpresa,
+        status: "ATIVA",
+        tipo: { in: ["DESPESA", "AMBOS"] },
+        nome: busca ? { contains: busca } : undefined,
+      }
+      const [total, itens] = await Promise.all([
+        tx.categoria_financeira.count({ where }),
+        tx.categoria_financeira.findMany({
+          where,
+          select: { id: true, nome: true },
+          orderBy: [{ nome: "asc" }, { id: "asc" }],
+          skip,
+          take,
+        }),
+      ])
+      return resposta(itens, total)
+    }
     if (input.tipo === "insumos") {
       const where: Prisma.produtosWhereInput = {
         ...insumoDaEmpresa(ctx.idEmpresa),

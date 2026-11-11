@@ -1,4 +1,6 @@
 import "server-only"
+import { HttpError } from "@/lib/api/errors"
+import { enforceRateLimit } from "@/lib/api/rate-limit"
 import type { z } from "zod"
 import {
   autorizar,
@@ -61,12 +63,22 @@ function rota(
         ctx.headers.set("Cache-Control", "no-store")
         return ctx
       }
+      if (area === "compras" || area === "opcoes")
+        enforceRateLimit(
+          request,
+          {
+            scope: `compras:${acao}`,
+            limit: acao === "ler" ? 120 : 60,
+            windowMs: 60_000,
+          },
+          String(ctx.idUsuario),
+        )
       return Response.json(await executar({ ctx, request, context }), {
         status,
         headers,
       })
     } catch (error) {
-      if (error instanceof ComprasError)
+      if (error instanceof ComprasError || error instanceof HttpError)
         return Response.json(
           { error: error.message },
           { status: error.status, headers },
@@ -179,13 +191,14 @@ export const compras = {
       validar(s.receberCompraSchema, await corpo(request)),
     ),
   ),
-  acao: rota("compras", "editar", async ({ ctx, request, context }) =>
-    svc.acaoCompra(
-      ctx,
-      await idDaRota(context),
-      validar(s.acaoCompraSchema, await corpo(request)).acao,
-    ),
-  ),
+  acao: rota("compras", "editar", async ({ ctx, request, context }) => {
+    const input = validar(s.acaoCompraSchema, await corpo(request))
+    const id = await idDaRota(context)
+    if (input.acao === "cancelar") return svc.acaoCompra(ctx, id, input.acao)
+    if (input.acao === "prever_plano")
+      return svc.preverPlanoCompra(ctx, id, input)
+    return svc.confirmarCompra(ctx, id, input)
+  }),
 }
 
 export const notas = {

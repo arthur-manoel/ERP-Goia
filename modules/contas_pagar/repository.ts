@@ -50,6 +50,12 @@ function whereFor(
       ...(filters.id_compra === undefined
         ? []
         : [{ id_compra: filters.id_compra }]),
+      ...(filters.id_plano_pagamento === undefined
+        ? []
+        : [{ id_plano_pagamento: filters.id_plano_pagamento }]),
+      ...(filters.id_fornecedor === undefined
+        ? []
+        : [{ compras: { id_fornecedor: filters.id_fornecedor } }]),
       ...(filters.id_categoria === undefined
         ? []
         : [{ id_categoria: filters.id_categoria }]),
@@ -125,6 +131,12 @@ export async function findAll(
   return { rows, count }
 }
 
+export function findPlano(id: number, companies: number[]) {
+  return prisma.planos_pagamento_compra.findFirst({
+    where: { id, id_empresa: { in: companies } },
+  })
+}
+
 export function count(
   filters: ContaPagarFilters,
   companies: number[],
@@ -163,7 +175,10 @@ export function findEmpresa(id: number, database: Database) {
 }
 
 export function findCompra(id: number, idEmpresa: number, database: Database) {
-  return database.compras.findFirst({ where: { id, id_empresa: idEmpresa } })
+  return database.compras.findFirst({
+    where: { id, id_empresa: idEmpresa },
+    include: { planos_pagamento_compra: { select: { id: true }, take: 1 } },
+  })
 }
 
 export function findCategoria(
