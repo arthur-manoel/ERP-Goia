@@ -1,6 +1,6 @@
 import "server-only"
 import type { z } from "zod"
-import { autorizar } from "../producao/producao.authorization"
+import { autorizarDetalhado } from "../producao/producao.authorization"
 import { ProducaoError } from "../producao/producao.repository"
 import { HttpError } from "@/lib/api/errors"
 import * as schemas from "./fluxos.schema"
@@ -36,13 +36,13 @@ async function executar(
   request: Request,
   acao: "ler" | "criar" | "editar",
   operacao: (
-    ctx: Exclude<Awaited<ReturnType<typeof autorizar>>, Response>,
+    ctx: Exclude<Awaited<ReturnType<typeof autorizarDetalhado>>, Response>,
   ) => Promise<unknown>,
   status = 200,
 ) {
   try {
     // Mesma autorização do cadastro de setores: recurso SETORES por empresa.
-    const ctx = await autorizar(request, acao, "SETORES")
+    const ctx = await autorizarDetalhado(request, acao, "SETORES")
     if (ctx instanceof Response) {
       ctx.headers.set("Cache-Control", "no-store")
       return ctx

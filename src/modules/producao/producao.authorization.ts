@@ -12,7 +12,12 @@ import {
   type Contexto,
 } from "./producao.repository"
 
-export async function autorizar(
+/**
+ * Mesma autorização de `autorizar`, mas devolve também as permissões da
+ * empresa (`pode`) e se o usuário é administrador. Só os módulos que enviam
+ * essas informações ao front (setores) usam esta variante.
+ */
+export async function autorizarDetalhado(
   request: Request,
   acao: "ler" | "criar" | "editar" | "excluir",
   recurso: RecursoPermissao = "ORDENS_PRODUCAO",
@@ -73,4 +78,15 @@ export async function autorizar(
     pode,
     administrador: admin,
   }
+}
+
+/** Contexto mínimo `{ idUsuario, idEmpresa }`: contrato usado pelos demais módulos. */
+export async function autorizar(
+  request: Request,
+  acao: "ler" | "criar" | "editar" | "excluir",
+  recurso: RecursoPermissao = "ORDENS_PRODUCAO",
+): Promise<Contexto | Response> {
+  const ctx = await autorizarDetalhado(request, acao, recurso)
+  if (ctx instanceof Response) return ctx
+  return { idUsuario: ctx.idUsuario, idEmpresa: ctx.idEmpresa }
 }

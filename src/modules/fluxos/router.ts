@@ -1,6 +1,6 @@
 import "server-only"
 import type { z } from "zod"
-import { autorizar } from "../producao/producao.authorization"
+import { autorizarDetalhado } from "../producao/producao.authorization"
 import { ProducaoError } from "../producao/producao.repository"
 import { HttpError } from "@/lib/api/errors"
 import * as schemas from "./fluxos.schema"
@@ -53,7 +53,7 @@ export function handler(tipo: Entidade, operacao: Operacao) {
                 operacao === "consultarAssociacao"
               ? "ler"
               : "editar"
-      const ctx = await autorizar(
+      const ctx = await autorizarDetalhado(
         request,
         acao,
         associacao
