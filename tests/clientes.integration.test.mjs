@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import path from "node:path"
 import ts from "typescript"
 import nextEnv from "@next/env"
+import { tokenDeSessao } from "./helpers/sessao-integracao.mjs"
 
 const configured = process.argv.includes("--configured-db")
 if (configured) nextEnv.loadEnvConfig(process.cwd())
@@ -77,8 +78,6 @@ test(
         await import("../src/app/api/clientes/[id]/pedidos/route.ts")
       const repository =
         await import("../src/modules/clientes/clientes.repository.ts")
-      const { signAccessToken } =
-        await import("../src/modules/auth/auth.service.ts")
       process.env.ACCESS_TOKEN_SECRET = "clientes-integration-only-secret"
       // Fixtures próprias; sem DDL, migrations, seed ou criação de permissões.
       for (let i = 0; i < 2; i++) {
@@ -107,7 +106,7 @@ test(
           data: { id_empresa, id_usuario: idUsuario, id_cargo: cargo.id },
         })
       }
-      const token = signAccessToken({ id: idUsuario, role: "VENDAS" })
+      const token = await tokenDeSessao(prisma, idUsuario, "ADMINISTRACAO")
       const req = (method = "GET", body, empresa = empresas[0], query = "") =>
         new Request(`http://localhost/api/clientes${query}`, {
           method,
@@ -396,6 +395,10 @@ test(
         "histórico isolado, ordenado, paginado, preservado na inativação",
         async () => {
           const ids = []
+          const clienteExterno = await create(
+            { nomeRazaoSocial: "Cliente externo" },
+            empresas[1],
+          )
           for (const [index, empresa] of [
             empresas[0],
             empresas[0],
@@ -404,7 +407,8 @@ test(
             const venda = await prisma.venda.create({
               data: {
                 id_empresa: empresa,
-                id_cliente: cliente.id,
+                id_cliente:
+                  empresa === empresas[0] ? cliente.id : clienteExterno.id,
                 id_usuario: idUsuario,
                 numero: `CL-${marker.slice(0, 8)}-${index}`,
                 status: "CONFIRMADA",
@@ -425,6 +429,15 @@ test(
           assert.equal(data.pedidos[0].id, ids[1])
           assert.equal(data.pedidos[0].valor_total, "1234.50")
           assert.equal(data.pedidos[0].data_venda, "2026-09-22T12:00:00.000Z")
+          const externo = await history.GET(
+            req("GET", undefined, empresas[1]),
+            context(clienteExterno.id),
+          )
+          assert.equal(externo.status, 200)
+          assert.deepEqual(
+            (await externo.json()).pedidos.map(({ id }) => id),
+            [ids[2]],
+          )
           assert.equal(
             (await (await history.GET(req(), context(outro.id))).json()).pedidos
               .length,
@@ -448,7 +461,7 @@ test(
               .status,
             401,
           )
-          const wrongRole = signAccessToken({ id: idUsuario, role: "PRODUCAO" })
+          const wrongRole = await tokenDeSessao(prisma, idUsuario, "PRODUCAO")
           assert.equal(
             (
               await collection.GET(
@@ -457,7 +470,7 @@ test(
                 }),
               )
             ).status,
-            403,
+            401,
           )
           await prisma.usuario_empresa.updateMany({
             where: { id_usuario: idUsuario, id_empresa: empresas[0] },
@@ -472,12 +485,12 @@ test(
             where: { id: idUsuario },
             data: { status: "INATIVO" },
           })
-          assert.equal((await collection.GET(req())).status, 403)
+          assert.equal((await collection.GET(req())).status, 401)
           await prisma.usuarios.update({
             where: { id: idUsuario },
             data: { status: "ATIVO", nivel_acesso: "USUARIO" },
           })
-          assert.equal((await collection.GET(req())).status, 403)
+          assert.equal((await collection.GET(req())).status, 401)
           await prisma.usuarios.update({
             where: { id: idUsuario },
             data: { nivel_acesso: "ADMIN" },

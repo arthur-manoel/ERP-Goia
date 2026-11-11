@@ -28,12 +28,27 @@ const vinculo = (flags = {}, nivel = "USUARIO", global = "USUARIO") => ({
 const request = (empresa = "10") =>
   new Request("http://localhost/api/estoque", {
     headers: {
-      Authorization: `Bearer ${signAccessToken({ id: 1, role: "PRODUCAO" })}`,
+      Authorization: `Bearer ${signAccessToken({ id: 1, role: "PRODUCAO", sid: "683500fa-c2f9-4d64-a259-5a5488cf1740" })}`,
       "X-Empresa-Id": empresa,
     },
   })
 beforeEach(() => {
   vi.stubEnv("ACCESS_TOKEN_SECRET", "unit-test-estoque-only")
+  db.refresh_tokens.findFirst.mockResolvedValue({
+    usuarios: {
+      id: 1,
+      status: "ATIVO",
+      nivel_acesso: "USUARIO",
+      usuario_empresa: [
+        {
+          status: "ATIVO",
+          empresas: { status: "ATIVA" },
+          cargos: { nome: "Produção", status: "ATIVO" },
+          setores: null,
+        },
+      ],
+    },
+  })
 })
 afterEach(() => {
   vi.unstubAllEnvs()
