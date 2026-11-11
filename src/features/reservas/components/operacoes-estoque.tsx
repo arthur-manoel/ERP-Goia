@@ -1,6 +1,7 @@
 "use client"
 
 import { lerRespostaOperacao } from "@/features/erp/resposta-operacao"
+import { CadastroPedidos } from "@/features/pedidos/components/cadastro-pedidos"
 
 import Link from "next/link"
 import {
@@ -435,6 +436,9 @@ function Conteudo({
   const bloqueado = ocupado || !!pendente
   return (
     <div className="space-y-6">
+      {origem === "PEDIDO" && (
+        <CadastroPedidos atualizarOperacoes={() => setRevisao((v) => v + 1)} />
+      )}
       <div className="flex flex-wrap gap-4">
         <Link href="/estoque/reservas" className="underline">
           Reservas e transferências

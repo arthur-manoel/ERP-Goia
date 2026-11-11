@@ -1,11 +1,32 @@
 import { afterEach, expect, it, vi } from "vitest"
 import {
   comBloqueioSessao,
+  cabecalhosDaSessao,
   renovarToken,
   solicitarLogin,
 } from "../../../src/features/autenticacao/requisicoes-sessao"
 
 afterEach(() => vi.unstubAllGlobals())
+
+it("substitui cabeçalhos autenticados sem duplicar a empresa ou o token", () => {
+  const headers = cabecalhosDaSessao(
+    { "x-empresa-id": "1", authorization: "Bearer antigo", "If-Match": '"3"' },
+    "novo",
+    1,
+  )
+  expect(
+    new Request("http://localhost/api/pedidos", { headers }).headers.get(
+      "X-Empresa-Id",
+    ),
+  ).toBe("1")
+  expect(headers.get("Authorization")).toBe("Bearer novo")
+  expect(headers.get("If-Match")).toBe('"3"')
+})
+it("preserva a recusa de requisição iniciada para outra empresa", () => {
+  expect(() =>
+    cabecalhosDaSessao(new Headers({ "X-Empresa-Id": "2" }), "token", 1),
+  ).toThrow("A empresa selecionada mudou")
+})
 
 it("um refresh atrasado não apaga o cookie criado pelo login seguinte", async () => {
   vi.stubGlobal("navigator", {})

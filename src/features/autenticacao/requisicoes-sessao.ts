@@ -1,5 +1,19 @@
 const nomeBloqueioSessao = "erp-goia-sessao"
 
+export function cabecalhosDaSessao(
+  entrada: HeadersInit | undefined,
+  token: string,
+  idEmpresa: number,
+) {
+  const headers = new Headers(entrada)
+  const empresaSolicitada = headers.get("X-Empresa-Id")
+  if (empresaSolicitada !== null && empresaSolicitada !== String(idEmpresa))
+    throw new Error("A empresa selecionada mudou. Repita a operação.")
+  headers.set("Authorization", `Bearer ${token}`)
+  headers.set("X-Empresa-Id", String(idEmpresa))
+  return headers
+}
+
 // A fila local também protege navegadores sem Web Locks dentro da mesma aba.
 // Com Web Locks, o mesmo nome serializa as operações entre abas.
 let filaLocal: Promise<void> = Promise.resolve()
