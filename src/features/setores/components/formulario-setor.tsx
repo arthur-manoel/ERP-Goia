@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useErp } from "@/features/erp/components/provedor"
 import { setorSchema, type Setor } from "../schemas"
 
 // O schema tem `.transform()` (ex.: tipo vazio vira "Outro"), então o valor
@@ -28,14 +27,15 @@ type ValoresSalvas = z.output<typeof setorSchema>
 
 export function FormularioSetor({
   initial,
+  onSave,
   onClose,
   returnFocus,
 }: {
   initial?: Setor
+  onSave: (valores: ValoresSalvas, id?: string) => Promise<void>
   onClose: () => void
   returnFocus: () => void
 }) {
-  const { save } = useErp()
   const form = useForm<ValoresFormulario, unknown, ValoresSalvas>({
     resolver: zodResolver(setorSchema),
     defaultValues: {
@@ -53,7 +53,7 @@ export function FormularioSetor({
 
   async function salvar(valores: ValoresSalvas) {
     try {
-      await save("sectors", valores, initial?.id)
+      await onSave(valores, initial?.id)
       toast.success(initial ? "Setor atualizado." : "Setor cadastrado.")
       onClose()
     } catch (error) {
@@ -104,17 +104,6 @@ export function FormularioSetor({
               {erro("name") && (
                 <FieldError id="setor-nome-erro">{erro("name")}</FieldError>
               )}
-            </Field>
-
-            <Field data-invalid={!!erro("type")}>
-              <FieldLabel htmlFor="setor-tipo">Tipo (opcional)</FieldLabel>
-              <Input
-                id="setor-tipo"
-                placeholder='Ex.: Produção, Apoio — em branco usa "Outro"'
-                aria-invalid={!!erro("type")}
-                {...form.register("type")}
-              />
-              {erro("type") && <FieldError>{erro("type")}</FieldError>}
             </Field>
 
             <Field data-invalid={!!erro("description")}>

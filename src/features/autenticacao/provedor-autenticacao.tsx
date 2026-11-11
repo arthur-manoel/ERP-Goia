@@ -173,16 +173,12 @@ export function ProvedorAutenticacao({
       const empresaSolicitada = new Headers(init.headers).get("X-Empresa-Id")
       if (empresaSolicitada !== null && empresaSolicitada !== String(idEmpresa))
         throw new Error("A empresa selecionada mudou. Repita a operação.")
-      const executar = (accessToken: string) =>
-        fetch(url, {
-          ...init,
-          cache: "no-store",
-          headers: {
-            ...Object.fromEntries(new Headers(init.headers)),
-            Authorization: `Bearer ${accessToken}`,
-            "X-Empresa-Id": String(idEmpresa),
-          },
-        })
+      const executar = (accessToken: string) => {
+        const headers = new Headers(init.headers)
+        headers.set("Authorization", `Bearer ${accessToken}`)
+        headers.set("X-Empresa-Id", String(idEmpresa))
+        return fetch(url, { ...init, cache: "no-store", headers })
+      }
       let response = await executar(token.current)
       if (versaoSessao.current !== versaoRequisicao) return response
       if (response.status === 401) {

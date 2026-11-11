@@ -38,14 +38,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useErp } from "@/features/erp/components/provedor"
+import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
+import { useConfiguracaoProducao } from "@/features/setores/api"
 import type { Setor } from "../schemas"
 import { FormularioSetor } from "./formulario-setor"
 
 type FiltroStatus = "Todos" | "Ativo" | "Inativo"
 
 export function TelaSetores() {
-  const { data, error, reload, save } = useErp()
+  const { empresa } = useAutenticacao()
+  return <Conteudo key={empresa?.id} />
+}
+
+function Conteudo() {
+  const { data, error, reload, salvarSetor } = useConfiguracaoProducao(false)
   const [busca, setBusca] = useState("")
   const [statusFiltro, setStatusFiltro] = useState<FiltroStatus>("Todos")
   const [formulario, setFormulario] = useState<Setor | "novo" | null>(null)
@@ -97,7 +103,7 @@ export function TelaSetores() {
   async function alternarStatus(setor: Setor) {
     const novoStatus = setor.status === "Ativo" ? "Inativo" : "Ativo"
     try {
-      await save("sectors", { ...setor, status: novoStatus }, setor.id)
+      await salvarSetor({ ...setor, status: novoStatus }, setor.id)
       toast.success(
         novoStatus === "Ativo" ? "Setor reativado." : "Setor inativado.",
       )
@@ -151,7 +157,6 @@ export function TelaSetores() {
             <TableHeader>
               <TableRow>
                 <TableHead>Setor</TableHead>
-                <TableHead>Tipo</TableHead>
                 <TableHead>Descrição</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>
@@ -163,9 +168,6 @@ export function TelaSetores() {
               {filtrados.map((setor) => (
                 <TableRow key={setor.id}>
                   <TableCell className="font-medium">{setor.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {setor.type}
-                  </TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground">
                     {setor.description || "—"}
                   </TableCell>
@@ -218,7 +220,7 @@ export function TelaSetores() {
               ))}
               {!filtrados.length && (
                 <TableRow>
-                  <TableCell colSpan={5} className="p-0">
+                  <TableCell colSpan={4} className="p-0">
                     <Empty className="py-12">
                       <EmptyHeader>
                         <EmptyMedia variant="icon">
@@ -255,6 +257,7 @@ export function TelaSetores() {
 
       {formulario && (
         <FormularioSetor
+          onSave={salvarSetor}
           key={formulario === "novo" ? "novo" : formulario.id}
           initial={formulario === "novo" ? undefined : formulario}
           onClose={() => setFormulario(null)}
