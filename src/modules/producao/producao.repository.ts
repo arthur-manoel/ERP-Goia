@@ -1,4 +1,5 @@
 import "server-only"
+import { proximoNumero as gerarNumero } from "@/lib/sequencias"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { serializarJsonTextMysql } from "@/lib/limites-texto"
@@ -90,21 +91,7 @@ export async function atualizarEstado(
     throw new ProducaoError(409, "A ordem foi alterada por outra operação.")
 }
 export async function proximoNumero(tx: Transaction, idEmpresa: number) {
-  const sequence = await tx.sequencias_automaticas.upsert({
-    where: {
-      id_empresa_entidade: {
-        id_empresa: idEmpresa,
-        entidade: "ordem_producao",
-      },
-    },
-    create: {
-      id_empresa: idEmpresa,
-      entidade: "ordem_producao",
-      ultimo_numero: BigInt(1),
-    },
-    update: { ultimo_numero: { increment: BigInt(1) } },
-  })
-  return sequence.ultimo_numero.toString()
+  return gerarNumero(tx, "ordem_producao", { idEmpresa })
 }
 export async function auditar(
   tx: Transaction,
