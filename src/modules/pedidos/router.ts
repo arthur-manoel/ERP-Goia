@@ -13,10 +13,12 @@ import {
   versaoHeaderSchema,
 } from "./pedidos.schema"
 import * as service from "./pedidos.service"
+import { consultarSituacao } from "./pedidos.situacao"
 import { consultarOpcoes } from "./pedidos.opcoes"
 
 type Context = { params: Promise<{ id: string; idItem?: string }> }
 type Operacao =
+  | "situacao"
   | "opcoes"
   | "listar"
   | "consultar"
@@ -27,6 +29,7 @@ type Operacao =
   | "remover"
 const headers = { "Cache-Control": "private, no-store" }
 const acoes: Record<Operacao, Acao> = {
+  situacao: "ler",
   opcoes: "ler",
   listar: "ler",
   consultar: "ler",
@@ -112,6 +115,11 @@ async function executar(
         ? validar(idRotaSchema, params?.idItem)
         : 0
     const filtros = query(request)
+    if (operacao === "situacao")
+      return Response.json(
+        await consultarSituacao(ctx, validar(listarSchema, filtros)),
+        { headers },
+      )
     if (operacao === "opcoes") {
       const entrada = validar(
         z.strictObject({ busca: z.string().trim().max(100).default("") }),
@@ -196,3 +204,6 @@ export const editarItemHandler = (request: Request, context: Context) =>
   executar(request, "editarItem", context)
 export const removerHandler = (request: Request, context: Context) =>
   executar(request, "remover", context)
+
+export const situacaoHandler = (request: Request) =>
+  executar(request, "situacao")

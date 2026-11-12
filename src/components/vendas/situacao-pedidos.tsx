@@ -1,28 +1,12 @@
 "use client"
 
-import { useState } from "react"
-
-import { useErp } from "@/features/erp/components/provedor"
-import { consultarDisponibilidade } from "@/features/pedidos/disponibilidade"
-import type { Pedido } from "@/features/pedidos/schemas"
-
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useEffect, useState } from "react"
+import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Select,
   SelectContent,
@@ -30,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -40,239 +23,204 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-/**
- * TODO: os status aqui ainda são os do adaptador mock local (Recebido / Em
- * produção / Entregue / Cancelado). O status "oficial" combinado com o back
- * é outro (Rascunho, Confirmada, Em separação, Faturada, Enviada, Entregue,
- * Cancelada — "Em produção" passa a ser só da ordem, não do pedido). Ainda
- * não existe /api/pedidos real, então por enquanto a tela usa o que o
- * adaptador local tem. Quando a API de pedidos existir, trocar os valores
- * abaixo pelos reais.
- */
-const statusLabel: Record<Pedido["status"], string> = {
-  Recebido: "Recebido",
-  "Em produção": "Em produção",
-  Entregue: "Entregue",
-  Cancelado: "Cancelado",
+const rotulos = {
+  RASCUNHO: "Rascunho",
+  CONFIRMADO: "Confirmado",
+  EM_PRODUCAO: "Em produção",
+  PRONTO: "Pronto",
+  EM_ENTREGA: "Em entrega",
+  PARCIALMENTE_ENTREGUE: "Parcialmente entregue",
+  ENTREGUE: "Entregue",
+  CONCLUIDO: "Concluído",
+  CANCELADO: "Cancelado",
 }
-
-const statusBadgeVariant: Record<
-  Pedido["status"],
-  "secondary" | "default" | "outline" | "destructive"
-> = {
-  Recebido: "outline",
-  "Em produção": "default",
-  Entregue: "secondary",
-  Cancelado: "destructive",
-}
-
-const situacaoInfo = {
-  estoque: { label: "Coberto por estoque", variant: "secondary" as const },
-  producao: { label: "Coberto por produção", variant: "default" as const },
-  insuficiente: { label: "Insuficiente", variant: "destructive" as const },
+type Resultado = {
+  dados: {
+    idItem: number
+    pedido: string
+    cliente: string
+    item: string
+    quantidade: string
+    status: keyof typeof rotulos
+    reservada: string
+    ordens: { id: number; numero: string; status: string }[]
+  }[]
+  paginacao: { pagina: number; totalPaginas: number }
 }
 
 export function SituacaoPedidos() {
-  const { data, error, reload } = useErp()
-
-  const [busca, setBusca] = useState("")
-  const [filtroStatus, setFiltroStatus] = useState("todos")
-
-  if (error)
+  const { estado, empresa, usuario } = useAutenticacao()
+  if (estado === "carregando") return <Skeleton className="h-96 w-full" />
+  if (estado !== "autenticado" || !empresa)
     return (
-      <Alert variant="destructive">
-        <AlertTitle>Não foi possível carregar os dados</AlertTitle>
-        <AlertDescription className="flex flex-col items-start gap-2">
-          {error}
-          <Button variant="outline" onClick={() => void reload()}>
-            Tentar novamente
-          </Button>
+      <Alert>
+        <AlertDescription>
+          Entre na sua conta e selecione uma empresa para consultar os pedidos.
         </AlertDescription>
       </Alert>
     )
+  return <SituacaoEmpresa key={`${usuario?.email}:${empresa.id}`} />
+}
 
-  if (!data)
-    return (
-      <div role="status" aria-label="Carregando dados">
-        <Skeleton className="h-96 w-full" />
-      </div>
-    )
-
-  const cliente = (id: string) =>
-    data.clients.find((row) => row.id === id)?.name ?? "Cadastro não encontrado"
-
-  const produto = (id: string) => data.materials.find((row) => row.id === id)
-
-  const nomeItem = (productId: string, variationId?: string) => {
-    const material = produto(productId)
-    if (!material) return "Produto não encontrado"
-    if (!variationId) return material.name
-    const variacao = material.variations?.find((v) => v.id === variationId)
-    return variacao
-      ? `${material.name} — ${variacao.color} / ${variacao.size}`
-      : material.name
-  }
-
-  // Ordens cuja grade cobre o produto+variação do item e que ainda estão
-  // ativas (mesmo critério usado dentro de consultarDisponibilidade).
-  const ordensVinculadas = (
-    productId: string,
-    variationId: string | undefined,
-    prazo: string,
-  ) =>
-    data.productions.filter(
-      (ordem) =>
-        ordem.productId === productId &&
-        ["Planejada", "Em produção"].includes(ordem.status) &&
-        ordem.dueDate <= prazo &&
-        ordem.items.some(
-          (linha) => (linha.variationId ?? "") === (variationId ?? ""),
-        ),
-    )
-
-  type Linha = {
-    pedido: Pedido
-    productId: string
-    variationId?: string
-    quantity: number
-    situacao: "estoque" | "producao" | "insuficiente"
-    ordens: ReturnType<typeof ordensVinculadas>
-  }
-
-  const linhas: Linha[] = data.orders.flatMap((pedido) =>
-    pedido.items.flatMap((item) => {
-      const disponibilidade = consultarDisponibilidade(
-        data,
-        item,
-        pedido.dueDate,
-        pedido.id,
-      )
-      if (!disponibilidade) return []
-      return [
-        {
-          pedido,
-          productId: item.productId,
-          variationId: item.variationId,
-          quantity: item.quantity,
-          situacao: disponibilidade.situacao,
-          ordens: ordensVinculadas(
-            item.productId,
-            item.variationId,
-            pedido.dueDate,
-          ),
-        },
-      ]
-    }),
-  )
-
-  const linhasFiltradas = linhas.filter((linha) => {
-    const combinaBusca =
-      linha.pedido.code.toLowerCase().includes(busca.toLowerCase()) ||
-      cliente(linha.pedido.clientId).toLowerCase().includes(busca.toLowerCase())
-    const combinaStatus =
-      filtroStatus === "todos" || linha.pedido.status === filtroStatus
-    return combinaBusca && combinaStatus
-  })
-
+function SituacaoEmpresa() {
+  const { requisitar } = useAutenticacao()
+  const [busca, setBusca] = useState("")
+  const [status, setStatus] = useState("todos")
+  const [pagina, setPagina] = useState(1)
+  const [tentativa, setTentativa] = useState(0)
+  const [resultado, setResultado] = useState<Resultado | null>(null)
+  const [erro, setErro] = useState("")
+  const [carregando, setCarregando] = useState(true)
+  useEffect(() => {
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      setCarregando(true)
+      setErro("")
+      try {
+        const query = new URLSearchParams({ busca, pagina: String(pagina) })
+        if (status !== "todos") query.set("status", status)
+        const resposta = await requisitar(`/api/pedidos/situacao?${query}`, {
+          signal: controller.signal,
+        })
+        const json = await resposta.json()
+        if (!resposta.ok)
+          throw new Error(
+            json.error ?? "Não foi possível consultar os pedidos.",
+          )
+        if (!controller.signal.aborted) setResultado(json)
+      } catch (error) {
+        if (!controller.signal.aborted)
+          setErro(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível consultar os pedidos.",
+          )
+      } finally {
+        if (!controller.signal.aborted) setCarregando(false)
+      }
+    }, 250)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [busca, status, pagina, tentativa, requisitar])
   return (
     <div className="flex flex-col gap-6">
-      <Alert>
-        <AlertTitle>Status provisórios</AlertTitle>
-        <AlertDescription>
-          Os status abaixo (Recebido/Em produção/Entregue/Cancelado) ainda são
-          os do protótipo local — ainda não existe uma API real de pedidos.
-          Quando existir, os nomes oficiais combinados com o back são outros
-          (Rascunho, Confirmada, Em separação, Faturada, Enviada, Entregue,
-          Cancelada).
-        </AlertDescription>
-      </Alert>
-
       <div className="flex flex-wrap items-center gap-3">
         <Input
+          aria-label="Buscar por pedido ou cliente"
           placeholder="Buscar por pedido ou cliente..."
+          maxLength={100}
           value={busca}
-          onChange={(e) => setBusca(e.target.value)}
+          onChange={(e) => {
+            setBusca(e.target.value)
+            setPagina(1)
+            setCarregando(true)
+          }}
           className="max-w-xs"
         />
         <Select
-          value={filtroStatus}
-          onValueChange={(v) => setFiltroStatus(v ?? "todos")}
+          value={status}
+          onValueChange={(v) => {
+            if ((v ?? "todos") === status) return
+            setStatus(v ?? "todos")
+            setPagina(1)
+            setCarregando(true)
+          }}
         >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Status" />
+          <SelectTrigger className="w-[230px]" aria-label="Status do pedido">
+            <SelectValue>
+              {status === "todos"
+                ? "Todos os status"
+                : rotulos[status as keyof typeof rotulos]}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos os status</SelectItem>
-            {Object.keys(statusLabel).map((status) => (
-              <SelectItem key={status} value={status}>
-                {statusLabel[status as Pedido["status"]]}
+            {Object.entries(rotulos).map(([v, label]) => (
+              <SelectItem key={v} value={v}>
+                {label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Situação dos pedidos</CardTitle>
-          <CardDescription>
-            Acompanhamento de cada item do pedido até a entrega, com a cobertura
-            de estoque/produção e as ordens vinculadas.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-hidden rounded-md border">
+      {erro ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {erro}
+            <Button
+              variant="outline"
+              onClick={() => setTentativa((v) => v + 1)}
+            >
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : carregando ? (
+        <Skeleton className="h-96 w-full" aria-label="Carregando pedidos" />
+      ) : (
+        <>
+          <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Pedido</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead className="text-right">Quantidade</TableHead>
-                  <TableHead>Status do pedido</TableHead>
-                  <TableHead>Cobertura</TableHead>
-                  <TableHead>Ordem vinculada</TableHead>
+                  {[
+                    "Pedido",
+                    "Cliente",
+                    "Item",
+                    "Quantidade",
+                    "Status do pedido",
+                    "Cobertura por estoque",
+                    "Ordem vinculada",
+                  ].map((h) => (
+                    <TableHead key={h}>{h}</TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {linhasFiltradas.length ? (
-                  linhasFiltradas.map((linha, index) => (
-                    <TableRow key={`${linha.pedido.id}-${index}`}>
-                      <TableCell className="font-medium">
-                        {linha.pedido.code}
-                      </TableCell>
-                      <TableCell>{cliente(linha.pedido.clientId)}</TableCell>
-                      <TableCell>
-                        {nomeItem(linha.productId, linha.variationId)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {linha.quantity}
-                      </TableCell>
+                {resultado?.dados.length ? (
+                  resultado.dados.map((linha) => (
+                    <TableRow key={linha.idItem}>
+                      <TableCell>{linha.pedido}</TableCell>
+                      <TableCell>{linha.cliente}</TableCell>
+                      <TableCell>{linha.item}</TableCell>
+                      <TableCell>{linha.quantidade}</TableCell>
                       <TableCell>
                         <Badge
-                          variant={statusBadgeVariant[linha.pedido.status]}
+                          variant={
+                            linha.status === "CANCELADO"
+                              ? "destructive"
+                              : "outline"
+                          }
                         >
-                          {statusLabel[linha.pedido.status]}
+                          {rotulos[linha.status]}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={situacaoInfo[linha.situacao].variant}>
-                          {situacaoInfo[linha.situacao].label}
+                        <Badge variant="secondary">
+                          {Number(linha.reservada) >= Number(linha.quantidade)
+                            ? "Coberto por estoque"
+                            : Number(linha.reservada) > 0
+                              ? "Cobertura parcial"
+                              : "Sem reserva"}
                         </Badge>
+                        <div className="text-sm text-muted-foreground">
+                          {linha.reservada} reservados de {linha.quantidade}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {linha.ordens.length ? (
                           <div className="flex flex-wrap gap-1">
-                            {linha.ordens.map((ordem) => (
-                              <Badge key={ordem.id} variant="outline">
-                                {ordem.code}
+                            {linha.ordens.map((o) => (
+                              <Badge key={o.id} variant="outline">
+                                {o.numero} ·{" "}
+                                {o.status.replaceAll("_", " ").toLowerCase()}
                               </Badge>
                             ))}
                           </div>
                         ) : (
-                          <span className="text-sm text-muted-foreground">
-                            —
-                          </span>
+                          "—"
                         )}
                       </TableCell>
                     </TableRow>
@@ -280,22 +228,45 @@ export function SituacaoPedidos() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={7} className="h-32 text-center">
-                      <Empty>
-                        <EmptyHeader>
-                          <EmptyTitle>Nenhum pedido encontrado.</EmptyTitle>
-                          <EmptyDescription>
-                            Altere os filtros ou cadastre pedidos em Vendas.
-                          </EmptyDescription>
-                        </EmptyHeader>
-                      </Empty>
+                      Nenhum pedido encontrado.
                     </TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
+          <p className="text-sm text-muted-foreground">
+            A cobertura considera o saldo das reservas ativas do item. As OPs
+            exibidas possuem vínculo com o pedido ou com o item no banco.
+          </p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              disabled={pagina <= 1}
+              onClick={() => {
+                setPagina(pagina - 1)
+                setCarregando(true)
+              }}
+            >
+              Anterior
+            </Button>
+            <span>
+              Página {pagina} de{" "}
+              {Math.max(1, resultado?.paginacao.totalPaginas ?? 1)}
+            </span>
+            <Button
+              variant="outline"
+              disabled={pagina >= (resultado?.paginacao.totalPaginas ?? 0)}
+              onClick={() => {
+                setPagina(pagina + 1)
+                setCarregando(true)
+              }}
+            >
+              Próxima
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
