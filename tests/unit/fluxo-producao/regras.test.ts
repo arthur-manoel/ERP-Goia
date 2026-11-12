@@ -4,6 +4,7 @@ import {
   formularioVazio,
   moverSetor,
   paraFormulario,
+  paraPatch,
   paraPayload,
   setoresParaAdicionar,
   validarFormulario,
@@ -152,5 +153,66 @@ describe("filtrarFluxos", () => {
       "Básica",
       "Sublimada",
     ])
+  })
+})
+
+describe("edição envia só o que mudou", () => {
+  const original = fluxo(1, "Sublimada", [1, 2, 3, 4], false)
+  const form = paraFormulario(original)
+
+  it("alterar só o nome não reenvia ativo nem setores", () => {
+    const r = validarFormulario({ ...form, nome: "Nova" }, setores, original)
+    expect(r).toEqual({ ok: true, payload: { nome: "Nova" } })
+  })
+  it("alterar só a descrição não reenvia ativo: false", () => {
+    const r = validarFormulario(
+      { ...form, descricao: "Teste" },
+      setores,
+      original,
+    )
+    expect(r).toEqual({ ok: true, payload: { descricao: "Teste" } })
+  })
+  it("limpar a descrição envia null", () => {
+    const comDescricao = { ...original, descricao: "Antiga" }
+    expect(
+      paraPatch(
+        { ...paraFormulario(comDescricao), descricao: "" },
+        comDescricao,
+      ),
+    ).toEqual({ descricao: null })
+  })
+  it("inclui ativo só quando o status muda", () => {
+    expect(paraPatch({ ...form, ativo: true }, original)).toEqual({
+      ativo: true,
+    })
+  })
+  it("inclui a sequência só quando ela muda", () => {
+    expect(paraPatch({ ...form, setores: [2, 1, 3, 4] }, original)).toEqual({
+      setores: [2, 1, 3, 4],
+    })
+  })
+  it("sequência com setor antigo inativo não bloqueia edição do nome", () => {
+    const antigo = fluxo(2, "Antigo", [1, 5])
+    const r = validarFormulario(
+      { ...paraFormulario(antigo), nome: "Renomeado" },
+      setores,
+      antigo,
+    )
+    expect(r).toEqual({ ok: true, payload: { nome: "Renomeado" } })
+  })
+  it("mas mexer na sequência com setor inativo continua bloqueado", () => {
+    const antigo = fluxo(2, "Antigo", [1, 5])
+    const r = validarFormulario(
+      { ...paraFormulario(antigo), setores: [5, 1] },
+      setores,
+      antigo,
+    )
+    expect(r).toMatchObject({ ok: false })
+  })
+  it("sem alteração, avisa em vez de enviar PATCH vazio", () => {
+    expect(validarFormulario(form, setores, original)).toEqual({
+      ok: false,
+      erro: "Nenhuma alteração para salvar.",
+    })
   })
 })

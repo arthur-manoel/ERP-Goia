@@ -79,7 +79,7 @@ export function FormularioFluxo({
   async function salvar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
     setErro("")
-    const resultado = validarFormulario(formulario, setores)
+    const resultado = validarFormulario(formulario, setores, fluxo)
     if (!resultado.ok) {
       setErro(resultado.erro)
       return

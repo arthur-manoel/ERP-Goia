@@ -1,4 +1,4 @@
-import { fluxoSchema } from "./schemas-api"
+import { editarFluxoSchema, fluxoSchema } from "./schemas-api"
 import type { Fluxo, FormularioFluxo, FiltroStatus, Setor } from "./tipos"
 
 export const formularioVazio: FormularioFluxo = {
@@ -54,42 +54,74 @@ export function setoresParaAdicionar(setores: Setor[], selecionados: number[]) {
     .toSorted((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
 }
 
+export type PayloadFluxo = Partial<ReturnType<typeof paraPayload>>
+
+/**
+ * Monta o corpo do PATCH só com o que o operador realmente mudou. Isso evita
+ * reenviar `ativo: false` (a API trata como inativação e exige permissão de
+ * exclusão) e reenviar a sequência inteira, que poderia sobrescrever uma ordem
+ * salva por outra pessoa ou esbarrar em um setor antigo já inativo.
+ */
+export function paraPatch(form: FormularioFluxo, original: Fluxo) {
+  const antes = paraFormulario(original)
+  const completo = paraPayload(form)
+  const patch: PayloadFluxo = {}
+  if (completo.nome !== original.nome.trim()) patch.nome = completo.nome
+  if (completo.descricao !== (original.descricao?.trim() || null))
+    patch.descricao = completo.descricao
+  if (form.ativo !== antes.ativo) patch.ativo = form.ativo
+  if (
+    form.setores.length !== antes.setores.length ||
+    form.setores.some((id, i) => id !== antes.setores[i])
+  )
+    patch.setores = form.setores
+  return patch
+}
+
 /**
  * Valida o formulário e devolve o corpo pronto para a API ou uma mensagem em
- * português. `setores` é a lista completa, usada para barrar setores inativos
- * (a API só aceita fluxos com setores ativos).
+ * português. Na criação o corpo é completo; na edição (`original` informado)
+ * vão só os campos alterados, e só eles são validados. `setores` é a lista
+ * completa, usada para barrar setores inativos quando a sequência muda (a API
+ * só aceita fluxos com setores ativos).
  */
 export function validarFormulario(
   form: FormularioFluxo,
   setores: Setor[],
-):
-  | { ok: true; payload: ReturnType<typeof paraPayload> }
-  | { ok: false; erro: string } {
-  const payload = paraPayload(form)
-  if (!payload.nome) return { ok: false, erro: "Informe o nome do fluxo." }
-  if (payload.nome.length > 100)
-    return { ok: false, erro: "O nome deve ter até 100 caracteres." }
+  original?: Fluxo | null,
+): { ok: true; payload: PayloadFluxo } | { ok: false; erro: string } {
+  const payload: PayloadFluxo = original
+    ? paraPatch(form, original)
+    : paraPayload(form)
+  if (original && Object.keys(payload).length === 0)
+    return { ok: false, erro: "Nenhuma alteração para salvar." }
+
+  if (payload.nome !== undefined) {
+    if (!payload.nome) return { ok: false, erro: "Informe o nome do fluxo." }
+    if (payload.nome.length > 100)
+      return { ok: false, erro: "O nome deve ter até 100 caracteres." }
+  }
   if (payload.descricao && payload.descricao.length > 255)
     return { ok: false, erro: "A descrição deve ter até 255 caracteres." }
-  if (payload.setores.length === 0)
-    return { ok: false, erro: "Adicione ao menos um setor ao fluxo." }
-  if (payload.setores.length > 100)
-    return { ok: false, erro: "Um fluxo aceita no máximo 100 setores." }
-  if (new Set(payload.setores).size !== payload.setores.length)
-    return { ok: false, erro: "Um mesmo setor não pode aparecer duas vezes." }
 
-  const porId = new Map(setores.map((setor) => [setor.id, setor]))
-  const inativo = payload.setores
-    .map((id) => porId.get(id))
-    .find((setor) => !setor || !setor.ativo)
-  if (inativo !== undefined || payload.setores.some((id) => !porId.has(id)))
-    return {
-      ok: false,
-      erro: "Há setor inativo ou inexistente na sequência. Remova-o antes de salvar.",
-    }
+  if (payload.setores !== undefined) {
+    const ids = payload.setores
+    if (ids.length === 0)
+      return { ok: false, erro: "Adicione ao menos um setor ao fluxo." }
+    if (ids.length > 100)
+      return { ok: false, erro: "Um fluxo aceita no máximo 100 setores." }
+    if (new Set(ids).size !== ids.length)
+      return { ok: false, erro: "Um mesmo setor não pode aparecer duas vezes." }
+    const porId = new Map(setores.map((setor) => [setor.id, setor]))
+    if (ids.some((id) => !porId.get(id)?.ativo))
+      return {
+        ok: false,
+        erro: "Há setor inativo ou inexistente na sequência. Remova-o antes de salvar.",
+      }
+  }
 
   // Mesmas regras do backend, como rede de segurança.
-  const dados = fluxoSchema.safeParse(payload)
+  const dados = (original ? editarFluxoSchema : fluxoSchema).safeParse(payload)
   if (!dados.success)
     return {
       ok: false,
