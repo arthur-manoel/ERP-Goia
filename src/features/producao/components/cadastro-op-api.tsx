@@ -7,15 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
-
-type Ordem = {
-  id: number
-  status: string
-  observacao: string | null
-  data_previsao: string | null
-  prioridade: string
-  ordem_producao_item: { quantidade: string; tamanho: string }[]
-}
+import { montarCadastroOp, type OrdemParaEdicao } from "../cadastro-op"
 
 export function CadastroOpApi({
   id,
@@ -31,9 +23,13 @@ export function CadastroOpApi({
   const prefixo = useId()
   const { requisitar } = useAutenticacao()
   const [aberto, setAberto] = useState(false)
-  const [ordem, setOrdem] = useState<Ordem | null>(null)
+  const [ordem, setOrdem] = useState<OrdemParaEdicao | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState("")
+  const [produtoSelecionado, setProdutoSelecionado] = useState<{
+    id: number
+    nome: string
+  } | null>(null)
   const trava = useRef(false)
   async function abrir() {
     if (trava.current) return
@@ -60,32 +56,15 @@ export function CadastroOpApi({
   }
   async function salvar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (trava.current) return
+    if (trava.current || bloqueado || terminal) return
+    const body = montarCadastroOp(new FormData(event.currentTarget), ordem)
+    if (ordem && Object.keys(body).length === 1) {
+      setAberto(false)
+      return
+    }
     trava.current = true
     setOcupado(true)
     setErro("")
-    const dados = new FormData(event.currentTarget)
-    const planejamento =
-      !ordem ||
-      (ordem.status === "PLANEJADA" && ordem.ordem_producao_item.length === 1)
-    const body = {
-      ...(ordem
-        ? { statusEsperado: ordem.status }
-        : { idProduto: Number(dados.get("produto")) }),
-      ...(planejamento
-        ? {
-            quantidade: String(dados.get("quantidade")),
-            tamanho: String(dados.get("tamanho")),
-          }
-        : {}),
-      ...(!ordem || ordem.status === "PLANEJADA"
-        ? { prioridade: String(dados.get("prioridade")) }
-        : {}),
-      observacao: String(dados.get("observacao") ?? "").trim() || null,
-      dataPrevisao: dados.get("previsao")
-        ? `${dados.get("previsao")}T00:00:00.000Z`
-        : null,
-    }
     try {
       const response = await requisitar(
         `/api/ordens-producao${id ? `/${id}` : ""}`,
@@ -109,11 +88,15 @@ export function CadastroOpApi({
   }
   const terminal =
     ordem?.status === "CONCLUIDA" || ordem?.status === "CANCELADA"
+  const produtosDisponiveis =
+    produtoSelecionado && !produtos.some((p) => p.id === produtoSelecionado.id)
+      ? [produtoSelecionado, ...produtos]
+      : produtos
   return (
     <div className="space-y-3">
       <Button
         type="button"
-        disabled={bloqueado || ocupado}
+        disabled={bloqueado || ocupado || aberto}
         onClick={() => void abrir()}
       >
         {ocupado ? "Carregando…" : id ? "Editar OP" : "Abrir ordem de produção"}
@@ -138,12 +121,19 @@ export function CadastroOpApi({
                   id={`${prefixo}-produto`}
                   name="produto"
                   required
-                  defaultValue=""
+                  value={produtoSelecionado?.id ?? ""}
+                  onChange={(event) =>
+                    setProdutoSelecionado(
+                      produtosDisponiveis.find(
+                        (p) => p.id === Number(event.target.value),
+                      ) ?? null,
+                    )
+                  }
                 >
                   <NativeSelectOption value="" disabled>
                     Selecione o produto
                   </NativeSelectOption>
-                  {produtos.map((p) => (
+                  {produtosDisponiveis.map((p) => (
                     <NativeSelectOption key={p.id} value={p.id}>
                       {p.nome}
                     </NativeSelectOption>

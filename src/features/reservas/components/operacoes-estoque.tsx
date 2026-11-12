@@ -187,7 +187,12 @@ async function json<T>(response: Response): Promise<T> {
     throw new Error(value.error ?? "Não foi possível consultar os dados.")
   return (value.data ?? value) as T
 }
-function useConsulta<T>(url: string | null, requisitar: Api, revisao: number) {
+function useConsulta<T>(
+  url: string | null,
+  requisitar: Api,
+  revisao: number,
+  manterDados = false,
+) {
   const [estado, setEstado] = useState<{
     url?: string
     dados: T | null
@@ -206,15 +211,15 @@ function useConsulta<T>(url: string | null, requisitar: Api, revisao: number) {
       })
       .catch((e: unknown) => {
         if (!controller.signal.aborted)
-          setEstado({
+          setEstado((anterior) => ({
             url,
-            dados: null,
+            dados: manterDados ? anterior.dados : null,
             erro: e instanceof Error ? e.message : "Falha na consulta.",
-          })
+          }))
       })
     return () => controller.abort()
-  }, [url, requisitar, revisao])
-  return estado.url === url ? estado : { dados: null, erro: "" }
+  }, [url, requisitar, revisao, manterDados])
+  return estado.url === url || manterDados ? estado : { dados: null, erro: "" }
 }
 function Seletor({
   titulo,
@@ -359,6 +364,8 @@ function Conteudo({
     `/api/estoque/reservas/opcoes?busca=${encodeURIComponent(buscaProduto)}`,
     requisitar,
     revisao,
+    // A busca de produtos não deve desmontar a OP nem apagar o formulário aberto.
+    true,
   )
   async function enviar(
     url: string,

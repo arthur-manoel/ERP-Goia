@@ -35,6 +35,11 @@ listagem abaixo. Abertura e edição usam POST/PATCH do contrato legado, com
 número automático e estado esperado na edição. Operações de etapas, consumo
 e conclusão continuam integradas ao estoque pela API operacional.
 
+A edição envia somente campos alterados: mudar observação ou previsão não
+recalcula insumos. Previsão inalterada preserva o horário persistido; formulário
+sem alterações não gera escrita. A busca de produtos mantém o formulário e a
+seleção atual enquanto carrega as novas opções.
+
 | Método | Caminho | Operação |
 | --- | --- | --- |
 | GET | `/` | Listagem paginada de cabeçalhos e contadores de vínculos |
