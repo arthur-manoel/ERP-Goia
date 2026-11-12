@@ -14,6 +14,10 @@ export function cabecalhosDaSessao(
   return headers
 }
 
+export function instanteDaSessao() {
+  return performance.timeOrigin + performance.now()
+}
+
 // A fila local também protege navegadores sem Web Locks dentro da mesma aba.
 // Com Web Locks, o mesmo nome serializa as operações entre abas.
 let filaLocal: Promise<void> = Promise.resolve()
@@ -34,7 +38,8 @@ export function comBloqueioSessao<T>(operacao: () => Promise<T>): Promise<T> {
 
 // O refresh token é rotativo. Requisições simultâneas compartilham uma única
 // rotação para não revogar a sessão por reutilização acidental do cookie.
-const renovacoes = new Map<string | undefined, Promise<string | null>>()
+type SessaoRenovada = { accessToken: string; instante: number }
+const renovacoes = new Map<string | undefined, Promise<SessaoRenovada | null>>()
 export function renovarToken(accessToken?: string) {
   const pendente = renovacoes.get(accessToken)
   if (pendente) return pendente
@@ -48,7 +53,8 @@ export function renovarToken(accessToken?: string) {
     if (response.status === 401) return null
     if (!response.ok) throw new Error("Não foi possível renovar a sessão.")
     const body: { accessToken?: string } = await response.json()
-    return body.accessToken ?? null
+    if (!body.accessToken) throw new Error("Resposta de sessão inválida.")
+    return { accessToken: body.accessToken, instante: instanteDaSessao() }
   }).finally(() => {
     renovacoes.delete(accessToken)
   })
@@ -56,12 +62,18 @@ export function renovarToken(accessToken?: string) {
   return renovacao
 }
 
-export function solicitarLogin(email: string, password: string) {
-  return comBloqueioSessao(() =>
-    fetch("/api/auth/login", {
+export function solicitarLogin(
+  email: string,
+  password: string,
+  confirmar?: () => void,
+) {
+  return comBloqueioSessao(async () => {
+    const resposta = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
-    }),
-  )
+    })
+    if (resposta.ok) confirmar?.()
+    return resposta
+  })
 }

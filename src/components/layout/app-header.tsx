@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { SeletorEmpresa } from "@/features/autenticacao/components/seletor-empresa"
 import { ThemeToggle } from "./theme-toggle"
 import { MenuUsuario } from "@/features/autenticacao/components/menu-usuario"
 import type { UsuarioLogado } from "@/features/autenticacao/types"
@@ -15,6 +16,7 @@ export function AppHeader({ usuario }: { usuario: UsuarioLogado | null }) {
           Notificações
         </Link>
         <ThemeToggle />
+        <SeletorEmpresa />
         <MenuUsuario usuario={usuario} />
       </div>
     </header>
