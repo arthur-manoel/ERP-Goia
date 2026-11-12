@@ -38,7 +38,7 @@ const AutenticacaoContexto = createContext<Contexto | null>(null)
 const chaveAntiga = "erp-goia-empresa-ativa"
 const chaveEmpresa = (id: number) => `${chaveAntiga}:${id}`
 const nomeCanalSessao = "erp-goia-sessao"
-type MudancaSessao = { tipo: "login" | "logout"; instante: number }
+type AvisoLogin = { tipo: "login"; instante: number }
 const erroRenovacao = "Não foi possível renovar a sessão. Tente novamente."
 // Preferência opcional: restrições de armazenamento não podem impedir o login.
 function lembrar(id: number, empresa: number | null) {
@@ -86,7 +86,7 @@ export function ProvedorAutenticacao({
   const [empresa, setEmpresa] = useState<EmpresaSessao | null>(null)
   const [erroAcesso, setErroAcesso] = useState<string | null>(null)
   const token = useRef<string | null>(null)
-  const tokenEmConsulta = useRef<string | null>(null)
+  const tokenRecebido = useRef<string | null>(null)
   const usuarioAtual = useRef<UsuarioSessao | null>(null)
   const empresaAtual = useRef<EmpresaSessao | null>(null)
   const versaoSessao = useRef(0)
@@ -99,17 +99,21 @@ export function ProvedorAutenticacao({
   const canalSessao = useRef<BroadcastChannel | null>(null)
   const ultimaMudanca = useRef(0)
   const loginPendente = useRef<number | null>(null)
+  const logoutPendente = useRef<Promise<void> | null>(null)
 
-  const avisarMudanca = useCallback((tipo: MudancaSessao["tipo"]) => {
+  const avisarLogin = useCallback(() => {
     const instante = instanteDaSessao()
     ultimaMudanca.current = instante
-    canalSessao.current?.postMessage({ tipo, instante } satisfies MudancaSessao)
+    canalSessao.current?.postMessage({
+      tipo: "login",
+      instante,
+    } satisfies AvisoLogin)
   }, [])
 
   const esvaziar = useCallback(() => {
     consulta.current?.abort()
     token.current = null
-    tokenEmConsulta.current = null
+    tokenRecebido.current = null
     usuarioAtual.current = null
     empresaAtual.current = null
     setUsuario(null)
@@ -142,7 +146,7 @@ export function ProvedorAutenticacao({
       consulta.current?.abort()
       const controller = new AbortController()
       consulta.current = controller
-      tokenEmConsulta.current = accessToken
+      tokenRecebido.current = accessToken
       if (!silencioso) {
         setEstado("carregando")
         setErroAcesso(null)
@@ -201,10 +205,7 @@ export function ProvedorAutenticacao({
         falhaAcesso()
         return !silencioso
       } finally {
-        if (consulta.current === controller) {
-          consulta.current = null
-          tokenEmConsulta.current = null
-        }
+        if (consulta.current === controller) consulta.current = null
       }
     },
     [falhaAcesso, limpar],
@@ -216,7 +217,9 @@ export function ProvedorAutenticacao({
       const emCurso = renovacaoAcesso.current
       if (emCurso?.versao === versao) return emCurso.resultado
       const idUsuario = usuarioAtual.current?.id
-      const resultado = renovarToken(token.current ?? undefined)
+      const resultado = renovarToken(
+        tokenRecebido.current ?? token.current ?? undefined,
+      )
         .then(
           async (sessao) => {
             if (versaoSessao.current !== versao) return false
@@ -263,18 +266,14 @@ export function ProvedorAutenticacao({
     }
     canalSessao.current = canal
     canal.addEventListener("message", (evento: MessageEvent<unknown>) => {
-      const sid = idSessao(tokenEmConsulta.current ?? token.current)
+      const sid = idSessao(tokenRecebido.current ?? token.current)
       if (sid && evento.data === `logout:${sid}`) {
         limpar()
         return
       }
-      if (evento.data === "logout") {
-        if (loginPendente.current === null) limpar()
-        return
-      }
-      const mudanca = evento.data as Partial<MudancaSessao> | null
+      const mudanca = evento.data as Partial<AvisoLogin> | null
       if (
-        (mudanca?.tipo !== "logout" && mudanca?.tipo !== "login") ||
+        mudanca?.tipo !== "login" ||
         typeof mudanca.instante !== "number" ||
         !Number.isFinite(mudanca.instante) ||
         mudanca.instante < ultimaMudanca.current
@@ -320,7 +319,7 @@ export function ProvedorAutenticacao({
         response = await solicitarLogin(email, password, () => {
           if (loginPendente.current === versao) loginPendente.current = null
           // A confirmação HTTP troca o cookie mesmo se a UI cancelou este login.
-          avisarMudanca("login")
+          avisarLogin()
         })
       } catch {
         if (versaoSessao.current === versao) {
@@ -345,25 +344,30 @@ export function ProvedorAutenticacao({
       if (!(await carregarAcesso(body.accessToken, versao)))
         throw new Error("A sessão expirou ou foi cancelada. Entre novamente.")
     },
-    [avisarMudanca, carregarAcesso, esvaziar],
+    [avisarLogin, carregarAcesso, esvaziar],
   )
   const sair = useCallback(async () => {
-    // Vincula o logout ao contexto que a aba tinha antes de limpá-lo.
-    const accessToken = tokenEmConsulta.current ?? token.current
-    const sid = idSessao(accessToken)
+    const accessToken = tokenRecebido.current ?? token.current
+    if (!accessToken && logoutPendente.current) return logoutPendente.current
     limpar()
-    const versao = versaoSessao.current
-    await comBloqueioSessao(async () => {
-      if (versaoSessao.current !== versao) return
+    if (!accessToken) throw new Error("Não foi possível identificar a sessão.")
+    const sid = idSessao(accessToken)
+    const ultimoLogin = ultimaMudanca.current
+    const resultado = comBloqueioSessao(async () => {
+      // Um login apenas enfileirado ainda pode falhar. O Bearer impede que o
+      // logout revogue uma sessão diferente caso o cookie já tenha mudado.
+      if (ultimaMudanca.current > ultimoLogin) return
       const response = await fetch("/api/auth/logout", {
         method: "POST",
-        headers: accessToken
-          ? { Authorization: `Bearer ${accessToken}` }
-          : undefined,
+        headers: { Authorization: `Bearer ${accessToken}` },
       })
       if (!response.ok) throw new Error(await mensagemErro(response))
       if (sid) canalSessao.current?.postMessage(`logout:${sid}`)
+    }).finally(() => {
+      if (logoutPendente.current === resultado) logoutPendente.current = null
     })
+    logoutPendente.current = resultado
+    return resultado
   }, [limpar])
   const requisitar = useCallback(
     async (url: string, init: RequestInit = {}) => {

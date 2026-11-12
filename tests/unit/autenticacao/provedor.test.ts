@@ -1005,3 +1005,69 @@ it.each(["objeto", "tuplas", "Headers"] as const)(
     )
   },
 )
+
+it("um login seguinte que falha não cancela nem duplica o logout enfileirado", async () => {
+  await montar()
+  const iniciou = pendente<void>()
+  const liberar = pendente<void>()
+  const bloqueio = comBloqueioSessao(() => {
+    iniciou.resolve()
+    return liberar.promise
+  })
+  await iniciou.promise
+  const autenticacao = chamadas.getMockImplementation()!
+  chamadas.mockImplementation((url, init) =>
+    url === "/api/auth/login"
+      ? Promise.resolve(new Response(null, { status: 401 }))
+      : autenticacao(url, init),
+  )
+  await act(async () => {
+    const sair = ctx.sair()
+    const repetir = ctx.sair()
+    const login = ctx.entrar("outro@example.test", "fixture").catch((e) => e)
+    liberar.resolve()
+    await Promise.all([bloqueio, sair, repetir])
+    expect(await login).toMatchObject({
+      message: "Usuário ou senha incorretos.",
+    })
+  })
+  const operacoes = chamadas.mock.calls.filter(([url]) =>
+    ["/api/auth/logout", "/api/auth/login"].includes(url),
+  )
+  expect(operacoes.map(([url]) => url)).toEqual([
+    "/api/auth/logout",
+    "/api/auth/login",
+  ])
+  expect(new Headers(operacoes[0][1]?.headers).get("Authorization")).toBe(
+    "Bearer token-1",
+  )
+  expect(ctx.estado).toBe("anonimo")
+})
+
+it("a falha temporária na descoberta mantém o Bearer da saída", async () => {
+  resposta = async () => new Response(null, { status: 503 })
+  await montar()
+  expect(ctx.estado).toBe("erro")
+  expect(ctx.usuario).toBeNull()
+  await act(async () => ctx.sair())
+  const [url, init] = chamadas.mock.calls.at(-1)!
+  expect(url).toBe("/api/auth/logout")
+  expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer token-1")
+  expect(ctx.estado).toBe("anonimo")
+})
+
+it("sem sessão identificada o logout não usa apenas o cookie de outra aba", async () => {
+  chamadas.mockImplementationOnce(
+    async () => new Response(null, { status: 503 }),
+  )
+  await montar()
+  await act(async () => {
+    await expect(ctx.sair()).rejects.toThrow(
+      "Não foi possível identificar a sessão.",
+    )
+  })
+  expect(ctx.estado).toBe("anonimo")
+  expect(chamadas.mock.calls.some(([url]) => url === "/api/auth/logout")).toBe(
+    false,
+  )
+})
