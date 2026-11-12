@@ -71,7 +71,9 @@ export function resolveUserRole(user: RoleSource): Role | null {
   for (const membership of user.usuario_empresa) {
     if (membership.status !== "ATIVO" || membership.empresas.status !== "ATIVA")
       continue
-    if (membership.nivel_acesso === "EMPRESA") roles.add("ADMINISTRACAO")
+    // O vínculo de empresa é uma fonte estável de administração e tem
+    // precedência sobre perfis funcionais do mesmo vínculo.
+    if (membership.nivel_acesso === "EMPRESA") return "ADMINISTRACAO"
     if (membership.cargos.status === "ATIVO") {
       const perfil = perfilDoCargo(membership.cargos.nome)
       if (perfil) roles.add(perfil)

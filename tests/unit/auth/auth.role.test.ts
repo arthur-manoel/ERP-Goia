@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { perfisDosRecursos, resolveUserRole } from "./auth.role"
+import { perfisDosRecursos, resolveUserRole } from "@/modules/auth/auth.role"
 
 type Vinculo = Parameters<typeof resolveUserRole>[0]["usuario_empresa"][number]
 const vinculo = (parcial: Partial<Vinculo> = {}): Vinculo => ({
@@ -56,6 +56,22 @@ describe("resolveUserRole (5.1: nome de setor não concede privilégio)", () => 
     expect(resolveUserRole(usuario(vinculo({ nivel_acesso: "EMPRESA" })))).toBe(
       "ADMINISTRACAO",
     )
+  })
+  it("vínculo EMPRESA ativo mantém acesso com cargo e setor de Produção", () => {
+    expect(
+      resolveUserRole(
+        usuario(
+          vinculo({
+            nivel_acesso: "EMPRESA",
+            cargos: { nome: "Produção", status: "ATIVO" },
+            setores: {
+              status: "ATIVO",
+              permissoes_setor: [{ recurso: "ORDENS_PRODUCAO" }],
+            },
+          }),
+        ),
+      ),
+    ).toBe("ADMINISTRACAO")
   })
   it("setor inativo ou vínculo inativo não concedem perfil", () => {
     const setores = {
