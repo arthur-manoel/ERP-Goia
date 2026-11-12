@@ -43,4 +43,6 @@ Consultas, relatórios e telas ainda em construção não criam eventos de alter
 
 Os testes de integração verificam commit, autor/snapshots, rollback físico de criação e edição nos seis catálogos quando um trigger rejeita o INSERT em auditoria, consulta protegida e cadeia de snapshots após duas edições simultâneas. Os triggers temporários e os registros fictícios são removidos no `finally`. Não executar em banco compartilhado.
 
-Validação local em 11/11/2026: **9 testes de integração aprovados no MySQL 8.0.46**, em instância própria na porta 3347, e **1.731 testes unitários aprovados**. O build padrão com Turbopack passou em recompilação sem cache e sem instrumentação; nenhuma configuração de bundler foi alterada. A inspeção visual com dados fictícios registrou [tema claro](../../../docs/imagens/auditoria/claro.png); as demais verificações visuais foram interrompidas pelo usuário via Escape.
+Validação local em 11/11/2026: **9 testes de integração aprovados no MySQL 8.0.46**, em instância própria na porta 3347, e **1.731 testes unitários aprovados**. O build padrão com Turbopack passou em recompilação sem cache e sem instrumentação; nenhuma configuração de bundler foi alterada.
+
+Validação visual concluída em 12/11/2026: temas claro/escuro, viewport de celular em 390 × 844 px, comparação antes/depois no desktop e no celular, abertura/fechamento com retorno de foco e criação sem snapshot anterior. [Capturas e contexto da prévia com dados fictícios](../../../docs/imagens/auditoria/README.md). Nenhuma alteração no componente foi necessária.
