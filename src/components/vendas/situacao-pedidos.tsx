@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
+import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -43,23 +44,44 @@ type Resultado = {
     quantidade: string
     status: keyof typeof rotulos
     reservada: string
+    entregue: string
+    pendente: string
+    cobertura: "ATENDIDO" | "TOTAL" | "PARCIAL" | "SEM_RESERVA"
     ordens: { id: number; numero: string; status: string }[]
   }[]
   paginacao: { pagina: number; totalPaginas: number }
 }
 
 export function SituacaoPedidos() {
-  const { estado, empresa, usuario } = useAutenticacao()
+  const { estado, empresa, usuario, empresas, selecionarEmpresa } =
+    useAutenticacao()
   if (estado === "carregando") return <Skeleton className="h-96 w-full" />
-  if (estado !== "autenticado" || !empresa)
-    return (
-      <Alert>
-        <AlertDescription>
-          Entre na sua conta e selecione uma empresa para consultar os pedidos.
-        </AlertDescription>
-      </Alert>
-    )
-  return <SituacaoEmpresa key={`${usuario?.email}:${empresa.id}`} />
+  return (
+    <div className="flex flex-col gap-6">
+      {estado === "autenticado" && empresas.length > 1 && (
+        <SearchSelect
+          value={empresa ? String(empresa.id) : ""}
+          onValueChange={(v) => selecionarEmpresa(Number(v))}
+          label="Empresa ativa"
+          placeholder="Selecione uma empresa"
+          options={empresas.map((e) => ({
+            value: String(e.id),
+            label: e.nome,
+          }))}
+        />
+      )}
+      {estado !== "autenticado" || !empresa ? (
+        <Alert>
+          <AlertDescription>
+            Entre na sua conta e selecione uma empresa para consultar os
+            pedidos.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <SituacaoEmpresa key={`${usuario?.email}:${empresa.id}`} />
+      )}
+    </div>
+  )
 }
 
 function SituacaoEmpresa() {
@@ -199,14 +221,17 @@ function SituacaoEmpresa() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary">
-                          {Number(linha.reservada) >= Number(linha.quantidade)
-                            ? "Coberto por estoque"
-                            : Number(linha.reservada) > 0
-                              ? "Cobertura parcial"
-                              : "Sem reserva"}
+                          {linha.cobertura === "ATENDIDO"
+                            ? "Item atendido"
+                            : linha.cobertura === "TOTAL"
+                              ? "Coberto por estoque"
+                              : linha.cobertura === "PARCIAL"
+                                ? "Cobertura parcial"
+                                : "Sem reserva"}
                         </Badge>
                         <div className="text-sm text-muted-foreground">
-                          {linha.reservada} reservados de {linha.quantidade}
+                          {linha.entregue} entregues · {linha.reservada}{" "}
+                          reservados de {linha.pendente} pendentes
                         </div>
                       </TableCell>
                       <TableCell>

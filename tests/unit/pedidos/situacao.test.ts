@@ -31,6 +31,7 @@ it("consulta a empresa e calcula a reserva restante sem inferir OP por produto",
             id_produto: 4,
             id_variacao: 5,
             quantidade: d(10),
+            pedido_cliente_entrega_item: [],
             cores: { nome: "Azul" },
             tamanhos: { nome: "P" },
             reserva_estoque: [
@@ -88,3 +89,72 @@ it("retorna lista vazia com paginação quando não há pedidos", async () => {
   expect(resultado.dados).toEqual([])
   expect(resultado.paginacao.totalRegistros).toBe(0)
 })
+
+it.each([
+  { entregue: 6, reserva: 4, pendente: "4.000", cobertura: "TOTAL" },
+  { entregue: 6, reserva: 2, pendente: "4.000", cobertura: "PARCIAL" },
+  { entregue: 6, reserva: 0, pendente: "4.000", cobertura: "SEM_RESERVA" },
+  { entregue: 10, reserva: 0, pendente: "0.000", cobertura: "ATENDIDO" },
+])(
+  "calcula cobertura pelo saldo pendente: $cobertura",
+  async ({ entregue, reserva, pendente, cobertura }) => {
+    const d = (v: number) => new Prisma.Decimal(v)
+    db.pedido_cliente.count.mockResolvedValue(1)
+    db.pedido_cliente.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 2,
+          numero: "P-2",
+          status: "PARCIALMENTE_ENTREGUE",
+          data_pedido: new Date(),
+          valor_total: d(10),
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 2,
+          numero: "P-2",
+          status: "PARCIALMENTE_ENTREGUE",
+          clientes: { nome_razao_social: "Cliente" },
+          ordem_producao: [],
+          pedido_cliente_item: [
+            {
+              id: 3,
+              descricao: "Camisa",
+              id_produto: 4,
+              id_variacao: null,
+              quantidade: d(10),
+              pedido_cliente_entrega_item: [{ quantidade: d(entregue) }],
+              reserva_estoque: [
+                {
+                  id_produto: 4,
+                  id_variacao: null,
+                  quantidade: d(reserva),
+                  quantidade_consumida: d(0),
+                  quantidade_liberada: d(0),
+                },
+              ],
+              ordem_producao_item: [],
+            },
+          ],
+        },
+      ])
+    const r = await consultarSituacao(
+      { idEmpresa: 10, idUsuario: 1 },
+      { pagina: 1, limite: 25 },
+    )
+    expect(r.dados[0]).toMatchObject({
+      entregue: d(entregue).toFixed(3),
+      pendente,
+      cobertura,
+    })
+    expect(
+      db.pedido_cliente.findMany.mock.calls[1][0].include.pedido_cliente_item
+        .include.pedido_cliente_entrega_item.where,
+    ).toEqual({
+      pedido_cliente_entrega: {
+        status: { notIn: ["CANCELADA", "PREPARANDO", "NAO_ENTREGUE"] },
+      },
+    })
+  },
+)
