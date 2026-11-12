@@ -29,6 +29,12 @@ Erros: `{ "success": false, "error": "mensagem" }`, com 400/401/403/404/409/429/
 
 Base: `/api/ordem_producao`.
 
+A tela `/producao/ordens` lista pela URL `GET /api/ordens-producao`, que
+compartilha o handler, os filtros, a paginação e o envelope de resposta da
+listagem abaixo. Abertura e edição usam POST/PATCH do contrato legado, com
+número automático e estado esperado na edição. Operações de etapas, consumo
+e conclusão continuam integradas ao estoque pela API operacional.
+
 | Método | Caminho | Operação |
 | --- | --- | --- |
 | GET | `/` | Listagem paginada de cabeçalhos e contadores de vínculos |

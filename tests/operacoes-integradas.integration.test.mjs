@@ -256,6 +256,53 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       "100 peças G não atendem falta de M",
     )
     assert.equal(await snapshot(), s1)
+    await t.test(
+      "card OP: abertura, listagem e edição pelas URLs da tela",
+      async () => {
+        const criada = await post("/api/ordens-producao", {
+          idProduto: produto,
+          quantidade: "1.000",
+          tamanho: "UNICO",
+          prioridade: "NORMAL",
+          observacao: "Validação HTTP do card",
+          dataPrevisao: null,
+        })
+        const id = criada.ordem.id
+        const listagem = await a.chamar(
+          `/api/ordens-producao?page=1&limit=25&busca=${encodeURIComponent(criada.ordem.numero)}`,
+        )
+        assert.equal(listagem.status, 200)
+        assert.equal(listagem.body.data.count, 1)
+        assert.equal(listagem.body.data.rows[0].id, id)
+        const editar = await a.chamar(`/api/ordens-producao/${id}`, "PATCH", {
+          statusEsperado: "PLANEJADA",
+          quantidade: "2.000",
+          tamanho: "UNICO",
+          prioridade: "ALTA",
+          observacao: "Edição persistida pelo card",
+          dataPrevisao: null,
+        })
+        assert.equal(editar.status, 200, JSON.stringify(editar.body))
+        const detalhe = await a.chamar(`/api/ordens-producao/${id}`)
+        assert.equal(detalhe.status, 200)
+        assert.equal(
+          detalhe.body.ordem.observacao,
+          "Edição persistida pelo card",
+        )
+        assert.equal(detalhe.body.ordem.quantidade_planejada, "2")
+        const persistida = await prisma.ordem_producao.findUniqueOrThrow({
+          where: { id },
+        })
+        assert.equal(persistida.quantidade_planejada.toFixed(3), "2.000")
+        const semLogin = await a.chamar(
+          "/api/ordens-producao",
+          "GET",
+          undefined,
+          { usuario: null },
+        )
+        assert.equal(semLogin.status, 401)
+      },
+    )
     op = await post("/api/ordem_producao", {
       numero: `OP-${randomUUID()}`,
       quantidade_planejada: "3.000",

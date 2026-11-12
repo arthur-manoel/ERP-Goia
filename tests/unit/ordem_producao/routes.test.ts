@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest"
 import { Prisma } from "../../../src/generated/prisma/client"
 import * as collection from "../../../src/app/api/ordem_producao/route"
+import { GET as listarCard } from "../../../src/app/api/ordens-producao/route"
 import * as route from "../../../src/app/api/ordem_producao/[id]/route"
 import { POST as liberar } from "../../../src/app/api/ordem_producao/[id]/liberar/route"
 import { POST as iniciar } from "../../../src/app/api/ordem_producao/[id]/iniciar/route"
@@ -302,6 +303,33 @@ it("aplica filtros, paginação e escopo diretamente no banco", async () => {
         ]),
       },
       orderBy: [{ numero: "asc" }, { id: "asc" }],
+    }),
+  )
+})
+it("lista pela URL do card com paginação e isolamento por empresa", async () => {
+  db.ordem_producao.findMany.mockResolvedValue([base])
+  db.ordem_producao.count.mockResolvedValue(26)
+  const response = await listarCard(
+    await request("/api/ordens-producao?page=2&limit=25&busca=OP"),
+  )
+  expect(response.status).toBe(200)
+  expect(response.headers.get("Cache-Control")).toContain("no-store")
+  expect((await response.json()).data).toMatchObject({
+    page: 2,
+    limit: 25,
+    count: 26,
+    totalPages: 2,
+  })
+  expect(db.ordem_producao.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      skip: 25,
+      take: 25,
+      where: {
+        AND: expect.arrayContaining([
+          { id_empresa: 10 },
+          { numero: { contains: "OP" } },
+        ]),
+      },
     }),
   )
 })
