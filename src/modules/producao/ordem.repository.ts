@@ -138,7 +138,7 @@ export async function listarResumo(
           data_inicio: true,
           data_previsao: true,
           data_conclusao: true,
-          setores: { select: { nome: true } },
+          setores: { select: { nome: true, id_empresa: true } },
           ordem_producao_snapshot: { select: { id_ordem_producao: true } },
           ordem_producao_item: {
             orderBy: { id: "asc" },
@@ -154,7 +154,10 @@ export async function listarResumo(
             },
           },
           ordem_producao_fluxo_setor: {
-            where: { status: { not: "CONCLUIDA" } },
+            where: {
+              status: { not: "CONCLUIDA" },
+              setores: { id_empresa: ctx.idEmpresa },
+            },
             orderBy: { ordem: "asc" },
             take: 1,
             select: {
@@ -179,7 +182,7 @@ export async function listarResumo(
       ...ordem
     }) => ({
       ...ordem,
-      setorAtual: setores?.nome ?? null,
+      setorAtual: setores?.id_empresa === ctx.idEmpresa ? setores.nome : null,
       etapaAtual:
         ordem_producao_snapshot &&
         !["CONCLUIDA", "CANCELADA"].includes(ordem.status)

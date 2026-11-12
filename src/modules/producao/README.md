@@ -172,7 +172,8 @@ consumo planejado e snapshot na mesma transação. A edição usa
 operação original. A primeira abertura retorna 201 e a repetição retorna
 200. A chave pertence à empresa, ao usuário e ao conteúdo da operação.
 
-Para avançar, a tela envia situação e setor esperados. Ordens com snapshot
+Para avançar, a tela envia situação e setor esperados e mantém a mesma chave
+ao recuperar uma tentativa inconclusiva. Ordens com snapshot
 iniciam e concluem etapas com o ID da etapa. Concluir a última etapa encerra a
 ordem. Ordens legadas sem snapshot usam `/encerrar`. Reservas, consumo real,
 quantidade efetiva e entrada de acabado mantêm as regras operacionais e as

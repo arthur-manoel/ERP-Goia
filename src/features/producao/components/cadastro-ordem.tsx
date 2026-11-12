@@ -330,6 +330,7 @@ function EditarOrdem({
   bloqueado: boolean
   enviar: Enviar
 }) {
+  const [erro, setErro] = useState("")
   function salvar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (bloqueado) return
@@ -338,21 +339,26 @@ function EditarOrdem({
     const previsao = String(fd.get("previsao") ?? "")
     const quantidade = fd.get("quantidade")?.toString().replace(",", ".")
     const prioridade = fd.get("prioridade")
+    const alteracoes = {
+      ...(observacao !== (ordem.observacao?.trim() || null)
+        ? { observacao }
+        : {}),
+      ...(previsao !== (ordem.data_previsao?.slice(0, 10) ?? "")
+        ? { dataPrevisao: previsao ? `${previsao}T23:59:59Z` : null }
+        : {}),
+      ...(quantidade && quantidade !== ordem.quantidade_planejada
+        ? { quantidade }
+        : {}),
+      ...(prioridade && prioridade !== ordem.prioridade ? { prioridade } : {}),
+    }
+    if (Object.keys(alteracoes).length === 0) {
+      setErro("Altere pelo menos um campo para salvar.")
+      return
+    }
+    setErro("")
     void enviar(
       `${rota}/${ordem.id}`,
-      {
-        statusEsperado: ordem.status,
-        observacao,
-        ...(previsao !== (ordem.data_previsao?.slice(0, 10) ?? "")
-          ? { dataPrevisao: previsao ? `${previsao}T23:59:59Z` : null }
-          : {}),
-        ...(quantidade && quantidade !== ordem.quantidade_planejada
-          ? { quantidade }
-          : {}),
-        ...(prioridade && prioridade !== ordem.prioridade
-          ? { prioridade }
-          : {}),
-      },
+      { statusEsperado: ordem.status, ...alteracoes },
       "PATCH",
     )
   }
@@ -360,6 +366,7 @@ function EditarOrdem({
     <form onSubmit={salvar} aria-label="Edição da ordem de produção">
       <fieldset disabled={bloqueado} className="grid gap-3 sm:grid-cols-2">
         <CamposOrdem prefixo="op-editar" ordem={ordem} />
+        {erro && <p role="alert">{erro}</p>}
         <Button type="submit">Salvar alterações da ordem</Button>
       </fieldset>
     </form>

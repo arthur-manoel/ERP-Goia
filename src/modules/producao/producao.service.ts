@@ -158,6 +158,7 @@ export async function abrirOrdemNaTransacao(
   ctx: Contexto,
   input: AbrirInput,
 ) {
+  await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
   if (input.idLocal)
     await relationships(
       ctx,

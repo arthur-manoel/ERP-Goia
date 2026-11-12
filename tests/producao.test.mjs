@@ -116,6 +116,9 @@ function setup(overrides = {}) {
       return 1
     },
     ordem_producao: {
+      async findUnique() {
+        return null
+      },
       async findFirst({ where }) {
         return where.id_empresa === 10 && where.id === 1 ? ordem : null
       },

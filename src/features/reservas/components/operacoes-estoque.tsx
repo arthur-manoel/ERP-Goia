@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
+import { rotuloData } from "@/features/erp/datas"
 import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
 import {
   CadastroOrdem,
@@ -1049,16 +1050,18 @@ function DocumentoOperacional({
           Próxima
         </Button>
       </div>
-      {origem === "PRODUCAO" && lista.dados && (
-        <CadastroOrdem
-          key={id}
-          requisitar={requisitar}
-          ordem={cabecalho.dados?.ordem ?? null}
-          fluxo={cabecalho.dados?.fluxoSnapshot?.nome}
-          bloqueado={bloqueado || cabecalho.carregando}
-          enviar={enviar}
-        />
-      )}
+      {origem === "PRODUCAO" &&
+        lista.status !== 401 &&
+        lista.status !== 403 && (
+          <CadastroOrdem
+            key={id}
+            requisitar={requisitar}
+            ordem={cabecalho.dados?.ordem ?? null}
+            fluxo={cabecalho.dados?.fluxoSnapshot?.nome}
+            bloqueado={bloqueado || cabecalho.carregando}
+            enviar={enviar}
+          />
+        )}
       {cabecalho.erro && (
         <Alert variant="destructive">
           <AlertDescription>{cabecalho.erro}</AlertDescription>
@@ -1170,9 +1173,7 @@ function ListaOrdens({
                 : (ordem.setorAtual ?? "—")}
             </TableCell>
             <TableCell>
-              {ordem.data_previsao
-                ? formatarDataHora(new Date(ordem.data_previsao))
-                : "—"}
+              {rotuloData(ordem.data_previsao?.slice(0, 10) ?? "")}
             </TableCell>
           </TableRow>
         ))}

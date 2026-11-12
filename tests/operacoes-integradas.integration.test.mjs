@@ -273,7 +273,9 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       quantidade: "3.000",
     }
     const chaveAbertura = randomUUID()
+    const cabecalhoNumerico = await post("/api/ordem_producao", { numero: "1" })
     op = (await post(rotaOrdens, abertura, chaveAbertura)).ordem
+    assert.equal(op.numero, "2")
     assert.equal(
       (await post(rotaOrdens, abertura, chaveAbertura, 200)).ordem.id,
       op.id,
@@ -286,14 +288,14 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     )
     assert.equal(
       await prisma.ordem_producao.count({ where: { id_empresa: empresa } }),
-      1,
+      2,
     )
     const itemOP = op.ordem_producao_item[0]
     const listar = (filtros = "", opcoes = {}) =>
       a.chamar(rotaOrdens + filtros, "GET", undefined, opcoes)
     const resumo = await listar("?status=PLANEJADA&page=1&limit=1")
     assert.equal(resumo.status, 200)
-    assert.equal(resumo.body.data.count, 1)
+    assert.equal(resumo.body.data.count, 2)
     assert.equal(resumo.body.data.rows[0].id, op.id)
     assert.equal(resumo.body.data.rows[0].quantidade_planejada, "3")
     assert.equal(resumo.body.data.rows[0].etapaAtual.ordem, 1)
@@ -332,7 +334,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     }
     assert.deepEqual(
       (await listar()).body.data.rows.map((linha) => linha.id),
-      [op.id],
+      [op.id, cabecalhoNumerico.id],
     )
     assert.equal(
       (
@@ -392,6 +394,32 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       },
       randomUUID(),
       200,
+    )
+    const rotaAvanco = `${rotaOrdens}/${op.id}/avancar`
+    const pausa = {
+      statusEsperado: "EM_PRODUCAO",
+      setorEsperado: primeiraEtapa.id_setor,
+      statusDestino: "PAUSADA",
+    }
+    const chavePausa = randomUUID()
+    await post(rotaAvanco, pausa, chavePausa, 200)
+    await post(
+      rotaAvanco,
+      {
+        ...pausa,
+        statusEsperado: "PAUSADA",
+        statusDestino: "EM_PRODUCAO",
+      },
+      randomUUID(),
+      200,
+    )
+    assert.equal(
+      (await post(rotaAvanco, pausa, chavePausa, 200)).ordem.status,
+      "PAUSADA",
+    )
+    assert.equal(
+      (await a.chamar(`${rotaOrdens}/${op.id}`)).body.ordem.status,
+      "EM_PRODUCAO",
     )
     const consumo = {
       idReserva: reservaMaterial.idReserva,
