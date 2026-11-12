@@ -221,7 +221,11 @@ cliente, descrição/cor/tamanho, quantidade e saldo das reservas ATIVAS do item
 (quantidade menos consumida e liberada), na mesma variação e empresa. A cobertura
 compara essa reserva com a quantidade pendente após as entregas válidas, seguindo
 o critério do módulo de reservas (exclui CANCELADA, PREPARANDO e NAO_ENTREGUE).
-A resposta inclui entregue, pendente e cobertura; itens sem pendência são ATENDIDO.
+A resposta inclui entregue, emTransito, pendente (de entrega), pendenteEstoque e
+cobertura. ENVIADA conta apenas como em trânsito; ENTREGUE e
+RECEBIMENTO_CONFIRMADO contam como entregues. A cobertura compara reservas com
+pendenteEstoque, descontando o que já foi enviado sem tratá-lo como estoque livre.
+Somente itens sem pendência de entrega são ATENDIDO; saldo todo enviado é EM_TRANSITO.
 OPs são obtidas pelos vínculos reais do pedido ou do item e deduplicadas por ID;
 não são inferidas por produto/prazo nem representam garantia de estoque.
 A tela `/vendas/pedidos/situacao` usa esta consulta autenticada, sem adaptador local.

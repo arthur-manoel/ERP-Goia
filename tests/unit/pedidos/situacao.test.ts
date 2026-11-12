@@ -95,9 +95,40 @@ it.each([
   { entregue: 6, reserva: 2, pendente: "4.000", cobertura: "PARCIAL" },
   { entregue: 6, reserva: 0, pendente: "4.000", cobertura: "SEM_RESERVA" },
   { entregue: 10, reserva: 0, pendente: "0.000", cobertura: "ATENDIDO" },
+  {
+    entregue: 0,
+    transito: 10,
+    reserva: 0,
+    pendente: "10.000",
+    pendenteEstoque: "0.000",
+    cobertura: "EM_TRANSITO",
+  },
+  {
+    entregue: 4,
+    transito: 2,
+    reserva: 4,
+    pendente: "6.000",
+    pendenteEstoque: "4.000",
+    cobertura: "TOTAL",
+  },
+  {
+    entregue: 4,
+    transito: 2,
+    reserva: 1,
+    pendente: "6.000",
+    pendenteEstoque: "4.000",
+    cobertura: "PARCIAL",
+  },
 ])(
   "calcula cobertura pelo saldo pendente: $cobertura",
-  async ({ entregue, reserva, pendente, cobertura }) => {
+  async ({
+    entregue,
+    reserva,
+    pendente,
+    cobertura,
+    transito = 0,
+    pendenteEstoque = pendente,
+  }) => {
     const d = (v: number) => new Prisma.Decimal(v)
     db.pedido_cliente.count.mockResolvedValue(1)
     db.pedido_cliente.findMany
@@ -124,7 +155,16 @@ it.each([
               id_produto: 4,
               id_variacao: null,
               quantidade: d(10),
-              pedido_cliente_entrega_item: [{ quantidade: d(entregue) }],
+              pedido_cliente_entrega_item: [
+                {
+                  quantidade: d(entregue),
+                  pedido_cliente_entrega: { status: "RECEBIMENTO_CONFIRMADO" },
+                },
+                {
+                  quantidade: d(transito),
+                  pedido_cliente_entrega: { status: "ENVIADA" },
+                },
+              ],
               reserva_estoque: [
                 {
                   id_produto: 4,
@@ -146,6 +186,8 @@ it.each([
     expect(r.dados[0]).toMatchObject({
       entregue: d(entregue).toFixed(3),
       pendente,
+      emTransito: d(transito).toFixed(3),
+      pendenteEstoque,
       cobertura,
     })
     expect(

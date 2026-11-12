@@ -46,7 +46,9 @@ type Resultado = {
     reservada: string
     entregue: string
     pendente: string
-    cobertura: "ATENDIDO" | "TOTAL" | "PARCIAL" | "SEM_RESERVA"
+    emTransito: string
+    pendenteEstoque: string
+    cobertura: "ATENDIDO" | "EM_TRANSITO" | "TOTAL" | "PARCIAL" | "SEM_RESERVA"
     ordens: { id: number; numero: string; status: string }[]
   }[]
   paginacao: { pagina: number; totalPaginas: number }
@@ -223,15 +225,21 @@ function SituacaoEmpresa() {
                         <Badge variant="secondary">
                           {linha.cobertura === "ATENDIDO"
                             ? "Item atendido"
-                            : linha.cobertura === "TOTAL"
-                              ? "Coberto por estoque"
-                              : linha.cobertura === "PARCIAL"
-                                ? "Cobertura parcial"
-                                : "Sem reserva"}
+                            : linha.cobertura === "EM_TRANSITO"
+                              ? "Em trânsito"
+                              : linha.cobertura === "TOTAL"
+                                ? "Coberto por estoque"
+                                : linha.cobertura === "PARCIAL"
+                                  ? "Cobertura parcial"
+                                  : "Sem reserva"}
                         </Badge>
                         <div className="text-sm text-muted-foreground">
-                          {linha.entregue} entregues · {linha.reservada}{" "}
-                          reservados de {linha.pendente} pendentes
+                          {linha.entregue} entregues · {linha.emTransito} em
+                          trânsito · {linha.pendente} pendentes de entrega
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {linha.reservada} reservados de{" "}
+                          {linha.pendenteEstoque} pendentes de estoque
                         </div>
                       </TableCell>
                       <TableCell>

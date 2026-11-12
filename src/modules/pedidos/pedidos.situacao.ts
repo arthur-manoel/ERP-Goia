@@ -31,7 +31,10 @@ export const consultarSituacao = (ctx: Contexto, input: ListarInput) =>
                   },
                 },
               },
-              select: { quantidade: true },
+              select: {
+                quantidade: true,
+                pedido_cliente_entrega: { select: { status: true } },
+              },
             },
             reserva_estoque: {
               where: { id_empresa: ctx.idEmpresa, status: "ATIVA" },
@@ -54,11 +57,17 @@ export const consultarSituacao = (ctx: Contexto, input: ListarInput) =>
       dados: lista.dados.flatMap((referencia) => {
         const p = porId.get(referencia.idPedido)!
         return p.pedido_cliente_item.map((i) => {
-          const entregue = i.pedido_cliente_entrega_item.reduce(
-            (s, e) => s.plus(e.quantidade),
-            new Prisma.Decimal(0),
-          )
+          const entregue = i.pedido_cliente_entrega_item
+            .filter((e) => e.pedido_cliente_entrega.status !== "ENVIADA")
+            .reduce((s, e) => s.plus(e.quantidade), new Prisma.Decimal(0))
           const pendente = Prisma.Decimal.max(0, i.quantidade.minus(entregue))
+          const emTransito = i.pedido_cliente_entrega_item
+            .filter((e) => e.pedido_cliente_entrega.status === "ENVIADA")
+            .reduce((s, e) => s.plus(e.quantidade), new Prisma.Decimal(0))
+          const pendenteEstoque = Prisma.Decimal.max(
+            0,
+            pendente.minus(emTransito),
+          )
           const reservada = i.reserva_estoque
             .filter(
               (r) =>
@@ -95,13 +104,17 @@ export const consultarSituacao = (ctx: Contexto, input: ListarInput) =>
             quantidade: i.quantidade.toFixed(3),
             entregue: entregue.toFixed(3),
             pendente: pendente.toFixed(3),
+            emTransito: emTransito.toFixed(3),
+            pendenteEstoque: pendenteEstoque.toFixed(3),
             cobertura: pendente.isZero()
               ? "ATENDIDO"
-              : reservada.gte(pendente)
-                ? "TOTAL"
-                : reservada.gt(0)
-                  ? "PARCIAL"
-                  : "SEM_RESERVA",
+              : pendenteEstoque.isZero()
+                ? "EM_TRANSITO"
+                : reservada.gte(pendenteEstoque)
+                  ? "TOTAL"
+                  : reservada.gt(0)
+                    ? "PARCIAL"
+                    : "SEM_RESERVA",
             status: p.status,
             reservada: reservada.toFixed(3),
             ordens,
