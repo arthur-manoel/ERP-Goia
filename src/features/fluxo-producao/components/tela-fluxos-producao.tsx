@@ -107,6 +107,12 @@ export function TelaFluxosProducao() {
   const [setores, setSetores] = useState<Setor[]>([])
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState("")
+  // Os setores só são necessários para criar/editar; a lista de fluxos não
+  // depende deles, então o carregamento e o erro de cada um são separados.
+  const [setoresStatus, setSetoresStatus] = useState<
+    "carregando" | "ok" | "erro"
+  >("carregando")
+  const [erroSetores, setErroSetores] = useState("")
   const [busca, setBusca] = useState("")
   const [status, setStatus] = useState<FiltroStatus>("todos")
   const [pagina, setPagina] = useState(0)
@@ -115,35 +121,65 @@ export function TelaFluxosProducao() {
   const [excluindo, setExcluindo] = useState<Fluxo | null>(null)
   const [processando, setProcessando] = useState(false)
   const versaoRequisicao = useRef(0)
+  const empresaCarregada = useRef<number | null>(null)
 
   const recarregar = useCallback(async () => {
     if (!empresa) return
     const versaoAtual = ++versaoRequisicao.current
     setCarregando(true)
-    try {
-      const [listaFluxos, listaSetores] = await Promise.all([
-        carregarTodos<Fluxo>(requisitar, endpointFluxos, "fluxos"),
-        carregarTodos<Setor>(requisitar, endpointSetores, "setores"),
-      ])
-      if (versaoAtual !== versaoRequisicao.current) return
-      setFluxos(listaFluxos)
-      setSetores(listaSetores)
+    // allSettled: se os setores falharem, a lista de fluxos continua valendo.
+    const [resultadoFluxos, resultadoSetores] = await Promise.allSettled([
+      carregarTodos<Fluxo>(requisitar, endpointFluxos, "fluxos"),
+      carregarTodos<Setor>(requisitar, endpointSetores, "setores"),
+    ])
+    if (versaoAtual !== versaoRequisicao.current) return
+
+    if (resultadoFluxos.status === "fulfilled") {
+      setFluxos(resultadoFluxos.value)
       setErro("")
-    } catch (causa) {
-      if (versaoAtual !== versaoRequisicao.current) return
+    } else {
       setErro(
-        causa instanceof Error
-          ? causa.message
+        resultadoFluxos.reason instanceof Error
+          ? resultadoFluxos.reason.message
           : "Não foi possível carregar os fluxos de produção.",
       )
-    } finally {
-      if (versaoAtual === versaoRequisicao.current) setCarregando(false)
     }
+
+    if (resultadoSetores.status === "fulfilled") {
+      setSetores(resultadoSetores.value)
+      setSetoresStatus("ok")
+      setErroSetores("")
+    } else {
+      // Nunca deixa setores antigos (de outra empresa ou de antes da falha).
+      setSetores([])
+      setSetoresStatus("erro")
+      setErroSetores(
+        resultadoSetores.reason instanceof Error
+          ? resultadoSetores.reason.message
+          : "Não foi possível carregar os setores.",
+      )
+    }
+    setCarregando(false)
   }, [empresa, requisitar])
 
   useEffect(() => {
     if (estadoAutenticacao !== "autenticado" || !empresa) return
-    void Promise.resolve().then(recarregar)
+    const idEmpresa = empresa.id
+    void Promise.resolve().then(() => {
+      // Ao trocar de empresa, descarta tudo o que era da anterior e bloqueia
+      // criar/editar até os setores da nova empresa chegarem.
+      if (empresaCarregada.current !== idEmpresa) {
+        empresaCarregada.current = idEmpresa
+        setFluxos([])
+        setSetores([])
+        setSetoresStatus("carregando")
+        setErroSetores("")
+        setErro("")
+        setDialogo(null)
+        setExcluindo(null)
+      }
+      return recarregar()
+    })
   }, [empresa, estadoAutenticacao, recarregar])
 
   const filtrados = useMemo(
@@ -227,7 +263,10 @@ export function TelaFluxosProducao() {
       titulo="Fluxos de produção"
       descricao="Sequência de setores pela qual uma peça passa durante a produção."
       acoes={
-        <Button onClick={() => setDialogo("novo")} disabled={!empresa}>
+        <Button
+          onClick={() => setDialogo("novo")}
+          disabled={!empresa || setoresStatus !== "ok"}
+        >
           <Plus /> Novo fluxo
         </Button>
       }
@@ -290,6 +329,20 @@ export function TelaFluxosProducao() {
         </Alert>
       ) : (
         <>
+          {setoresStatus === "erro" && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription className="space-y-3">
+                <p>
+                  Não foi possível carregar os setores ({erroSetores}). Você
+                  ainda vê os fluxos, mas criar e editar ficam bloqueados até os
+                  setores carregarem.
+                </p>
+                <Button variant="outline" onClick={() => void recarregar()}>
+                  Tentar novamente
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
           <Tabs
             value={status}
             onValueChange={(valor) => {
@@ -390,6 +443,7 @@ export function TelaFluxosProducao() {
                             <DropdownMenuGroup>
                               <DropdownMenuLabel>Ações</DropdownMenuLabel>
                               <DropdownMenuItem
+                                disabled={setoresStatus !== "ok"}
                                 onClick={() => setDialogo(fluxo)}
                               >
                                 <Pencil /> Editar
@@ -440,6 +494,7 @@ export function TelaFluxosProducao() {
                         {!fluxos.length && (
                           <Button
                             variant="outline"
+                            disabled={setoresStatus !== "ok"}
                             onClick={() => setDialogo("novo")}
                           >
                             <Plus /> Cadastrar fluxo
