@@ -1,5 +1,7 @@
 import "server-only"
-import { HttpError } from "@/lib/api/errors"
+import { ConflitoTransitorio, HttpError } from "@/lib/api/errors"
+import { executar as executarIdempotente } from "@/modules/reservas/operacoes"
+import { chaveRecebimento } from "@/modules/recebimentos/recebimentos.schema"
 import type { z } from "zod"
 import { autorizar } from "./producao.authorization"
 import { ProducaoError } from "./producao.repository"
@@ -14,7 +16,9 @@ import {
   executarEtapa,
   consultarOrdem,
   abrirOrdem,
+  abrirOrdemNaTransacao,
   alterarOrdem,
+  alterarOrdemNaTransacao,
   avancarOrdem,
   encerrarOrdem,
 } from "./producao.service"
@@ -69,6 +73,50 @@ async function executar(
         )
       return parsed.data
     }
+    if (operacao === "abrir" || operacao === "alterar") {
+      const header = request.headers.get("Idempotency-Key")
+      const headers = { "Cache-Control": "no-store" }
+      const abrir = operacao === "abrir"
+      const input = abrir ? validar(abrirSchema) : validar(alterarSchema)
+      if (header === null)
+        return Response.json(
+          abrir
+            ? await abrirOrdem(ctx, validar(abrirSchema))
+            : await alterarOrdem(ctx, id, validar(alterarSchema)),
+          { status: abrir ? 201 : 200, headers },
+        )
+      const chave = chaveRecebimento.safeParse(header)
+      if (!chave.success)
+        throw new ProducaoError(400, "Idempotency-Key inválida.")
+      const resultado = await executarIdempotente(
+        ctx,
+        chave.data,
+        abrir ? "ABERTURA_ORDEM_PRODUCAO" : "EDICAO_ORDEM_PRODUCAO",
+        {
+          ...input,
+          id,
+          dataPrevisao: input.dataPrevisao?.toISOString() ?? input.dataPrevisao,
+        },
+        [["ORDENS_PRODUCAO", abrir ? "criar" : "editar"]],
+        async (tx) =>
+          JSON.parse(
+            JSON.stringify(
+              abrir
+                ? await abrirOrdemNaTransacao(tx, ctx, validar(abrirSchema))
+                : await alterarOrdemNaTransacao(
+                    tx,
+                    ctx,
+                    id,
+                    validar(alterarSchema),
+                  ),
+            ),
+          ),
+      )
+      return Response.json(resultado.dados, {
+        status: abrir && resultado.criado ? 201 : 200,
+        headers,
+      })
+    }
     const result =
       operacao === "consultar"
         ? await consultarOrdem(ctx, id)
@@ -79,21 +127,20 @@ async function executar(
               validar(etapaSchema).etapaId,
               operacao === "iniciarEtapa",
             )
-          : operacao === "abrir"
-            ? await abrirOrdem(ctx, validar(abrirSchema))
-            : operacao === "alterar"
-              ? await alterarOrdem(ctx, id, validar(alterarSchema))
-              : operacao === "avancar"
-                ? await avancarOrdem(ctx, id, validar(avancarSchema))
-                : await encerrarOrdem(ctx, id, validar(encerrarSchema))
+          : operacao === "avancar"
+            ? await avancarOrdem(ctx, id, validar(avancarSchema))
+            : await encerrarOrdem(ctx, id, validar(encerrarSchema))
     return Response.json(result, {
-      status: operacao === "abrir" ? 201 : 200,
+      status: 200,
       headers: { "Cache-Control": "no-store" },
     })
   } catch (error) {
     if (error instanceof HttpError)
       return Response.json(
-        { error: error.message },
+        {
+          error: error.message,
+          ...(error instanceof ConflitoTransitorio ? { code: error.code } : {}),
+        },
         { status: error.status, headers: { "Cache-Control": "no-store" } },
       )
     console.error("Falha na API de ordens de produção", error)

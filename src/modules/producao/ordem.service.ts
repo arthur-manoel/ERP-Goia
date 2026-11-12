@@ -44,6 +44,7 @@ import { validarFluxo } from "../fluxos/fluxos.service"
 import type {
   OrdemInput,
   OrdemFilters,
+  ResumoFilters,
   Pagination,
   ordemItemSchema,
   apontarSchema,
@@ -98,6 +99,18 @@ export async function findAll(
   company(ctx, filters.id_empresa)
   return pageResult(await repo.findAll(ctx, filters, pagination), pagination)
 }
+export async function listarResumo(
+  ctx: Contexto,
+  filters: ResumoFilters,
+  pagination: Pagination,
+) {
+  company(ctx, filters.id_empresa)
+  return pageResult(
+    await repo.listarResumo(ctx, filters, pagination),
+    pagination,
+  )
+}
+export const opcoesAbertura = repo.opcoesAbertura
 export function findById(ctx: Contexto, id: number) {
   return required(ctx, id)
 }

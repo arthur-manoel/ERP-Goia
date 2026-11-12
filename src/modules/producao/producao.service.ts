@@ -30,6 +30,8 @@ import {
   perdasIntegraisComprovadas,
   validarApontamentoLegado,
   validarQuantidadesLegadas,
+  validarDestinoProducao,
+  relationships,
 } from "./ordem.validation"
 
 const limite = new Prisma.Decimal("999999999999.999")
@@ -149,42 +151,80 @@ function validarPrevisao(
     )
 }
 export function abrirOrdem(ctx: Contexto, input: AbrirInput) {
-  return transacao(async (tx) => {
-    await fluxos.produto(tx, ctx, input.idProduto)
-    const fluxo = await fluxos.fluxoProduto(tx, ctx, input.idProduto)
-    validarFluxo(fluxo)
-    const ficha = await produtoComFicha(tx, ctx, input.idProduto)
-    const insumos = calcularInsumos(input.quantidade, ficha.ficha_tecnica_item)
-    const ordem = await tx.ordem_producao.create({
-      data: {
-        id_empresa: ctx.idEmpresa,
-        id_usuario: ctx.idUsuario,
-        numero: await proximoNumero(tx, ctx.idEmpresa),
-        status: "PLANEJADA",
-        quantidade_planejada: input.quantidade,
-        observacao: input.observacao,
-        data_previsao: input.dataPrevisao,
-        prioridade: input.prioridade,
-        ordem_producao_item: {
-          create: {
-            id_produto: input.idProduto,
-            quantidade: input.quantidade,
-            tamanho: input.tamanho,
-          },
+  return transacao((tx) => abrirOrdemNaTransacao(tx, ctx, input))
+}
+export async function abrirOrdemNaTransacao(
+  tx: Transaction,
+  ctx: Contexto,
+  input: AbrirInput,
+) {
+  if (input.idLocal)
+    await relationships(
+      ctx,
+      {
+        id_local_estoque: input.idLocal,
+        id_pedido_cliente: null,
+        id_setor: null,
+      },
+      tx,
+    )
+  await fluxos.produto(tx, ctx, input.idProduto)
+  const fluxo = await fluxos.fluxoProduto(tx, ctx, input.idProduto)
+  validarFluxo(fluxo)
+  const ficha = await produtoComFicha(tx, ctx, input.idProduto)
+  const insumos = calcularInsumos(input.quantidade, ficha.ficha_tecnica_item)
+  const variacao = input.idVariacao
+    ? await tx.produto_variacoes.findFirst({
+        where: {
+          id: input.idVariacao,
+          id_empresa: ctx.idEmpresa,
+          id_produto: input.idProduto,
+          status: "ATIVO",
         },
-        ordem_producao_fluxo_setor: {
-          create: fluxo.setores.map((setor, index) => ({
-            id_setor: setor.id,
-            ordem: index + 1,
-          })),
+        include: { tamanhos: true },
+      })
+    : null
+  if (input.idVariacao && !variacao)
+    throw new ProducaoError(
+      400,
+      "Variação inválida para este produto e empresa.",
+    )
+  const ordem = await tx.ordem_producao.create({
+    data: {
+      id_empresa: ctx.idEmpresa,
+      id_usuario: ctx.idUsuario,
+      id_local_estoque: input.idLocal,
+      numero: await proximoNumero(tx, ctx.idEmpresa),
+      status: "PLANEJADA",
+      quantidade_planejada: input.quantidade,
+      observacao: input.observacao,
+      data_previsao: input.dataPrevisao,
+      prioridade: input.prioridade,
+      ordem_producao_item: {
+        create: {
+          id_produto: input.idProduto,
+          quantidade: input.quantidade,
+          id_cor: variacao?.id_cor,
+          id_tamanho: variacao?.id_tamanho,
+          tamanho: variacao?.tamanhos
+            ? Array.from(variacao.tamanhos.nome).slice(0, 30).join("")
+            : input.tamanho,
         },
       },
-      include: { ordem_producao_item: true },
-    })
-    await fluxos.gravarSnapshot(tx, ordem.id, fluxo)
-    await gravarInsumos(tx, ordem.id, ordem.ordem_producao_item[0].id, insumos)
-    return finalizar(tx, ctx, ordem.id, null)
+      ordem_producao_fluxo_setor: {
+        create: fluxo.setores.map((setor, index) => ({
+          id_setor: setor.id,
+          ordem: index + 1,
+        })),
+      },
+    },
+    include: { ordem_producao_item: true },
   })
+  if (input.idLocal)
+    await validarDestinoProducao(tx, ctx, await buscarOrdem(tx, ctx, ordem.id))
+  await fluxos.gravarSnapshot(tx, ordem.id, fluxo)
+  await gravarInsumos(tx, ordem.id, ordem.ordem_producao_item[0].id, insumos)
+  return finalizar(tx, ctx, ordem.id, null)
 }
 function validarEstado(
   ordem: Ordem,
@@ -206,73 +246,79 @@ function validarEstado(
     )
 }
 export function alterarOrdem(ctx: Contexto, id: number, input: AlterarInput) {
-  return transacao(async (tx) => {
-    const ordem = await buscarOrdem(tx, ctx, id)
-    validarEstado(ordem, input.statusEsperado)
-    if (
-      input.idProduto !== undefined &&
-      ordem.ordem_producao_item.some(
-        (item) => item.id_produto !== input.idProduto,
-      ) &&
-      (await fluxos.snapshot(tx, id))
+  return transacao((tx) => alterarOrdemNaTransacao(tx, ctx, id, input))
+}
+export async function alterarOrdemNaTransacao(
+  tx: Transaction,
+  ctx: Contexto,
+  id: number,
+  input: AlterarInput,
+) {
+  const ordem = await buscarOrdem(tx, ctx, id)
+  validarEstado(ordem, input.statusEsperado)
+  if (
+    input.idProduto !== undefined &&
+    ordem.ordem_producao_item.some(
+      (item) => item.id_produto !== input.idProduto,
+    ) &&
+    (await fluxos.snapshot(tx, id))
+  )
+    throw new ProducaoError(
+      409,
+      "O produto de uma ordem com snapshot não pode ser substituído. Crie outra ordem.",
     )
-      throw new ProducaoError(
-        409,
-        "O produto de uma ordem com snapshot não pode ser substituído. Crie outra ordem.",
-      )
-    const alteraComposicao =
-      input.idProduto !== undefined ||
-      input.quantidade !== undefined ||
-      input.tamanho !== undefined
-    // Só PLANEJADA admite mudança estrutural ou recálculo, inclusive antes de EM_PRODUCAO.
-    if (
-      ordem.status !== "PLANEJADA" &&
-      (alteraComposicao || input.prioridade !== undefined)
+  const alteraComposicao =
+    input.idProduto !== undefined ||
+    input.quantidade !== undefined ||
+    input.tamanho !== undefined
+  // Só PLANEJADA admite mudança estrutural ou recálculo, inclusive antes de EM_PRODUCAO.
+  if (
+    ordem.status !== "PLANEJADA" &&
+    (alteraComposicao || input.prioridade !== undefined)
+  )
+    throw new ProducaoError(
+      409,
+      "Fora de PLANEJADA, somente observação e previsão podem ser alteradas.",
     )
-      throw new ProducaoError(
-        409,
-        "Fora de PLANEJADA, somente observação e previsão podem ser alteradas.",
-      )
-    validarPrevisao(input.dataPrevisao, ordem.data_inicio)
-    await atualizarEstado(tx, ctx, ordem, {
-      observacao: input.observacao,
-      data_previsao: input.dataPrevisao,
-      prioridade: input.prioridade,
-      quantidade_planejada: input.quantidade,
-    })
-    if (alteraComposicao) {
-      if (ordem.ordem_producao_item.length !== 1)
-        throw new ProducaoError(
-          409,
-          "A alteração de composição exige uma ordem com um único item.",
-        )
-      const item = ordem.ordem_producao_item[0]
-      const idProduto = input.idProduto ?? item.id_produto
-      const quantidade = input.quantidade ?? item.quantidade.toString()
-      // Observação/previsão não recalculam o planejamento existente.
-      if (input.idProduto !== undefined || input.quantidade !== undefined) {
-        const ficha = await produtoComFicha(tx, ctx, idProduto)
-        await gravarInsumos(
-          tx,
-          id,
-          item.id,
-          calcularInsumos(quantidade, ficha.ficha_tecnica_item),
-        )
-      }
-      await tx.ordem_producao_item.update({
-        where: { id: item.id },
-        data: {
-          id_produto: idProduto,
-          quantidade,
-          tamanho: input.tamanho,
-          ...(idProduto !== item.id_produto
-            ? { id_cor: null, id_tamanho: null }
-            : {}),
-        },
-      })
-    }
-    return finalizar(tx, ctx, id, ordem)
+  validarPrevisao(input.dataPrevisao, ordem.data_inicio)
+  await atualizarEstado(tx, ctx, ordem, {
+    observacao: input.observacao,
+    data_previsao: input.dataPrevisao,
+    prioridade: input.prioridade,
+    quantidade_planejada: input.quantidade,
   })
+  if (alteraComposicao) {
+    if (ordem.ordem_producao_item.length !== 1)
+      throw new ProducaoError(
+        409,
+        "A alteração de composição exige uma ordem com um único item.",
+      )
+    const item = ordem.ordem_producao_item[0]
+    const idProduto = input.idProduto ?? item.id_produto
+    const quantidade = input.quantidade ?? item.quantidade.toString()
+    // Observação/previsão não recalculam o planejamento existente.
+    if (input.idProduto !== undefined || input.quantidade !== undefined) {
+      const ficha = await produtoComFicha(tx, ctx, idProduto)
+      await gravarInsumos(
+        tx,
+        id,
+        item.id,
+        calcularInsumos(quantidade, ficha.ficha_tecnica_item),
+      )
+    }
+    await tx.ordem_producao_item.update({
+      where: { id: item.id },
+      data: {
+        id_produto: idProduto,
+        quantidade,
+        tamanho: input.tamanho,
+        ...(idProduto !== item.id_produto
+          ? { id_cor: null, id_tamanho: null }
+          : {}),
+      },
+    })
+  }
+  return finalizar(tx, ctx, id, ordem)
 }
 const transicoes: Partial<Record<Ordem["status"], Ordem["status"][]>> = {
   PLANEJADA: ["LIBERADA", "AGUARDANDO_MATERIAL"],

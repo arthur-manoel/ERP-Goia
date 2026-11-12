@@ -16,6 +16,8 @@ export type ItemContext = { params: Promise<{ id: string; itemId: string }> }
 export type StageContext = { params: Promise<{ id: string; etapaId: string }> }
 type Operation =
   | "list"
+  | "listResumo"
+  | "opcoesAbertura"
   | "get"
   | "create"
   | "update"
@@ -51,9 +53,9 @@ async function execute(
   try {
     const ctx = await autorizar(
       request,
-      ["list", "get", "items", "stages"].includes(operation)
+      ["list", "listResumo", "get", "items", "stages"].includes(operation)
         ? "ler"
-        : ["create", "addItem"].includes(operation)
+        : ["create", "addItem", "opcoesAbertura"].includes(operation)
           ? "criar"
           : ["cancel", "removeItem"].includes(operation)
             ? "excluir"
@@ -68,6 +70,20 @@ async function execute(
       )
     return respond(
       async () => {
+        if (operation === "listResumo") {
+          const { page, limit, ...filters } = validate(
+            schemas.listResumoSchema,
+            readQuery(request),
+          )
+          return service.listarResumo(ctx, filters, { page, limit })
+        }
+        if (operation === "opcoesAbertura") {
+          const { busca } = validate(
+            schemas.opcoesAberturaSchema,
+            readQuery(request),
+          )
+          return service.opcoesAbertura(ctx, busca)
+        }
         if (operation === "list") {
           const { page, limit, ...filters } = validate(
             schemas.listOrdemSchema,
@@ -159,6 +175,10 @@ async function execute(
   }
 }
 export const listHandler = (request: Request) => execute(request, "list")
+export const listarResumoHandler = (request: Request) =>
+  execute(request, "listResumo")
+export const opcoesAberturaHandler = (request: Request) =>
+  execute(request, "opcoesAbertura")
 export const createHandler = (request: Request) => execute(request, "create")
 export const getHandler = (request: Request, context: RouteContext) =>
   execute(request, "get", context)

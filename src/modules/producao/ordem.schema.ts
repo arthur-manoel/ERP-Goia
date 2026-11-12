@@ -116,7 +116,7 @@ export const ordemPaginationSchema = z
     (v) => (v.page - 1) * v.limit <= 2_147_483_647,
     "Paginação excede o limite.",
   )
-export const listOrdemSchema = z
+const listagemBase = z
   .object({
     ...pagination,
     id_empresa: ordemIdSchema.optional(),
@@ -147,29 +147,41 @@ export const listOrdemSchema = z
     ordem: z.enum(["asc", "desc"]).default("desc"),
   })
   .strict()
-  .superRefine((v, ctx) => {
-    if ((v.page - 1) * v.limit > 2_147_483_647)
+function validarIntervalos(
+  v: Omit<z.output<typeof listagemBase>, "status">,
+  ctx: z.RefinementCtx,
+) {
+  if ((v.page - 1) * v.limit > 2_147_483_647)
+    ctx.addIssue({
+      code: "custom",
+      message: "Paginação excede o limite.",
+      path: ["page"],
+    })
+  for (const field of [
+    "data_inicio",
+    "data_previsao",
+    "data_conclusao",
+  ] as const)
+    if (
+      v[`${field}_de`] &&
+      v[`${field}_ate`] &&
+      v[`${field}_de`]! > v[`${field}_ate`]!
+    )
       ctx.addIssue({
         code: "custom",
-        message: "Paginação excede o limite.",
-        path: ["page"],
+        message: "Período inválido.",
+        path: [`${field}_ate`],
       })
-    for (const field of [
-      "data_inicio",
-      "data_previsao",
-      "data_conclusao",
-    ] as const)
-      if (
-        v[`${field}_de`] &&
-        v[`${field}_ate`] &&
-        v[`${field}_de`]! > v[`${field}_ate`]!
-      )
-        ctx.addIssue({
-          code: "custom",
-          message: "Período inválido.",
-          path: [`${field}_ate`],
-        })
+}
+export const listOrdemSchema = listagemBase.superRefine(validarIntervalos)
+export const listResumoSchema = listagemBase
+  .extend({
+    status: ordemStatusSchema.or(z.literal("AGUARDANDO_MATERIAL")).optional(),
   })
+  .superRefine(validarIntervalos)
+export const opcoesAberturaSchema = z.strictObject({
+  busca: z.string().trim().max(100).default(""),
+})
 export const ordemItemSchema = z
   .object({
     id_produto: idSchema,
@@ -193,6 +205,10 @@ export const apontarSchema = z
 export type OrdemInput = z.output<typeof createOrdemSchema>
 export type OrdemFilters = Omit<
   z.output<typeof listOrdemSchema>,
+  "page" | "limit"
+>
+export type ResumoFilters = Omit<
+  z.output<typeof listResumoSchema>,
   "page" | "limit"
 >
 export type Pagination = z.output<typeof ordemPaginationSchema>
