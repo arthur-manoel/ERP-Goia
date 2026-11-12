@@ -30,6 +30,16 @@ VENDAS pode inativar quando tem `pode_excluir`; a operação não é exclusiva d
 | `GET /api/clientes/{id}` | 200, `{ cliente }` |
 | `DELETE /api/clientes/{id}` | 200, `{ cliente }` com `status: INATIVO` |
 | `GET /api/clientes/{id}/pedidos` | 200, `{ idCliente, pedidos, paginacao }` |
+| `GET /api/clientes/{id}/contatos` | 200, `{ contatos }` ativos do cliente |
+| `POST /api/clientes/{id}/contatos` | 201, contato criado |
+| `GET/PATCH/DELETE /api/clientes/{id}/contatos/{idContato}` | consultar, editar ou inativar contato |
+| `GET /api/clientes/{id}/enderecos` | 200, `{ enderecos }` ativos do cliente |
+| `POST /api/clientes/{id}/enderecos` | 201, endereço criado |
+| `GET/PATCH/DELETE /api/clientes/{id}/enderecos/{idEndereco}` | consultar, editar ou inativar endereço |
+
+As rotas de contatos e endereços usam a mesma autenticação, empresa ativa e permissões `CLIENTES` do cadastro. `DELETE` inativa o registro para preservar vínculos históricos. Ao definir `principal: true`, a transação remove essa indicação dos outros registros ativos do cliente. Os endereços aceitam finalidade `PRINCIPAL`, `ENTREGA`, `COBRANCA` ou `OUTRO`; CEP e UF são validados no servidor.
+
+`POST /api/pedidos` aceita `idEnderecoEntrega` opcional. O endereço deve estar ativo, pertencer ao cliente informado e à empresa autorizada, e ter finalidade `PRINCIPAL` ou `ENTREGA`. Sem seleção explícita, usa um endereço ativo principal/de entrega se houver. Os dados da entrega (destinatário, telefone e endereço) são copiados para o snapshot do pedido, mantendo o histórico mesmo após mudanças no cadastro.
 
 DELETE realiza inativação lógica, preservando cliente e vendas; repetir a chamada mantém o cliente inativo. PATCH com `status: ATIVO` reativa. Clientes inativos continuam consultáveis e seus documentos continuam reservados na empresa.
 

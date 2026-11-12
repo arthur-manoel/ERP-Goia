@@ -4,7 +4,11 @@ Back-end persistido em `pedido_cliente` e `pedido_cliente_item`, conforme a
 modelagem incorporada pela PR #69. Não é `pedido_compra`, nem um cadastro paralelo.
 O fluxo atual é pedido → venda → contas a receber. Este card implementa somente
 rascunhos e consultas; não cria venda, cobrança, reserva, movimentação ou produção.
-O front-end e seu adaptador temporário permanecem inalterados.
+O formulário `/vendas/pedidos` ainda usa o `ErpProvider` e seu adaptador em memória,
+separados desta API persistida. Por isso, o formulário atual não envia pedidos a
+este endpoint nem lê os endereços relacionais; o contrato da API já aceita a
+seleção de endereço descrita abaixo, mas a migração integral da tela de pedidos
+para este módulo ainda é necessária para habilitar a seleção no fluxo visual.
 
 O fechamento comercial posterior fica no módulo
 [`pedido-recebiveis`](../pedido-recebiveis/README.md): ele reutiliza este pedido,
