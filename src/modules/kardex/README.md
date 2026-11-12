@@ -16,7 +16,7 @@ Respostas usam `Cache-Control: private, no-store`.
 | `direcao`, `tipo` | `ENTRADA` ou `SAIDA` e tipo detalhado do enum de movimentação. Ambos devem ser compatíveis quando informados juntos. |
 | `idMovimentacao` | Localiza o lançamento associado ao movimento no período. |
 | `origemTipo`, `origemId` | Tipo persistido em maiúsculas, de até 50 caracteres. Para filtrar o ID informe também o tipo. |
-| `pagina`, `limite` | Começam em 1 e 25 por padrão. Limite máximo de 100 por página. Deslocamento máximo de 100.000 registros. |
+| `pagina`, `limite` | Começam em 1 e 25 por padrão. Página máxima 10.000, até 100 registros por página e deslocamento máximo de 100.000 registros. |
 
 Tipos atuais incluem `ENTRADA_NF`, `SAIDA_VENDA`, `ENTRADA_PRODUCAO`,
 `SAIDA_PRODUCAO`, `AJUSTE_ENTRADA`, `AJUSTE_SAIDA`,
@@ -29,6 +29,9 @@ página, contagem e resumo no mesmo snapshot. Escritas entre requisições
 podem deslocar resultados de páginas diferentes. Para atualizar a navegação,
 volte à primeira página com os mesmos filtros.
 [Leitura consistente no InnoDB](https://dev.mysql.com/doc/refman/8.4/en/innodb-consistent-read.html)
+
+Filtro, ordenação, resumo e data ISO usam o instante armazenado no
+`TIMESTAMP`, mesmo quando o fuso da sessão do banco difere de UTC.
 
 ## Resposta e consumo pela tela
 
@@ -78,6 +81,11 @@ Nomes, unidade, cor e tamanho vêm do cadastro atual. Local e setor nulos
 preservam a ausência do registro ou indicam referência fora do contexto.
 Se movimento, direção, quantidade, posição ou aritmética divergir, a linha
 marca `saldo.situacao: "DIVERGENTE"` e devolve `delta` e saldos nulos.
+`idMovimentacao`, `tipo` e `quantidade` são nulos se o movimento correspondente
+não puder ser associado com segurança. `produto` é nulo quando também não
+houver vínculo do cadastro na empresa. Cor e tamanho podem faltar na variação.
+`origem` é nula quando o tipo não foi gravado ou o movimento não foi associado.
+O ID de origem pode ser nulo, por exemplo em uma entrada manual.
 
 A tela pode abrir a própria linha ou localizar um movimento pelo seu ID.
 Use `origem.tipo` e `origem.id` juntos para encaminhar ao módulo responsável.

@@ -70,6 +70,9 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
     )
 
   try {
+    const [fusoBanco] = await prisma.$queryRaw`
+      SELECT @@session.time_zone AS sessao, @@system_time_zone AS sistema`
+    console.log("Fuso da sessão MariaDB", fusoBanco)
     const local = await posicao(empresa, "Local Kardex")
     const localOutro = await posicao(outra, "Outra empresa")
     const localAdicional = await posicao(empresa, "Segundo local")
@@ -93,6 +96,7 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
         assert.equal(vazio.resumo.motivo, "SEM_LANCAMENTOS")
         assert.equal(await snapshot(), antes)
         const data = new Date(dia(-2) + "T03:00:00Z")
+        const segundos = data.getTime() / 1000
         const mov = await prisma.movimentacao_estoque.create({
           data: {
             ...db,
@@ -101,7 +105,6 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
             quantidade: "2.300",
             origem_tipo: "COMPRA_RECEBIMENTO",
             origem_id: 72,
-            data_movimentacao: data,
           },
         })
         const k = await prisma.kardex.create({
@@ -112,9 +115,14 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
             quantidade: "2.300",
             saldo_anterior: "10.000",
             saldo_atual: "12.300",
-            data_movimentacao: data,
           },
         })
+        await prisma.$executeRaw`
+          UPDATE movimentacao_estoque SET data_movimentacao = FROM_UNIXTIME(${segundos})
+          WHERE id = ${mov.id} AND id_empresa = ${empresa}`
+        await prisma.$executeRaw`
+          UPDATE kardex SET data_movimentacao = FROM_UNIXTIME(${segundos})
+          WHERE id = ${k.id} AND id_empresa = ${empresa}`
         assert.equal((await ler({ ...filtro, ...janela })).resumo.saldos, null)
         await mover("saidas", { ...filtro, quantidade: "1.200" })
         const r = await ler({ ...filtro, ...janela })
@@ -157,6 +165,15 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
         assert.deepEqual(
           antesCompra.dados.map((linha) => linha.origem.tipo),
           ["SALDO_INICIAL"],
+        )
+        const diaCompra = await ler({
+          ...filtro,
+          dataInicio: dia(-2),
+          dataFim: dia(-2),
+        })
+        assert.deepEqual(
+          diaCompra.dados.map((linha) => linha.dataMovimentacao),
+          [data.toISOString()],
         )
         const semMovimento = await ler({
           ...filtro,
@@ -346,10 +363,24 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
         assert.equal(await snapshot(), antes)
         assert.deepEqual((await ler({ idMovimentacao: orfao.id })).dados, [])
         await prisma.movimentacao_estoque.delete({ where: { id: orfao.id } })
+        const { id_tipo_produto } = await prisma.produtos.findUniqueOrThrow({
+          where: { id: idProduto },
+        })
+        const produtoExclusivo = await prisma.produtos.create({
+          data: {
+            id_tipo_produto,
+            nome: "Produto exclusivo da outra empresa",
+            codigo: `KARDEX-EXCLUSIVO-${outra}`,
+          },
+        })
+        a.produtos.push(produtoExclusivo.id)
+        await prisma.produto_empresa.create({
+          data: { id_empresa: outra, id_produto: produtoExclusivo.id },
+        })
         const movimentoOutraEmpresa = await prisma.movimentacao_estoque.create({
           data: {
             id_empresa: outra,
-            id_produto: idProduto,
+            id_produto: produtoExclusivo.id,
             id_local_estoque: localOutro.idLocalEstoque,
             id_setor: localOutro.idSetor,
             id_usuario: usuarios[5],
@@ -362,6 +393,7 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
         const inconsistente = await prisma.kardex.create({
           data: {
             ...db,
+            id_produto: produtoExclusivo.id,
             id_movimentacao: movimentoOutraEmpresa.id,
             tipo_movimentacao: "ENTRADA",
             quantidade: "1",
@@ -369,13 +401,19 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
             saldo_atual: "11.900",
           },
         })
-        const protegido = (await ler(filtro)).dados.find(
-          (linha) => linha.id === inconsistente.id,
-        )
+        const protegido = (
+          await ler({ idLocalEstoque: local.idLocalEstoque })
+        ).dados.find((linha) => linha.id === inconsistente.id)
         assert.equal(protegido.saldo.situacao, "DIVERGENTE")
         assert.equal(protegido.idMovimentacao, null)
         assert.equal(protegido.origem, null)
         assert.equal(protegido.observacao, null)
+        assert.equal(protegido.produto, null)
+        assert.equal(protegido.quantidade, null)
+        assert.equal(
+          (await listar({ idProduto: produtoExclusivo.id })).status,
+          404,
+        )
         assert.deepEqual(
           (await ler({ idMovimentacao: movimentoOutraEmpresa.id })).dados,
           [],

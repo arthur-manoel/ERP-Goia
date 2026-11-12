@@ -13,10 +13,10 @@ type Direcao = "ENTRADA" | "SAIDA"
 type Linha = {
   id: number
   idMovimentacao: number | null
-  data: Date
-  idProduto: number
-  produto: string
-  unidade: string
+  instante: number | bigint
+  idProduto: number | null
+  produto: string | null
+  unidade: string | null
   idLocal: number | null
   nomeLocal: string | null
   idSetor: number | null
@@ -52,8 +52,12 @@ const vinculosLivro = Prisma.sql`
   LEFT JOIN locais_estoque l ON l.id = k.id_local_estoque AND l.id_empresa = k.id_empresa
   LEFT JOIN setores s ON s.id = k.id_setor AND s.id_empresa = k.id_empresa`
 const livro = Prisma.sql`FROM kardex k ${vinculosLivro}`
+// O driver interpreta valores de TIMESTAMP no fuso da sessão como UTC.
+// Trabalhar com segundos Unix mantém filtro, ordem e resposta no instante real.
+const instante = Prisma.sql`UNIX_TIMESTAMP(k.data_movimentacao)`
+const segundos = (data: Date) => data.getTime() / 1000
 const lancamentoValido = Prisma.sql`
-  m.id IS NOT NULL AND (k.id_local_estoque IS NULL OR l.id IS NOT NULL)
+  ${instante} > 0 AND m.id IS NOT NULL AND (k.id_local_estoque IS NULL OR l.id IS NOT NULL)
   AND (k.id_setor IS NULL OR s.id IS NOT NULL)
   AND k.quantidade > 0 AND m.quantidade = k.quantidade
   AND k.saldo_anterior >= 0 AND k.saldo_atual >= 0
@@ -89,14 +93,13 @@ async function validarReferencias(tx: Tx, idEmpresa: number, f: Consulta) {
         })
       : true,
   ])
-  if (
-    !produto &&
-    !(await tx.kardex.findFirst({
-      where: { id_empresa: idEmpresa, id_produto: f.idProduto },
-      select: { id: true },
-    }))
-  )
-    throw new NotFoundError("Produto não encontrado na empresa.")
+  if (!produto) {
+    const historico = await tx.$queryRaw<{ id: number }[]>`
+      SELECT k.id FROM kardex k JOIN movimentacao_estoque m ON ${vinculoMovimento}
+      WHERE k.id_empresa = ${idEmpresa} AND k.id_produto = ${f.idProduto} LIMIT 1`
+    if (!historico.length)
+      throw new NotFoundError("Produto não encontrado na empresa.")
+  }
   if (!local || !setor || !variacao)
     throw new NotFoundError("Referência de estoque não encontrada na empresa.")
   if (variacao !== true && f.idProduto && variacao.id_produto !== f.idProduto)
@@ -106,7 +109,7 @@ async function validarReferencias(tx: Tx, idEmpresa: number, f: Consulta) {
 function filtrosSql(idEmpresa: number, f: Consulta) {
   const filtros = [
     Prisma.sql`k.id_empresa = ${idEmpresa}`,
-    Prisma.sql`k.data_movimentacao >= ${f.inicio} AND k.data_movimentacao < ${f.fim}`,
+    Prisma.sql`${instante} >= ${segundos(f.inicio)} AND ${instante} < ${segundos(f.fim)}`,
   ]
   if (f.idProduto) filtros.push(Prisma.sql`k.id_produto = ${f.idProduto}`)
   if (f.idLocalEstoque)
@@ -124,13 +127,15 @@ function filtrosSql(idEmpresa: number, f: Consulta) {
 export function consultaPagina(idEmpresa: number, f: Consulta) {
   return Prisma.sql`
     WITH pagina AS (
-      SELECT k.id ${livro}
+      SELECT k.id, ${instante} AS instante ${livro}
       ${filtrosSql(idEmpresa, f)}
-      ORDER BY k.data_movimentacao DESC, k.id DESC
+      ORDER BY instante DESC, k.id DESC
       LIMIT ${f.limite} OFFSET ${(f.pagina - 1) * f.limite}
     )
-    SELECT k.id, m.id AS idMovimentacao, k.data_movimentacao AS data,
-      k.id_produto AS idProduto, p.nome AS produto, p.unidade,
+    SELECT k.id, m.id AS idMovimentacao, pagina.instante,
+      CASE WHEN m.id IS NOT NULL OR pe.id IS NOT NULL THEN p.id END AS idProduto,
+      CASE WHEN m.id IS NOT NULL OR pe.id IS NOT NULL THEN p.nome END AS produto,
+      CASE WHEN m.id IS NOT NULL OR pe.id IS NOT NULL THEN p.unidade END AS unidade,
       l.id AS idLocal, l.nome AS nomeLocal, s.id AS idSetor, s.nome AS nomeSetor,
       v.id AS idVariacao, c.nome AS cor, t.nome AS tamanho,
       k.tipo_movimentacao AS direcao, m.tipo, k.quantidade,
@@ -144,6 +149,7 @@ export function consultaPagina(idEmpresa: number, f: Consulta) {
     JOIN kardex k ON k.id = pagina.id
     ${vinculosLivro}
     JOIN produtos p ON p.id = k.id_produto
+    LEFT JOIN produto_empresa pe ON pe.id_empresa = k.id_empresa AND pe.id_produto = k.id_produto
     LEFT JOIN produto_variacoes v
       ON v.id = m.id_variacao AND v.id_empresa = m.id_empresa AND v.id_produto = m.id_produto
     LEFT JOIN cores c ON c.id = v.id_cor AND (c.id_empresa IS NULL OR c.id_empresa = m.id_empresa)
@@ -166,7 +172,7 @@ export function consultaPagina(idEmpresa: number, f: Consulta) {
     LEFT JOIN pedido_devolucao_recebimento r
       ON r.id = COALESCE(de.id_recebimento, ds.id_recebimento) AND r.id_empresa = m.id_empresa
     LEFT JOIN pedido_devolucao_linha linha ON linha.id = r.id_linha AND linha.id_empresa = r.id_empresa
-    ORDER BY k.data_movimentacao DESC, k.id DESC`
+    ORDER BY pagina.instante DESC, k.id DESC`
 }
 
 function apresentar(l: Linha) {
@@ -174,8 +180,11 @@ function apresentar(l: Linha) {
   return {
     id: l.id,
     idMovimentacao: l.idMovimentacao,
-    dataMovimentacao: l.data.toISOString(),
-    produto: { id: l.idProduto, nome: l.produto, unidade: l.unidade },
+    dataMovimentacao: new Date(Number(l.instante) * 1000).toISOString(),
+    produto:
+      l.idProduto === null
+        ? null
+        : { id: l.idProduto, nome: l.produto, unidade: l.unidade },
     localEstoque:
       l.idLocal === null ? null : { id: l.idLocal, nome: l.nomeLocal },
     setor: l.idSetor === null ? null : { id: l.idSetor, nome: l.nomeSetor },
@@ -185,7 +194,7 @@ function apresentar(l: Linha) {
         : { id: l.idVariacao, cor: l.cor, tamanho: l.tamanho },
     direcao: l.direcao,
     tipo: l.tipo,
-    quantidade: l.quantidade.toFixed(3),
+    quantidade: l.idMovimentacao === null ? null : l.quantidade.toFixed(3),
     delta: valido
       ? (l.direcao === "SAIDA" ? l.quantidade.negated() : l.quantidade).toFixed(
           3,
@@ -217,18 +226,20 @@ type Prova = {
 }
 
 export function consultaProva(idEmpresa: number, f: Consulta, idSetor: number) {
+  const inicio = segundos(f.inicio)
+  const fim = segundos(f.fim)
   return Prisma.sql`
     WITH cadeia AS (
-      SELECT k.data_movimentacao AS data, k.tipo_movimentacao AS direcao,
+      SELECT ${instante} AS data, k.tipo_movimentacao AS direcao,
         k.quantidade, k.saldo_anterior, k.saldo_atual,
         LAG(k.saldo_atual) OVER cronologia AS saldo_previo,
-        LAG(k.data_movimentacao) OVER cronologia AS data_previa,
-        LEAD(k.data_movimentacao) OVER cronologia AS proxima_data,
+        LAG(${instante}) OVER cronologia AS data_previa,
+        LEAD(${instante}) OVER cronologia AS proxima_data,
         CASE WHEN ${lancamentoValido} AND s.id = ${idSetor} THEN 1 ELSE 0 END AS valido
       ${livro}
       WHERE k.id_empresa = ${idEmpresa} AND k.id_produto = ${f.idProduto}
         AND k.id_local_estoque = ${f.idLocalEstoque}
-      WINDOW cronologia AS (ORDER BY k.data_movimentacao, k.id)
+      WINDOW cronologia AS (ORDER BY ${instante}, k.id)
     )
     SELECT COUNT(*) AS registros,
       SUM(CASE WHEN valido = 0 OR saldo_anterior <> COALESCE(saldo_previo, 0) THEN 1 ELSE 0 END) AS divergencias,
@@ -241,15 +252,15 @@ export function consultaProva(idEmpresa: number, f: Consulta, idSetor: number) {
         SELECT 1 FROM kardex k WHERE k.id_empresa = ${idEmpresa}
           AND k.id_produto = ${f.idProduto} AND k.id_local_estoque IS NULL
       ) AS semVinculo,
-      MAX(CASE WHEN data >= ${f.inicio} AND data < ${f.fim}
-        AND (data_previa IS NULL OR data_previa < ${f.inicio})
+      MAX(CASE WHEN data >= ${inicio} AND data < ${fim}
+        AND (data_previa IS NULL OR data_previa < ${inicio})
         THEN saldo_anterior END) AS aberturaNoPeriodo,
-      MAX(CASE WHEN data < ${f.fim} AND (proxima_data IS NULL OR proxima_data >= ${f.fim})
+      MAX(CASE WHEN data < ${fim} AND (proxima_data IS NULL OR proxima_data >= ${fim})
         THEN saldo_atual END) AS fechamento,
       MAX(CASE WHEN proxima_data IS NULL THEN saldo_atual END) AS finalLivro,
-      COALESCE(SUM(CASE WHEN direcao = 'ENTRADA' AND data >= ${f.inicio} AND data < ${f.fim}
+      COALESCE(SUM(CASE WHEN direcao = 'ENTRADA' AND data >= ${inicio} AND data < ${fim}
         THEN quantidade ELSE 0 END), 0) AS entradas,
-      COALESCE(SUM(CASE WHEN direcao = 'SAIDA' AND data >= ${f.inicio} AND data < ${f.fim}
+      COALESCE(SUM(CASE WHEN direcao = 'SAIDA' AND data >= ${inicio} AND data < ${fim}
         THEN quantidade ELSE 0 END), 0) AS saidas
     FROM cadeia`
 }
