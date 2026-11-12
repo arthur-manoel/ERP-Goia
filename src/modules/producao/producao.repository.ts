@@ -90,13 +90,11 @@ export async function atualizarEstado(
     throw new ProducaoError(409, "A ordem foi alterada por outra operação.")
 }
 export async function proximoNumero(tx: Transaction, idEmpresa: number) {
+  const where = {
+    id_empresa_entidade: { id_empresa: idEmpresa, entidade: "ordem_producao" },
+  }
   const sequence = await tx.sequencias_automaticas.upsert({
-    where: {
-      id_empresa_entidade: {
-        id_empresa: idEmpresa,
-        entidade: "ordem_producao",
-      },
-    },
+    where,
     create: {
       id_empresa: idEmpresa,
       entidade: "ordem_producao",
@@ -121,11 +119,11 @@ export async function proximoNumero(tx: Transaction, idEmpresa: number) {
     FROM ordem_producao
     WHERE id_empresa = ${idEmpresa} AND numero REGEXP '^[1-9][0-9]{0,17}$'
   `
-  const maior = row.maior === null ? 0n : BigInt(row.maior)
-  numero = (maior > numero ? maior : numero) + 1n
+  const maior = row.maior === null ? BigInt(0) : BigInt(row.maior)
+  numero = (maior > numero ? maior : numero) + BigInt(1)
   while (await ocupado(numero)) numero++
   await tx.sequencias_automaticas.update({
-    where: { id: sequence.id },
+    where,
     data: { ultimo_numero: numero },
   })
   return numero.toString()
