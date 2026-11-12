@@ -1,4 +1,1 @@
-export {
-  listarHandler as GET,
-  criarHandler as POST,
-} from "@/modules/usuarios/router"
+export { criarHandler as POST } from "@/modules/usuarios/router"
