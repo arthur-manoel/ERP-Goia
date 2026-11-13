@@ -11,10 +11,8 @@ export async function GET(request: Request) {
     const ctx = await autorizarRecebimento(request, false)
     if (ctx instanceof Response) {
       // Mantém o envelope de erro usado pelas APIs financeiras.
-      throw new HttpError(
-        ctx.status,
-        ctx.status === 401 ? "Não autenticado." : "Acesso negado.",
-      )
+      const { error } = (await ctx.json()) as { error: string }
+      throw new HttpError(ctx.status, error)
     }
     enforceRateLimit(
       request,

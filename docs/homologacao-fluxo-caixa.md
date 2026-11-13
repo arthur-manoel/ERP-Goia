@@ -79,3 +79,22 @@ ambiente local isolado; não é um teste nos dados privados de produção.
 A projeção continua usando as pendências atuais, conforme a regra mostrada na
 tela, sem reconstruir a carteira histórica. A nova execução não substitui as
 1.727 verificações unitárias que também passaram na revisão do mesmo commit.
+
+## Revisão adicional de 13/11/2026
+
+Foi reproduzida e corrigida uma mensagem enganosa no endpoint: uma falha interna
+na validação da sessão mantinha HTTP 500, mas retornava "Acesso negado". Agora o
+endpoint preserva a mensagem segura da autenticação, sem expor o erro interno.
+Um teste de regressão cobre esse cenário.
+
+As consultas de títulos, pagamentos, créditos e movimentos passaram a selecionar
+somente os campos usados no relatório. Uma nova base MySQL isolada confirmou os
+mesmos saldos atual e futuro, empresa vazia e bloqueio de empresa sem vínculo.
+Também foi simulada nessa base a ausência de `contas_pagar.id_plano_pagamento`:
+o relatório continuou funcionando, sem depender desse campo auxiliar de compras.
+Isso não dispensa as migrations de compras para o restante do aplicativo.
+A base e a credencial temporárias foram removidas após a conferência.
+
+A suíte completa passou com 1.728 testes em 90 arquivos; os 27 testes específicos
+do fluxo de caixa e sua formatação também passaram. Tipos, lint, formatação e
+build com Webpack foram aprovados.

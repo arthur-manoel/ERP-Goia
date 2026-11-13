@@ -66,11 +66,21 @@ export async function consultarFluxoCaixa(
               situacao: { notIn: ["PAGO", "CANCELADO"] },
               data_vencimento: { lte: new Date(`${limiteTitulos}T00:00:00Z`) },
             },
-            include: {
+            select: {
+              valor_final: true,
+              data_vencimento: true,
               pagamentos_receber: {
                 where: { ...empresa, status: "CONFIRMADO" },
+                select: { valor: true },
               },
-              pedido_credito_receber: { where: empresa },
+              pedido_credito_receber: {
+                where: empresa,
+                select: {
+                  valor: true,
+                  saldo_anulado: true,
+                  valor_restituir: true,
+                },
+              },
             },
           }),
           tx.contas_pagar.findMany({
@@ -79,8 +89,13 @@ export async function consultarFluxoCaixa(
               situacao: { notIn: ["PAGO", "CANCELADO"] },
               data_vencimento: { lte: new Date(`${limiteTitulos}T00:00:00Z`) },
             },
-            include: {
-              pagamentos_pagar: { where: { ...empresa, status: "CONFIRMADO" } },
+            select: {
+              valor_final: true,
+              data_vencimento: true,
+              pagamentos_pagar: {
+                where: { ...empresa, status: "CONFIRMADO" },
+                select: { valor: true },
+              },
             },
           }),
           tx.movimentacoes_financeiras.count({ where: periodo }),
@@ -89,6 +104,13 @@ export async function consultarFluxoCaixa(
       const pagina = Math.min(p.pagina, Math.max(1, totalPaginas))
       const movimentos = await tx.movimentacoes_financeiras.findMany({
         where: periodo,
+        select: {
+          id: true,
+          descricao: true,
+          tipo: true,
+          data_movimentacao: true,
+          valor: true,
+        },
         orderBy: [{ data_movimentacao: "desc" }, { id: "desc" }],
         skip: (pagina - 1) * 25,
         take: 25,

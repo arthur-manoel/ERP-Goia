@@ -1,4 +1,5 @@
-import { beforeEach, expect, it } from "vitest"
+import { beforeEach, expect, it, vi } from "vitest"
+import * as jwt from "@/lib/jwt"
 import { Prisma } from "@/generated/prisma/client"
 import { consultarFluxoCaixa } from "@/modules/fluxo-caixa/service"
 import { GET } from "@/app/api/financeiro/fluxo-caixa/route"
@@ -121,9 +122,17 @@ it("escopa consultas, inclui o último dia e exclui pagamentos cancelados e tít
         situacao: { notIn: ["PAGO", "CANCELADO"] },
         data_vencimento: { lte: new Date("2026-11-30") },
       },
-      include: {
-        pagamentos_receber: { where: { id_empresa: 10, status: "CONFIRMADO" } },
-        pedido_credito_receber: { where: { id_empresa: 10 } },
+      select: {
+        valor_final: true,
+        data_vencimento: true,
+        pagamentos_receber: {
+          where: { id_empresa: 10, status: "CONFIRMADO" },
+          select: { valor: true },
+        },
+        pedido_credito_receber: {
+          where: { id_empresa: 10 },
+          select: { valor: true, saldo_anulado: true, valor_restituir: true },
+        },
       },
     }),
   )
@@ -133,8 +142,13 @@ it("escopa consultas, inclui o último dia e exclui pagamentos cancelados e tít
         id_empresa: 10,
         situacao: { notIn: ["PAGO", "CANCELADO"] },
       }),
-      include: {
-        pagamentos_pagar: { where: { id_empresa: 10, status: "CONFIRMADO" } },
+      select: {
+        valor_final: true,
+        data_vencimento: true,
+        pagamentos_pagar: {
+          where: { id_empresa: 10, status: "CONFIRMADO" },
+          select: { valor: true },
+        },
       },
     }),
   )
@@ -290,4 +304,18 @@ it("API entrega envelope sem cache e rejeita filtros repetidos", async () => {
       )
     ).status,
   ).toBe(400)
+})
+
+it("preserva a mensagem de falha interna da sessão sem confundir com falta de permissão", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {})
+  vi.spyOn(jwt, "verifyAccessToken").mockRejectedValueOnce(
+    new Error("Falha interna confidencial"),
+  )
+  const resposta = await GET(req())
+  expect(resposta.status).toBe(500)
+  expect(await resposta.json()).toEqual({
+    success: false,
+    error: "Não foi possível validar a sessão.",
+  })
+  expect(db.contas_receber.findMany).not.toHaveBeenCalled()
 })

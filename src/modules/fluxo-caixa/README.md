@@ -47,6 +47,8 @@ Parâmetros desconhecidos e repetidos são rejeitados. A paginação não altera
 Dinheiro é calculado com Prisma.Decimal e serializado como string com duas casas.
 A exibição também preserva os centavos sem converter o total para Number.
 Consultas compartilham uma transação REPEATABLE READ, sem escrita e sem migration.
+Títulos, pagamentos, créditos e movimentos selecionam somente os campos necessários
+ao relatório; dados auxiliares de compras e informações de auditoria não são carregados.
 
 Envelope: `{ success: true, data: { entradas, saidas, saldoPeriodo,
 saldoDisponivel, aReceber, aPagar, saldoProjetado, atrasados: { quantidade,
