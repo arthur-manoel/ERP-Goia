@@ -11,8 +11,13 @@ import {
 import { periodoSchema, type FluxoCaixaDados } from "./schema"
 
 const zero = () => new Prisma.Decimal(0)
-const soma = (valores: Prisma.Decimal[]) =>
-  valores.reduce((s, v) => s.plus(v), zero())
+const soma = (valores: Prisma.Decimal[]) => {
+  if (valores.some((v) => !v.isFinite() || v.lte(0)))
+    throw new ConflictError(
+      "Há pagamento confirmado com valor inválido. Regularize o histórico financeiro.",
+    )
+  return valores.reduce((s, v) => s.plus(v), zero())
+}
 // Datas civis da operação no Brasil; limites exclusivos evitam perder milissegundos.
 const inicio = (dia: string) => new Date(`${dia}T00:00:00-03:00`)
 const seguinte = (dia: string) => new Date(inicio(dia).getTime() + 86_400_000)
@@ -36,62 +41,58 @@ export async function consultarFluxoCaixa(
         data_movimentacao: { gte: inicio(p.de), lt: seguinte(p.ate) },
       }
       const limiteTitulos = p.ate > hoje ? p.ate : hoje
-      const [
-        bancos,
-        acumulado,
-        entradas,
-        saidas,
-        receber,
-        pagar,
-        movimentos,
-        quantidade,
-      ] = await Promise.all([
-        tx.contas_bancarias.aggregate({
-          where: empresa,
-          _sum: { saldo_inicial: true },
-        }),
-        tx.movimentacoes_financeiras.groupBy({
-          by: ["tipo"],
-          where: { ...empresa, data_movimentacao: { lt: seguinte(p.ate) } },
-          _sum: { valor: true },
-        }),
-        tx.movimentacoes_financeiras.aggregate({
-          where: { ...periodo, tipo: "ENTRADA" },
-          _sum: { valor: true },
-        }),
-        tx.movimentacoes_financeiras.aggregate({
-          where: { ...periodo, tipo: "SAIDA" },
-          _sum: { valor: true },
-        }),
-        tx.contas_receber.findMany({
-          where: {
-            ...empresa,
-            situacao: { notIn: ["PAGO", "CANCELADO"] },
-            data_vencimento: { lte: new Date(`${limiteTitulos}T00:00:00Z`) },
-          },
-          include: {
-            pagamentos_receber: { where: { ...empresa, status: "CONFIRMADO" } },
-            pedido_credito_receber: { where: empresa },
-          },
-        }),
-        tx.contas_pagar.findMany({
-          where: {
-            ...empresa,
-            situacao: { notIn: ["PAGO", "CANCELADO"] },
-            data_vencimento: { lte: new Date(`${limiteTitulos}T00:00:00Z`) },
-          },
-          include: {
-            pagamentos_pagar: { where: { ...empresa, status: "CONFIRMADO" } },
-          },
-        }),
-        tx.movimentacoes_financeiras.findMany({
-          where: periodo,
-          orderBy: [{ data_movimentacao: "desc" }, { id: "desc" }],
-          skip: (p.pagina - 1) * 25,
-          take: 25,
-        }),
-        tx.movimentacoes_financeiras.count({ where: periodo }),
-      ])
+      const [bancos, acumulado, entradas, saidas, receber, pagar, quantidade] =
+        await Promise.all([
+          tx.contas_bancarias.aggregate({
+            where: { ...empresa, data_cadastro: { lt: seguinte(p.ate) } },
+            _sum: { saldo_inicial: true },
+          }),
+          tx.movimentacoes_financeiras.groupBy({
+            by: ["tipo"],
+            where: { ...empresa, data_movimentacao: { lt: seguinte(p.ate) } },
+            _sum: { valor: true },
+          }),
+          tx.movimentacoes_financeiras.aggregate({
+            where: { ...periodo, tipo: "ENTRADA" },
+            _sum: { valor: true },
+          }),
+          tx.movimentacoes_financeiras.aggregate({
+            where: { ...periodo, tipo: "SAIDA" },
+            _sum: { valor: true },
+          }),
+          tx.contas_receber.findMany({
+            where: {
+              ...empresa,
+              situacao: { notIn: ["PAGO", "CANCELADO"] },
+              data_vencimento: { lte: new Date(`${limiteTitulos}T00:00:00Z`) },
+            },
+            include: {
+              pagamentos_receber: {
+                where: { ...empresa, status: "CONFIRMADO" },
+              },
+              pedido_credito_receber: { where: empresa },
+            },
+          }),
+          tx.contas_pagar.findMany({
+            where: {
+              ...empresa,
+              situacao: { notIn: ["PAGO", "CANCELADO"] },
+              data_vencimento: { lte: new Date(`${limiteTitulos}T00:00:00Z`) },
+            },
+            include: {
+              pagamentos_pagar: { where: { ...empresa, status: "CONFIRMADO" } },
+            },
+          }),
+          tx.movimentacoes_financeiras.count({ where: periodo }),
+        ])
+      const totalPaginas = Math.ceil(quantidade / 25)
+      const pagina = Math.min(p.pagina, Math.max(1, totalPaginas))
+      const movimentos = await tx.movimentacoes_financeiras.findMany({
+        where: periodo,
+        orderBy: [{ data_movimentacao: "desc" }, { id: "desc" }],
+        skip: (pagina - 1) * 25,
+        take: 25,
+      })
       let aReceber = zero(),
         aPagar = zero(),
         vencidoReceber = zero(),
@@ -163,8 +164,8 @@ export async function consultarFluxoCaixa(
           data: r.data_movimentacao.toISOString(),
           valor: r.valor.toFixed(2),
         })),
-        pagina: p.pagina,
-        totalPaginas: Math.ceil(quantidade / 25),
+        pagina,
+        totalPaginas,
       }
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },

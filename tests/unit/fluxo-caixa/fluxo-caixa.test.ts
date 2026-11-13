@@ -150,7 +150,10 @@ it("escopa consultas, inclui o último dia e exclui pagamentos cancelados e tít
     }),
   )
   expect(db.contas_bancarias.aggregate).toHaveBeenCalledWith({
-    where: { id_empresa: 10 },
+    where: {
+      id_empresa: 10,
+      data_cadastro: { lt: new Date("2026-12-01T03:00:00Z") },
+    },
     _sum: { saldo_inicial: true },
   })
 })
@@ -164,6 +167,58 @@ it("paginação não limita os totais financeiros", async () => {
   expect(db.movimentacoes_financeiras.findMany).toHaveBeenCalledWith(
     expect.objectContaining({ skip: 25, take: 25 }),
   )
+})
+
+it("retorna a última página existente quando o número solicitado ficou fora da lista", async () => {
+  db.movimentacoes_financeiras.count.mockResolvedValue(26)
+  const resultado = await consultar({ ...periodo, pagina: 3 })
+  expect(resultado).toMatchObject({ pagina: 2, totalPaginas: 2 })
+  expect(db.movimentacoes_financeiras.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({ skip: 25 }),
+  )
+})
+
+it("normaliza para a primeira página quando não há movimentos", async () => {
+  expect(await consultar({ ...periodo, pagina: 99 })).toMatchObject({
+    pagina: 1,
+    totalPaginas: 0,
+  })
+})
+
+it.each(["receber", "pagar"])(
+  "rejeita pagamento negativo confirmado em conta a %s",
+  async (tipo) => {
+    const titulo = {
+      valor_final: d(100),
+      data_vencimento: new Date("2026-11-01"),
+      pedido_credito_receber: [],
+      pagamentos_receber: [{ valor: d(40) }, { valor: d(-10) }],
+      pagamentos_pagar: [{ valor: d(40) }, { valor: d(-10) }],
+    }
+    if (tipo === "receber")
+      db.contas_receber.findMany.mockResolvedValue([titulo])
+    else db.contas_pagar.findMany.mockResolvedValue([titulo])
+    await expect(consultar()).rejects.toThrow("pagamento")
+  },
+)
+
+it("exclui da posição bancária os saldos de contas cadastradas após a data final", async () => {
+  const contas = [
+    { data: new Date("2026-10-01T12:00:00Z"), saldo: d(100) },
+    { data: new Date("2026-12-01T02:59:59Z"), saldo: d(50) },
+    { data: new Date("2026-12-01T03:00:00Z"), saldo: d(900) },
+  ]
+  db.contas_bancarias.aggregate.mockImplementation(async ({ where }) => ({
+    _sum: {
+      saldo_inicial: contas
+        .filter((c) => !where.data_cadastro || c.data < where.data_cadastro.lt)
+        .reduce((s, c) => s.plus(c.saldo), d(0)),
+    },
+  }))
+  expect(await consultar()).toMatchObject({
+    saldoDisponivel: "150.00",
+    saldoProjetado: "150.00",
+  })
 })
 
 it("rejeita histórico com pagamento maior que o título", async () => {

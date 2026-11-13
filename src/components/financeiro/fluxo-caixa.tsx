@@ -5,6 +5,7 @@ import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
 import { hoje } from "@/features/erp/datas"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import type { FluxoCaixaDados } from "@/modules/fluxo-caixa/schema"
+import { formatarValorCaixa as brl } from "@/modules/fluxo-caixa/formatacao"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,8 +20,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-const brl = (valor: string) =>
-  Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
 const dataBrasil = (valor: string) =>
   new Date(valor).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
 
@@ -233,18 +232,18 @@ function FluxoEmpresa() {
               <div className="mt-4 flex items-center justify-end gap-3">
                 <Button
                   variant="outline"
-                  disabled={pagina <= 1}
-                  onClick={() => setPagina((p) => p - 1)}
+                  disabled={dados.pagina <= 1}
+                  onClick={() => setPagina(dados.pagina - 1)}
                 >
                   Anterior
                 </Button>
                 <span>
-                  Página {pagina} de {Math.max(1, dados.totalPaginas)}
+                  Página {dados.pagina} de {Math.max(1, dados.totalPaginas)}
                 </span>
                 <Button
                   variant="outline"
-                  disabled={pagina >= dados.totalPaginas}
-                  onClick={() => setPagina((p) => p + 1)}
+                  disabled={dados.pagina >= dados.totalPaginas}
+                  onClick={() => setPagina(dados.pagina + 1)}
                 >
                   Próxima
                 </Button>

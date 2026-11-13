@@ -17,14 +17,15 @@ usuário/minuto, no processo; respostas e erros têm `Cache-Control: no-store`.
   Pagamentos e títulos não são somados novamente aos movimentos realizados.
 - Saldo do período: entradas menos saídas.
 - Saldo bancário até a data final: saldos iniciais de todas as contas da empresa,
-  inclusive inativas, mais entradas e menos saídas acumuladas até essa data.
+  cadastradas até a data final, inclusive inativas, mais entradas e menos saídas
+  acumuladas até essa data.
   Inativar uma conta não elimina seu histórico do relatório.
 - Pendências: títulos não pagos/não cancelados, pelo vencimento até a data final.
   Abatem pagamentos CONFIRMADO. Recebíveis também abatem créditos de cancelamento
   pela mesma regra de cobrança do módulo de recebimentos. O saldo persistido
-  legado não substitui a apuração pelo histórico. Pagamento acima do devido ou
-  créditos incompatíveis resultam em 409, sem apresentar um saldo silenciosamente
-  corrigido.
+  legado não substitui a apuração pelo histórico. Pagamentos acima do devido,
+  créditos incompatíveis e pagamentos confirmados não positivos resultam em 409,
+  sem apresentar um saldo silenciosamente corrigido.
 - Projeção: saldo bancário até a data final + pendências a receber − a pagar.
 - Atrasos: títulos com saldo positivo e vencimento estritamente anterior a hoje,
   independentemente do filtro do relatório; totais a receber e a pagar separados.
@@ -40,9 +41,11 @@ um pagamento cancelado.
 ## Contrato e validação
 
 `de` e `ate`: datas AAAA-MM-DD válidas, início <= fim. `pagina`: inteiro positivo,
-default 1; 25 movimentos por página, ordem por data e ID decrescentes. Parâmetros
-desconhecidos e repetidos são rejeitados. A paginação não altera os indicadores.
+default 1; 25 movimentos por página, ordem por data e ID decrescentes. Páginas
+acima do total retornam a última disponível (ou a primeira, se a lista for vazia).
+Parâmetros desconhecidos e repetidos são rejeitados. A paginação não altera os indicadores.
 Dinheiro é calculado com Prisma.Decimal e serializado como string com duas casas.
+A exibição também preserva os centavos sem converter o total para Number.
 Consultas compartilham uma transação REPEATABLE READ, sem escrita e sem migration.
 
 Envelope: `{ success: true, data: { entradas, saidas, saldoPeriodo,
