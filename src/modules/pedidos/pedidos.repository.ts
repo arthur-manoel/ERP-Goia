@@ -1,4 +1,6 @@
 import "server-only"
+import { proximoNumero as gerarNumero } from "@/lib/sequencias"
+import { HttpError } from "@/lib/api/errors"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { serializarJsonTextMysql } from "@/lib/limites-texto"
@@ -47,6 +49,11 @@ export async function gravacao<T>(
         timeout: 15000,
       })
     } catch (error) {
+      if (
+        error instanceof HttpError &&
+        (error.status === 400 || error.status === 409)
+      )
+        throw new PedidoError(error.status, error.message)
       if (disputaPersistencia(error)) {
         if (repetir && tentativa < 4) {
           await new Promise((resolve) =>
@@ -143,46 +150,7 @@ export async function proximoNumero(
   idEmpresa: number,
   entidade: "pedido_cliente" | "venda" = "pedido_cliente",
 ) {
-  // Criação já mantém o lock da empresa, inclusive antes de ler a idempotência.
-  const sequencia = await tx.sequencias_automaticas.upsert({
-    where: {
-      id_empresa_entidade: {
-        id_empresa: idEmpresa,
-        entidade,
-      },
-    },
-    create: {
-      id_empresa: idEmpresa,
-      entidade,
-      ultimo_numero: BigInt(0),
-    },
-    update: {},
-  })
-  // Identificadores SQL vêm apenas desta enumeração interna, nunca do HTTP.
-  const tabela =
-    entidade === "venda" ? Prisma.sql`venda` : Prisma.sql`pedido_cliente`
-  const legados = await tx.$queryRaw<
-    Array<{ maior: string | null }>
-  >(Prisma.sql`
-    SELECT CAST(MAX(CAST(numero AS UNSIGNED)) AS CHAR) AS maior FROM ${tabela}
-    WHERE id_empresa = ${idEmpresa} AND numero REGEXP '^[1-9][0-9]{0,19}$'
-  `)
-  const maior = BigInt(legados[0]?.maior ?? "0")
-  const ultimo =
-    sequencia.ultimo_numero > maior ? sequencia.ultimo_numero : maior
-  if (ultimo >= BigInt("18446744073709551615"))
-    throw new PedidoError(409, "Numeração esgotada.")
-  const numero = ultimo + BigInt(1)
-  await tx.sequencias_automaticas.update({
-    where: {
-      id_empresa_entidade: {
-        id_empresa: idEmpresa,
-        entidade,
-      },
-    },
-    data: { ultimo_numero: numero },
-  })
-  return numero.toString()
+  return gerarNumero(tx, entidade, { idEmpresa })
 }
 export async function recalcular(
   tx: Transaction,

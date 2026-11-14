@@ -1,4 +1,5 @@
 import "server-only"
+import { proximoNumero as gerarNumero } from "@/lib/sequencias"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { serializarJsonTextMysql } from "@/lib/limites-texto"
@@ -94,25 +95,15 @@ export async function gravacao<T>(
   }
 }
 
-const prefixos = {
-  requisicao_compra: "SC",
-  pedido_compra: "PC",
-  compras: "CP",
-} as const
-export type EntidadeNumerada = keyof typeof prefixos
+export type EntidadeNumerada = "requisicao_compra" | "pedido_compra" | "compras"
 
-/** Próximo número sequencial por empresa/entidade, ex.: SC-000012. Usar dentro de `gravacao`. */
-export async function proximoNumero(
+/** Compatibilidade com os chamadores do módulo. A implementação é centralizada. */
+export function proximoNumero(
   tx: Transaction,
   idEmpresa: number,
   entidade: EntidadeNumerada,
 ) {
-  const sequencia = await tx.sequencias_automaticas.upsert({
-    where: { id_empresa_entidade: { id_empresa: idEmpresa, entidade } },
-    create: { id_empresa: idEmpresa, entidade, ultimo_numero: BigInt(1) },
-    update: { ultimo_numero: { increment: BigInt(1) } },
-  })
-  return `${prefixos[entidade]}-${sequencia.ultimo_numero.toString().padStart(6, "0")}`
+  return gerarNumero(tx, entidade, { idEmpresa })
 }
 
 export function auditar(
