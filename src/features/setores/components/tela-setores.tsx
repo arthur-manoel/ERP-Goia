@@ -1,270 +1,298 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import Link from "next/link"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
-  MoreHorizontal,
   Pencil,
   Plus,
-  Search,
+  ShieldCheck,
+  Tags,
+  Trash2,
   Undo2,
   Waypoints,
 } from "lucide-react"
 import { toast } from "sonner"
+import { ConfirmarAcao } from "@/components/dialogos/confirmar-acao"
 import { PageHeader } from "@/components/layout/page-header"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { BarraFiltros } from "@/components/listagem/barra-filtros"
+import { Listagem } from "@/components/listagem/listagem"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
-import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { useErp } from "@/features/erp/components/provedor"
-import type { Setor } from "../schemas"
+import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
+import { SeletorEmpresa } from "@/features/autenticacao/seletor-empresa"
+import { useListagem } from "@/hooks/use-listagem"
+import { alterarStatusSetor } from "../api"
+import { criarFonteSetores } from "../fonte"
+import type { SetorApi } from "../tipos"
+import { useTiposSetor } from "../use-tipos-setor"
+import { DialogoRecursos } from "./dialogo-recursos"
+import { DialogoTipos } from "./dialogo-tipos"
 import { FormularioSetor } from "./formulario-setor"
 
-type FiltroStatus = "Todos" | "Ativo" | "Inativo"
+const limitePorPagina = 10
+
+function Cabecalho({ acoes }: { acoes?: React.ReactNode }) {
+  return (
+    <PageHeader
+      titulo="Setores"
+      descricao="Locais/etapas da produção, usados para montar os fluxos de produção."
+      acoes={acoes}
+    />
+  )
+}
 
 export function TelaSetores() {
-  const { data, error, reload, save } = useErp()
-  const [busca, setBusca] = useState("")
-  const [statusFiltro, setStatusFiltro] = useState<FiltroStatus>("Todos")
-  const [formulario, setFormulario] = useState<Setor | "novo" | null>(null)
-  const novoRef = useRef<HTMLButtonElement>(null)
-  const focoAnterior = useRef<HTMLElement | null>(null)
+  const { estado, empresa } = useAutenticacao()
 
-  const setores = useMemo(() => data?.sectors ?? [], [data])
-
-  const filtrados = useMemo(() => {
-    return setores
-      .filter(
-        (setor) => statusFiltro === "Todos" || setor.status === statusFiltro,
-      )
-      .filter((setor) =>
-        setor.name.toLowerCase().includes(busca.trim().toLowerCase()),
-      )
-      .toSorted((a, b) => a.name.localeCompare(b.name, "pt-BR"))
-  }, [setores, busca, statusFiltro])
-
-  if (error)
+  if (estado === "carregando")
     return (
-      <Alert variant="destructive">
-        <AlertTitle>Não foi possível carregar os setores</AlertTitle>
-        <AlertDescription className="space-y-3">
-          <p>{error}</p>
-          <Button variant="outline" onClick={() => void reload()}>
-            Tentar novamente
-          </Button>
-        </AlertDescription>
-      </Alert>
+      <>
+        <Cabecalho />
+        <Skeleton
+          role="status"
+          aria-label="Carregando setores"
+          className="h-80 w-full"
+        />
+      </>
     )
-
-  if (!data)
+  if (estado === "anonimo")
     return (
-      <div role="status" aria-label="Carregando setores" className="space-y-6">
-        <Skeleton className="h-10 w-52" />
-        <Skeleton className="h-80" />
-      </div>
+      <>
+        <Cabecalho />
+        <Alert>
+          <AlertDescription>
+            Entre na sua conta para gerenciar setores.{" "}
+            <Link href="/login" className="underline">
+              Ir para o login
+            </Link>
+          </AlertDescription>
+        </Alert>
+      </>
     )
+  if (!empresa)
+    return (
+      <>
+        <Cabecalho />
+        <SeletorEmpresa />
+        <Alert>
+          <AlertDescription>
+            Selecione uma empresa para gerenciar setores.
+          </AlertDescription>
+        </Alert>
+      </>
+    )
+  // Remonta ao trocar de empresa: descarta lista, filtros, tipos e diálogos
+  // abertos da empresa anterior no mesmo instante, sem esperar a nova resposta.
+  return <SetoresEmpresa key={empresa.id} idEmpresa={empresa.id} />
+}
 
-  function abrirFormulario(setor?: Setor) {
-    focoAnterior.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null
-    setFormulario(setor ?? "novo")
-  }
+function SetoresEmpresa({ idEmpresa }: { idEmpresa: number }) {
+  const { requisitar } = useAutenticacao()
+  const fonte = useMemo(
+    () => criarFonteSetores(requisitar, idEmpresa),
+    [requisitar, idEmpresa],
+  )
+  const listagem = useListagem({ fonte, limite: limitePorPagina })
+  const tipos = useTiposSetor(requisitar, idEmpresa)
+  const [dialogo, setDialogo] = useState<"novo" | SetorApi | null>(null)
+  const [inativando, setInativando] = useState<SetorApi | null>(null)
+  const [recursosDe, setRecursosDe] = useState<SetorApi | null>(null)
+  const [tiposAberto, setTiposAberto] = useState(false)
+  const [ocupado, setOcupado] = useState(false)
+  const viva = useRef(true)
+  useEffect(() => {
+    viva.current = true
+    return () => {
+      viva.current = false
+    }
+  }, [])
 
-  async function alternarStatus(setor: Setor) {
-    const novoStatus = setor.status === "Ativo" ? "Inativo" : "Ativo"
+  // Permissões vêm do servidor junto com a lista. Só orientam a interface; o
+  // backend valida cada operação de novo. Sem resposta ainda = nada liberado.
+  const pode = listagem.meta?.permissoes
+  const administrador = listagem.meta?.administrador === true
+  // Enquanto a lista carrega ou recarrega, nenhuma ação sobre linhas.
+  const bloqueado =
+    listagem.estado === "carregando" || listagem.atualizando || ocupado
+
+  async function mudarStatus(setor: SetorApi, ativo: boolean) {
+    setOcupado(true)
     try {
-      await save("sectors", { ...setor, status: novoStatus }, setor.id)
-      toast.success(
-        novoStatus === "Ativo" ? "Setor reativado." : "Setor inativado.",
-      )
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível concluir a operação.",
-      )
+      await alterarStatusSetor(requisitar, idEmpresa, setor, ativo)
+      if (!viva.current) return
+      toast.success(ativo ? "Setor reativado." : "Setor inativado.")
+      setInativando(null)
+      listagem.recarregar()
+    } catch (causa) {
+      if (viva.current)
+        toast.error(
+          causa instanceof Error
+            ? causa.message
+            : "Não foi possível concluir a operação.",
+        )
+    } finally {
+      if (viva.current) setOcupado(false)
     }
   }
 
   return (
     <>
-      <PageHeader
-        titulo="Setores"
-        descricao="Locais/etapas da produção, usados para montar os fluxos de produção."
+      <Cabecalho
         acoes={
-          <Button ref={novoRef} onClick={() => abrirFormulario()}>
-            <Plus />
-            Novo setor
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {administrador && (
+              <Button variant="outline" onClick={() => setTiposAberto(true)}>
+                <Tags /> Tipos de setor
+              </Button>
+            )}
+            <Button
+              onClick={() => setDialogo("novo")}
+              disabled={!pode?.criar || bloqueado}
+            >
+              <Plus /> Novo setor
+            </Button>
+          </div>
         }
       />
+      <SeletorEmpresa />
 
-      <Tabs
-        value={statusFiltro}
-        onValueChange={(value) => setStatusFiltro(value as FiltroStatus)}
-      >
-        <TabsList>
-          <TabsTrigger value="Todos">Todos</TabsTrigger>
-          <TabsTrigger value="Ativo">Ativos</TabsTrigger>
-          <TabsTrigger value="Inativo">Inativos</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <BarraFiltros
+        listagem={listagem}
+        rotuloBusca="Pesquisar setores"
+        placeholderBusca="Pesquisar por nome..."
+        campos={[
+          {
+            tipo: "selecao",
+            chave: "status",
+            rotulo: "Filtrar por situação",
+            opcaoTodos: "Todas as situações",
+            opcoes: [
+              { valor: "ATIVO", rotulo: "Ativos" },
+              { valor: "INATIVO", rotulo: "Inativos" },
+            ],
+          },
+        ]}
+      />
 
-      <div className="space-y-4">
-        <div className="relative max-w-sm">
-          <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
-          <Input
-            aria-label="Pesquisar setores"
-            className="pl-9"
-            placeholder="Pesquisar por nome..."
-            value={busca}
-            onChange={(event) => setBusca(event.target.value)}
-          />
-        </div>
+      <Listagem
+        listagem={listagem}
+        rotulo="Setores"
+        substantivo={{ singular: "setor", plural: "setores" }}
+        chaveItem={(item) => item.id}
+        vazio={{
+          icone: <Waypoints />,
+          titulo: "Cadastre o primeiro setor",
+          descricao:
+            "Setores são os locais/etapas da produção (ex.: Corte, Costura, Acabamento) usados para montar os fluxos de produção.",
+        }}
+        colunas={[
+          {
+            id: "setor",
+            cabecalho: "Setor",
+            className: "font-medium",
+            celula: (item) => item.nome,
+          },
+          {
+            id: "tipo",
+            cabecalho: "Tipo",
+            className: "text-muted-foreground",
+            celula: (item) => item.tipo,
+          },
+          {
+            id: "descricao",
+            cabecalho: "Descrição",
+            className: "max-w-xs truncate text-muted-foreground",
+            celula: (item) => item.descricao || "—",
+          },
+          {
+            id: "status",
+            cabecalho: "Status",
+            celula: (item) => (
+              <Badge variant={item.ativo ? "outline" : "secondary"}>
+                {item.ativo ? "Ativo" : "Inativo"}
+              </Badge>
+            ),
+          },
+        ]}
+        rotuloAcoesDe={(item) => `Ações para ${item.nome}`}
+        acoes={[
+          {
+            rotulo: "Editar",
+            icone: <Pencil />,
+            oculta: () => !pode?.editar,
+            desabilitada: () => bloqueado,
+            aoSelecionar: (item) => setDialogo(item),
+          },
+          {
+            rotulo: "Permissões do setor",
+            icone: <ShieldCheck />,
+            oculta: () => !administrador,
+            desabilitada: () => bloqueado,
+            aoSelecionar: (item) => setRecursosDe(item),
+          },
+          {
+            rotulo: "Excluir (inativar)",
+            icone: <Trash2 />,
+            destrutiva: true,
+            oculta: (item) => !item.ativo || !pode?.excluir,
+            desabilitada: () => bloqueado,
+            aoSelecionar: (item) => setInativando(item),
+          },
+          {
+            rotulo: "Reativar",
+            icone: <Undo2 />,
+            oculta: (item) => item.ativo || !pode?.editar,
+            desabilitada: () => bloqueado,
+            aoSelecionar: (item) => void mudarStatus(item, true),
+          },
+        ]}
+      />
 
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Setor</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>
-                  <span className="sr-only">Ações</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtrados.map((setor) => (
-                <TableRow key={setor.id}>
-                  <TableCell className="font-medium">{setor.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {setor.type}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">
-                    {setor.description || "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        setor.status === "Ativo" ? "outline" : "secondary"
-                      }
-                    >
-                      {setor.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Ações para ${setor.name}`}
-                          />
-                        }
-                      >
-                        <MoreHorizontal />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => abrirFormulario(setor)}
-                        >
-                          <Pencil /> Editar
-                        </DropdownMenuItem>
-                        {setor.status === "Ativo" ? (
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() => void alternarStatus(setor)}
-                          >
-                            Excluir (inativar)
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            onClick={() => void alternarStatus(setor)}
-                          >
-                            <Undo2 /> Reativar
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!filtrados.length && (
-                <TableRow>
-                  <TableCell colSpan={5} className="p-0">
-                    <Empty className="py-12">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <Waypoints />
-                        </EmptyMedia>
-                        <EmptyTitle>
-                          {setores.length
-                            ? "Nenhum setor encontrado"
-                            : "Cadastre o primeiro setor"}
-                        </EmptyTitle>
-                        <EmptyDescription>
-                          {setores.length
-                            ? "Tente outra busca ou outro filtro de status."
-                            : "Setores são os locais/etapas da produção (ex.: Corte, Costura, Acabamento) usados para montar os fluxos de produção."}
-                        </EmptyDescription>
-                      </EmptyHeader>
-                      {!setores.length && (
-                        <Button
-                          variant="outline"
-                          onClick={() => abrirFormulario()}
-                        >
-                          <Plus />
-                          Cadastrar setor
-                        </Button>
-                      )}
-                    </Empty>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-
-      {formulario && (
+      {dialogo && (
         <FormularioSetor
-          key={formulario === "novo" ? "novo" : formulario.id}
-          initial={formulario === "novo" ? undefined : formulario}
-          onClose={() => setFormulario(null)}
-          returnFocus={() => {
-            const elemento = focoAnterior.current
-            if (elemento?.isConnected) elemento.focus()
-            else novoRef.current?.focus()
-          }}
+          setor={dialogo === "novo" ? null : dialogo}
+          idEmpresa={idEmpresa}
+          tipos={tipos.tipos}
+          onClose={() => setDialogo(null)}
+          onSaved={listagem.recarregar}
         />
       )}
+      {recursosDe && (
+        <DialogoRecursos
+          setor={recursosDe}
+          idEmpresa={idEmpresa}
+          onClose={() => setRecursosDe(null)}
+          onSaved={listagem.recarregar}
+        />
+      )}
+      {tiposAberto && (
+        <DialogoTipos
+          idEmpresa={idEmpresa}
+          tipos={tipos.tipos}
+          carregando={tipos.carregando}
+          erro={tipos.erro}
+          onClose={() => setTiposAberto(false)}
+          onChanged={tipos.recarregar}
+        />
+      )}
+      <ConfirmarAcao
+        aberto={!!inativando}
+        titulo="Inativar setor?"
+        descricao={
+          <>
+            “{inativando?.nome}” deixará de estar disponível para novos
+            vínculos. O histórico será preservado e o setor pode ser reativado.
+          </>
+        }
+        rotuloConfirmar="Inativar"
+        rotuloOcupado="Inativando…"
+        destrutivo
+        ocupado={ocupado}
+        onConfirmar={() => inativando && void mudarStatus(inativando, false)}
+        onFechar={() => setInativando(null)}
+      />
     </>
   )
 }
