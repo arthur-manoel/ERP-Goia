@@ -93,8 +93,14 @@ export function ProdutosProntosView() {
       if (status) parametros.set("status", status)
 
       const respostaProdutos = await requisitar(`/api/produtos?${parametros}`)
-      if (!respostaProdutos.ok)
+      if (!respostaProdutos.ok) {
+        if (
+          versao === versaoRequisicao.current &&
+          respostaProdutos.status === 403
+        )
+          setEmpresaCarregada(null)
         throw new Error(await mensagemErro(respostaProdutos))
+      }
       const corpoProdutos = (await respostaProdutos.json()) as {
         data: RespostaPaginada<Produto>
       }
@@ -114,7 +120,6 @@ export function ProdutosProntosView() {
     } catch (causa) {
       if (versao !== versaoRequisicao.current) return
       setProdutos([])
-      setEmpresaCarregada(null)
       setErro(
         causa instanceof Error
           ? causa.message
@@ -232,6 +237,7 @@ export function ProdutosProntosView() {
           disabled={
             !empresa ||
             empresaCarregada !== empresa.id ||
+            Boolean(erro) ||
             empresaTiposCarregados !== empresa.id ||
             carregandoTipos ||
             Boolean(erroTipos) ||

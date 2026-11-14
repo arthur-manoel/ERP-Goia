@@ -5,7 +5,7 @@ import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
 import type { InsumosAbaixoDoMinimo } from "@/lib/dashboard/tipos"
 
 type ContextoIndicadorEstoque = {
-  estado: "carregando" | "anonimo" | "autenticado"
+  estado: ReturnType<typeof useAutenticacao>["estado"]
   empresas: { id: number; nome: string }[]
   empresa: { id: number; nome: string } | null
   dados: InsumosAbaixoDoMinimo | null
