@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,10 +22,13 @@ import {
 } from "../../../../modules/produtos/schema"
 import type { Produto, TipoProduto } from "../tipos"
 
+import { listarCatalogoProduto, type OpcaoCatalogo } from "../api"
+
 type Campos = {
   nome: string
   codigo: string
   descricao: string
+  idCategoria: string
   idTipoProduto: string
   unidade: string
   controlaEstoque: boolean
@@ -39,6 +42,7 @@ function camposIniciais(produto: Produto | null): Campos {
     nome: produto?.nome ?? "",
     codigo: produto?.codigo ?? "",
     descricao: produto?.descricao ?? "",
+    idCategoria: produto?.id_categoria ? String(produto.id_categoria) : "",
     idTipoProduto: produto ? String(produto.id_tipo_produto) : "",
     unidade: produto?.unidade ?? "UN",
     controlaEstoque: produto?.controla_estoque ?? true,
@@ -66,16 +70,54 @@ export function FormularioProdutoPronto({
   const [erro, setErro] = useState("")
   const [salvando, setSalvando] = useState(false)
 
+  const [categorias, setCategorias] = useState<OpcaoCatalogo[]>()
+  const [erroCategorias, setErroCategorias] = useState("")
+  const [revisaoCategorias, setRevisaoCategorias] = useState(0)
+
+  useEffect(() => {
+    const controle = new AbortController()
+    void listarCatalogoProduto(
+      requisitar,
+      "/api/categorias",
+      idEmpresa,
+      controle.signal,
+    )
+      .then((registros) => {
+        if (!controle.signal.aborted) setCategorias(registros)
+      })
+      .catch((causa: unknown) => {
+        if (!controle.signal.aborted)
+          setErroCategorias(
+            causa instanceof Error
+              ? causa.message
+              : "Falha ao carregar categorias.",
+          )
+      })
+    return () => controle.abort()
+  }, [idEmpresa, requisitar, revisaoCategorias])
+
+  const categoriasDisponiveis = (categorias ?? []).filter(
+    (item) => item.status === "ATIVA" || String(item.id) === campos.idCategoria,
+  )
+
   function alterar<K extends keyof Campos>(campo: K, valor: Campos[K]) {
     setCampos((atual) => ({ ...atual, [campo]: valor }))
   }
 
   async function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
+    if (salvando || !categorias) return
     setErro("")
     const editaveis = {
       nome: campos.nome,
       descricao: campos.descricao.trim() || null,
+      ...(!produto || campos.idCategoria !== String(produto.id_categoria ?? "")
+        ? {
+            id_categoria: campos.idCategoria
+              ? Number(campos.idCategoria)
+              : null,
+          }
+        : {}),
       id_tipo_produto: Number(campos.idTipoProduto),
       unidade: campos.unidade,
       controla_estoque: Number(campos.controlaEstoque),
@@ -105,7 +147,10 @@ export function FormularioProdutoPronto({
         produto ? `/api/produtos/${produto.id}` : "/api/produtos",
         {
           method: produto ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Empresa-Id": String(idEmpresa),
+          },
           body: JSON.stringify(payload),
         },
       )
@@ -179,6 +224,49 @@ export function FormularioProdutoPronto({
             </select>
           </label>
           <label className="block space-y-1 text-sm font-medium">
+            <span>Categoria</span>
+            <select
+              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={campos.idCategoria}
+              disabled={salvando || !categorias}
+              onChange={(evento) => alterar("idCategoria", evento.target.value)}
+            >
+              <option value="">Sem categoria</option>
+              {campos.idCategoria &&
+                !categoriasDisponiveis.some(
+                  (item) => String(item.id) === campos.idCategoria,
+                ) && (
+                  <option value={campos.idCategoria}>
+                    Categoria #{campos.idCategoria} (indisponível)
+                  </option>
+                )}
+              {categoriasDisponiveis.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nome}
+                  {item.status !== "ATIVA" ? " (inativa)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!categorias && !erroCategorias && (
+            <p role="status">Carregando categorias…</p>
+          )}
+          {erroCategorias && (
+            <div role="alert" className="space-y-2 text-sm text-destructive">
+              <p>{erroCategorias}</p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setErroCategorias("")
+                  setRevisaoCategorias((atual) => atual + 1)
+                }}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+          <label className="block space-y-1 text-sm font-medium">
             <span>Unidade *</span>
             <Input
               value={campos.unidade}
@@ -234,7 +322,10 @@ export function FormularioProdutoPronto({
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={salvando || !campos.idTipoProduto}>
+            <Button
+              type="submit"
+              disabled={salvando || !campos.idTipoProduto || !categorias}
+            >
               {salvando
                 ? "Salvando..."
                 : produto
