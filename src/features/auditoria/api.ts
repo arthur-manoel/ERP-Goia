@@ -1,5 +1,8 @@
 import { z } from "zod"
-import { acoesAuditoria } from "@/modules/auditoria/schema"
+import {
+  acoesAuditoria,
+  cursorAuditoriaSchema,
+} from "@/modules/auditoria/schema"
 
 const id = z.number().int().positive().max(2_147_483_647)
 export const resultadoAuditoriaSchema = z.object({
@@ -22,6 +25,7 @@ export const resultadoAuditoriaSchema = z.object({
   total: z.number().int().nonnegative(),
   pagina: id,
   totalPaginas: z.number().int().nonnegative(),
+  proximoCursor: cursorAuditoriaSchema.nullable(),
 })
 export type ResultadoAuditoria = z.infer<typeof resultadoAuditoriaSchema>
 export type EventoAuditoria = ResultadoAuditoria["itens"][number]

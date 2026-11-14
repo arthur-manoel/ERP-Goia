@@ -13,7 +13,13 @@ const evento = {
   antes: { nome: "Azul" },
   depois: { nome: "Marinho" },
 }
-const resultado = { itens: [evento], total: 1, pagina: 1, totalPaginas: 1 }
+const resultado = {
+  itens: [evento],
+  total: 1,
+  pagina: 1,
+  totalPaginas: 1,
+  proximoCursor: null,
+}
 
 it.each([
   {},
@@ -52,7 +58,7 @@ it("aceita snapshots nulos, eventos legados de texto e lista vazia", () => {
   ).toBeNull()
   expect(
     validarResultadoAuditoria(
-      { itens: [], total: 0, pagina: 1, totalPaginas: 0 },
+      { itens: [], total: 0, pagina: 1, totalPaginas: 0, proximoCursor: null },
       10,
       1,
     ).itens,

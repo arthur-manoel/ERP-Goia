@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma"
 import { HttpError } from "@/lib/api/errors"
 import { readQuery } from "@/lib/api/http"
 import { administrador } from "@/modules/usuarios/usuarios.repository"
-import { filtrosAuditoria, lerSnapshot, periodoAuditoria } from "./schema"
+import {
+  filtrosAuditoria,
+  lerSnapshot,
+  periodoAuditoria,
+  lerCursorAuditoria,
+} from "./schema"
 
 const headers = { "Cache-Control": "no-store" }
 export async function listarHandler(request: Request) {
@@ -68,28 +73,43 @@ export async function listarHandler(request: Request) {
             ? { data_evento: periodoAuditoria(f.inicio, f.fim) }
             : {}),
         }
+        const cursor = f.cursor ? lerCursorAuditoria(f.cursor) : null
+        const wherePagina = cursor
+          ? {
+              ...where,
+              OR: [
+                { data_evento: { lt: cursor.data } },
+                { data_evento: cursor.data, id: { lt: cursor.id } },
+              ],
+            }
+          : where
         const [itens, total] = await Promise.all([
           tx.auditoria.findMany({
-            where,
+            where: wherePagina,
             orderBy: [{ data_evento: "desc" }, { id: "desc" }],
-            skip: (f.pagina - 1) * 25,
-            take: 25,
+            take: 26,
             include: { usuarios: { select: { nome: true } } },
           }),
           tx.auditoria.count({ where }),
         ])
+        const pagina = itens.slice(0, 25)
+        const ultimo = pagina.at(-1)
         return {
-          itens: itens.map(
+          itens: pagina.map(
             ({ dados_anteriores, dados_novos, usuarios, ...item }) => ({
               ...item,
               usuario: usuarios?.nome ?? "Sistema / usuário removido",
-              antes: lerSnapshot(dados_anteriores),
-              depois: lerSnapshot(dados_novos),
+              antes: lerSnapshot(dados_anteriores, Number(empresa)),
+              depois: lerSnapshot(dados_novos, Number(empresa)),
             }),
           ),
           total,
           pagina: f.pagina,
           totalPaginas: Math.ceil(total / 25),
+          proximoCursor:
+            itens.length > 25 && ultimo
+              ? `${ultimo.data_evento.toISOString()}|${ultimo.id}`
+              : null,
         }
       },
       { isolationLevel: "RepeatableRead" },

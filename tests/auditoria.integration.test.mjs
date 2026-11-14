@@ -349,36 +349,239 @@ test(
           )
         },
       )
+      await t.test(
+        "transferência de fornecedor não revela o contato da outra empresa",
+        async () => {
+          const fornecedor = await prisma.fornecedores.findFirstOrThrow({
+            where: { id_empresa: empresas[0] },
+          })
+          await prisma.fornecedores.update({
+            where: { id: fornecedor.id },
+            data: { email: "origem@example.invalid" },
+          })
+          const autor = await prisma.usuarios.create({
+            data: {
+              nome: "Autor da transferência",
+              email: `${marker}-transferencia@example.invalid`,
+              senha: "hash-ficticio",
+              nivel_acesso: "ADMIN",
+            },
+          })
+          usuarios.push(autor.id)
+          for (const empresa of empresas) {
+            const cargo = await prisma.cargos.findFirstOrThrow({
+              where: { id_empresa: empresa },
+            })
+            await prisma.usuario_empresa.create({
+              data: {
+                id_usuario: autor.id,
+                id_empresa: empresa,
+                id_cargo: cargo.id,
+                nivel_acesso: "EMPRESA",
+              },
+            })
+          }
+          const tokenAutor = await tokenDeSessao(
+            prisma,
+            autor.id,
+            "ADMINISTRACAO",
+          )
+          const transferir = req(
+            `/api/fornecedores/${fornecedor.id}`,
+            "PATCH",
+            { id_empresa: empresas[1], email: "destino@example.invalid" },
+          )
+          transferir.headers.delete("X-Empresa-Id")
+          transferir.headers.set("Authorization", `Bearer ${tokenAutor}`)
+          const { PATCH } =
+            await import("../src/app/api/fornecedores/[id]/route.ts")
+          assert.equal(
+            (
+              await PATCH(transferir, {
+                params: Promise.resolve({ id: String(fornecedor.id) }),
+              })
+            ).status,
+            200,
+          )
+          const origem = await consultar(
+            req(`/api/auditoria?tabela=fornecedores&registro=${fornecedor.id}`),
+          )
+          const bodyOrigem = await origem.json()
+          assert.equal(origem.status, 200)
+          assert.equal(bodyOrigem.itens[0].depois, null)
+          assert.equal(
+            bodyOrigem.itens[0].antes.email,
+            "origem@example.invalid",
+          )
+          assert.ok(
+            !JSON.stringify(bodyOrigem).includes("destino@example.invalid"),
+          )
+          const tokenDestino = await tokenDeSessao(
+            prisma,
+            usuarios[1],
+            "ADMINISTRACAO",
+          )
+          const requestDestino = req(
+            `/api/auditoria?tabela=fornecedores&registro=${fornecedor.id}`,
+            "GET",
+            undefined,
+            empresas[1],
+          )
+          requestDestino.headers.set("Authorization", `Bearer ${tokenDestino}`)
+          const destino = await consultar(requestDestino)
+          const bodyDestino = await destino.json()
+          assert.equal(destino.status, 200)
+          assert.equal(bodyDestino.itens[0].antes, null)
+          assert.equal(
+            bodyDestino.itens[0].depois.email,
+            "destino@example.invalid",
+          )
+          assert.ok(
+            !JSON.stringify(bodyDestino).includes("origem@example.invalid"),
+          )
+        },
+      )
+      await t.test(
+        "cursor não repete eventos após inserções entre as páginas",
+        async () => {
+          const tabela = `paginacao_${marker}`
+          const data = new Date("2026-11-10T12:00:00Z")
+          await prisma.auditoria.createMany({
+            data: Array.from({ length: 31 }, () => ({
+              id_empresa: empresas[0],
+              id_usuario: usuarios[0],
+              tabela,
+              acao: "UPDATE",
+              data_evento: data,
+            })),
+          })
+          const page1 = await (
+            await consultar(req(`/api/auditoria?tabela=${tabela}`))
+          ).json()
+          assert.equal(page1.itens.length, 25)
+          assert.ok(page1.proximoCursor)
+          await prisma.auditoria.createMany({
+            data: [0, 1].map(() => ({
+              id_empresa: empresas[0],
+              id_usuario: usuarios[0],
+              tabela,
+              acao: "UPDATE",
+              data_evento: new Date("2026-11-11T12:00:00Z"),
+            })),
+          })
+          const page2 = await (
+            await consultar(
+              req(
+                `/api/auditoria?tabela=${tabela}&pagina=2&cursor=${encodeURIComponent(page1.proximoCursor)}`,
+              ),
+            )
+          ).json()
+          assert.equal(page2.itens.length, 6)
+          assert.equal(page2.proximoCursor, null)
+          assert.equal(
+            new Set([...page1.itens, ...page2.itens].map((item) => item.id))
+              .size,
+            31,
+          )
+          assert.ok(
+            page2.itens.every(
+              (item) => item.data_evento === data.toISOString(),
+            ),
+          )
+        },
+      )
+      await t.test(
+        "edição de produto e entrada de estoque confirmam juntas sem conflito",
+        async () => {
+          const local = await prisma.locais_estoque.create({
+            data: { id_empresa: empresas[0], nome: `Local ${marker}` },
+          })
+          const setor = await prisma.setores.create({
+            data: {
+              id_empresa: empresas[0],
+              nome: `Setor ${marker}`,
+              tipo: "ESTOQUE",
+            },
+          })
+          const { movimentar } =
+            await import("../src/modules/movimentacoes-estoque/movimentacoes-estoque.repository.ts")
+          const { PATCH } =
+            await import("../src/app/api/produtos/[id]/route.ts")
+          for (let i = 0; i < 4; i++) {
+            const [edicao, entrada] = await Promise.all([
+              PATCH(
+                req(`/api/produtos/${produtos[0]}`, "PATCH", {
+                  nome: `Produto concorrente ${i} ${marker}`,
+                  ...(i % 2 ? { unidade: "UN" } : {}),
+                }),
+                { params: Promise.resolve({ id: String(produtos[0]) }) },
+              ),
+              movimentar(
+                { idEmpresa: empresas[0], idUsuario: usuarios[0] },
+                {
+                  idProduto: produtos[0],
+                  idLocalEstoque: local.id,
+                  idSetor: setor.id,
+                  quantidade: "1",
+                  observacao: "Entrada concorrente fictícia",
+                },
+                "entrada",
+              ),
+            ])
+            assert.equal(edicao.status, 200)
+            assert.equal(entrada.saldoAtual, `${i + 1}.000`)
+          }
+          assert.equal(
+            await prisma.movimentacao_estoque.count({
+              where: { id_empresa: empresas[0], id_produto: produtos[0] },
+            }),
+            4,
+          )
+        },
+      )
     } finally {
-      if (triggerAtivo) await ddl.query(`DROP TRIGGER IF EXISTS \`${trigger}\``)
-      if (empresas.length) {
-        const scope = { in: empresas }
-        await prisma.auditoria.deleteMany({ where: { id_empresa: scope } })
-        await prisma.produto_empresa.deleteMany({
-          where: { id_empresa: scope },
+      try {
+        if (triggerAtivo)
+          await ddl.query(`DROP TRIGGER IF EXISTS \`${trigger}\``)
+        if (empresas.length) {
+          const scope = { in: empresas }
+          await prisma.auditoria.deleteMany({ where: { id_empresa: scope } })
+          await prisma.kardex.deleteMany({ where: { id_empresa: scope } })
+          await prisma.movimentacao_estoque.deleteMany({
+            where: { id_empresa: scope },
+          })
+          await prisma.estoque.deleteMany({ where: { id_empresa: scope } })
+          await prisma.locais_estoque.deleteMany({
+            where: { id_empresa: scope },
+          })
+          await prisma.produto_empresa.deleteMany({
+            where: { id_empresa: scope },
+          })
+          await prisma.produtos.deleteMany({ where: { id: { in: produtos } } })
+          for (const tabela of [
+            "cores",
+            "tamanhos",
+            "categorias",
+            "fornecedores",
+          ])
+            await prisma[tabela].deleteMany({ where: { id_empresa: scope } })
+          await prisma.usuario_empresa.deleteMany({
+            where: { id_empresa: scope },
+          })
+          await prisma.setores.deleteMany({ where: { id_empresa: scope } })
+          await prisma.cargos.deleteMany({ where: { id_empresa: scope } })
+          await prisma.empresas.deleteMany({ where: { id: scope } })
+        }
+        await prisma.tipos_produto.deleteMany({ where: { id: { in: tipos } } })
+        await prisma.refresh_tokens.deleteMany({
+          where: { id_usuario: { in: usuarios } },
         })
-        await prisma.produtos.deleteMany({ where: { id: { in: produtos } } })
-        for (const tabela of [
-          "cores",
-          "tamanhos",
-          "categorias",
-          "fornecedores",
-        ])
-          await prisma[tabela].deleteMany({ where: { id_empresa: scope } })
-        await prisma.usuario_empresa.deleteMany({
-          where: { id_empresa: scope },
-        })
-        await prisma.cargos.deleteMany({ where: { id_empresa: scope } })
-        await prisma.empresas.deleteMany({ where: { id: scope } })
+        await prisma.usuarios.deleteMany({ where: { id: { in: usuarios } } })
+      } finally {
+        await prisma.$disconnect()
+        await ddl.end()
+        hooks.deregister()
       }
-      await prisma.tipos_produto.deleteMany({ where: { id: { in: tipos } } })
-      await prisma.refresh_tokens.deleteMany({
-        where: { id_usuario: { in: usuarios } },
-      })
-      await prisma.usuarios.deleteMany({ where: { id: { in: usuarios } } })
-      await prisma.$disconnect()
-      await ddl.end()
-      hooks.deregister()
     }
   },
 )

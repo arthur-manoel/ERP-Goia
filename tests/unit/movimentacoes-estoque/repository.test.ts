@@ -59,9 +59,14 @@ it("bloqueia chave parametrizada antes das leituras e mantém todos os registros
     maxWait: 10000,
     timeout: 15000,
   })
-  const [strings, ...values] = tx.$queryRaw.mock.calls[0]
+  const [empresa, ...idEmpresa] = tx.$queryRaw.mock.calls[0]
+  expect(empresa.join("?")).toContain("FROM empresas")
+  expect(idEmpresa).toEqual([10])
+  const [strings, ...values] = tx.$queryRaw.mock.calls[1]
+  expect(strings.join("?")).toContain("FROM produto_empresa")
   expect(strings.join("?")).toContain("FOR UPDATE")
   expect(values).toEqual([10, 1])
+  expect(tx.$queryRaw.mock.calls[2][0].join("?")).toContain("FROM produtos")
   expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
     tx.estoque.findUnique.mock.invocationCallOrder[0],
   )

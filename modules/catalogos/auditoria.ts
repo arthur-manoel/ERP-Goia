@@ -3,6 +3,7 @@ import { Prisma } from "../../src/generated/prisma/client"
 import { prisma } from "../../src/lib/prisma"
 import { serializarJsonTextMysql } from "../../src/lib/limites-texto"
 import { ValidationError } from "../../src/lib/api/errors"
+import { bloquearProdutoCatalogo } from "./transactions"
 
 type Contexto = { idUsuario: number; empresas: number[] }
 export const contextoAuditoriaCatalogo = new AsyncLocalStorage<Contexto>()
@@ -59,7 +60,7 @@ export async function gravarCatalogo<T extends Registro>(
           await tx.$queryRaw`SELECT id FROM categorias WHERE id = ${id} FOR UPDATE`
           break
         case "produtos":
-          await tx.$queryRaw`SELECT id FROM produtos WHERE id = ${id} FOR UPDATE`
+          await bloquearProdutoCatalogo(tx, id)
           break
       }
     }
@@ -89,6 +90,12 @@ export async function gravarCatalogo<T extends Registro>(
     const dadosAnteriores = serializar(antes)
     const dadosNovos = serializar(depois)
     if (dadosAnteriores === dadosNovos) return result
+    const empresaAntes =
+      antes && "id_empresa" in antes ? antes.id_empresa : undefined
+    const transferencia =
+      tabela !== "produtos" &&
+      antes !== null &&
+      empresaAntes !== depois.id_empresa
     const proprietarios = (v: Registro | null): number[] => {
       if (!v) return []
       return v.id_empresa != null ? [v.id_empresa] : []
@@ -117,8 +124,14 @@ export async function gravarCatalogo<T extends Registro>(
           tabela,
           id_registro: result.id,
           acao: antes ? "UPDATE" : "INSERT",
-          dados_anteriores: dadosAnteriores,
-          dados_novos: dadosNovos,
+          dados_anteriores:
+            transferencia && idEmpresa !== empresaAntes
+              ? null
+              : dadosAnteriores,
+          dados_novos:
+            transferencia && idEmpresa !== depois.id_empresa
+              ? null
+              : dadosNovos,
         },
       })
     return result

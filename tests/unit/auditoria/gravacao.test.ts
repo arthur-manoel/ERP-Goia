@@ -101,9 +101,10 @@ it("bloqueia todas as empresas do produto em ordem antes de bloquear o cadastro"
       nome: "Camisa nova",
     })),
   )
-  const [empresa, cadastro] = db.$queryRaw.mock.calls
+  const [empresa, vinculos, cadastro] = db.$queryRaw.mock.calls
   expect(empresa[0].join("")).toContain("FROM empresas")
   expect(empresa[1].values).toEqual([10, 20])
+  expect(vinculos[0].join("")).toContain("FROM produto_empresa")
   expect(cadastro[0].join("")).toContain("FROM produtos")
   expect(db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
     db.produtos.findUnique.mock.invocationCallOrder[0],
@@ -118,6 +119,42 @@ it("transferência de categoria preserva evento nas empresas anterior e nova", a
   expect(
     db.auditoria.create.mock.calls.map(([args]) => args.data.id_empresa),
   ).toEqual([10, 20])
+})
+it("não compartilha contatos antigos e novos ao transferir fornecedor", async () => {
+  const origem = { id: 9, id_empresa: 10, email: "origem@example.invalid" }
+  const destino = {
+    ...origem,
+    id_empresa: 20,
+    email: "destino@example.invalid",
+  }
+  db.fornecedores.findUnique.mockResolvedValue(origem)
+  await gravarCatalogo("fornecedores", 9, undefined, async () => destino)
+  const logs = db.auditoria.create.mock.calls.map(([args]) => args.data)
+  expect(logs[0]).toMatchObject({
+    id_empresa: 10,
+    dados_anteriores: JSON.stringify(origem),
+    dados_novos: null,
+  })
+  expect(logs[1]).toMatchObject({
+    id_empresa: 20,
+    dados_anteriores: null,
+    dados_novos: JSON.stringify(destino),
+  })
+  expect(JSON.stringify(logs[0])).not.toContain(destino.email)
+  expect(JSON.stringify(logs[1])).not.toContain(origem.email)
+})
+it("preserva BigInt aninhado sem perda de precisão no snapshot", async () => {
+  const valor = BigInt("9007199254740993123456789")
+  await gravarCatalogo("cores", null, undefined, async () => ({
+    ...antes,
+    sequencia: valor,
+    itens: [{ valor: -valor }],
+  }))
+  const log = db.auditoria.create.mock.calls[0][0].data
+  expect(JSON.parse(log.dados_novos)).toMatchObject({
+    sequencia: valor.toString(),
+    itens: [{ valor: (-valor).toString() }],
+  })
 })
 it("catálogo global recebe o contexto do autor sem misturar requisições concorrentes", async () => {
   await Promise.all(

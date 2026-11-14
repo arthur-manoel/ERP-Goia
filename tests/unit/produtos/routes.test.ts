@@ -97,6 +97,10 @@ it("permite manter unidade e trocar unidade de produto sem histórico", async ()
     ).status,
   ).toBe(200)
   db.produtos.findUnique.mockClear()
+  const locks = db.$queryRaw.mock.calls.map(([sql]) => sql.join("?"))
+  expect(
+    locks.findIndex((sql) => sql.includes("FROM produto_empresa")),
+  ).toBeLessThan(locks.findIndex((sql) => sql.includes("FROM produtos")))
   expect(
     (
       await item.PUT(

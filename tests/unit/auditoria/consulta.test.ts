@@ -69,6 +69,9 @@ it.each([
   "?pagina=1&pagina=2",
   "?id_empresa=20",
   "?acao=OUTRA",
+  "?pagina=2",
+  "?pagina=2&cursor=invalido",
+  "?pagina=2&cursor=2026-11-11T03:00:00.000Z%7C2147483648",
 ])("rejeita filtro inválido %s", async (query) => {
   expect((await consultar(query)).status).toBe(400)
   expect(db.auditoria.findMany).not.toHaveBeenCalled()
@@ -76,7 +79,7 @@ it.each([
 it("aplica filtros e paginação no banco sem permitir trocar o escopo", async () => {
   db.auditoria.count.mockResolvedValue(28)
   const response = await consultar(
-    "?inicio=2026-11-01&fim=2026-11-11&usuario=3&tabela=produtos&registro=7&acao=UPDATE&pagina=2",
+    "?inicio=2026-11-01&fim=2026-11-11&usuario=3&tabela=produtos&registro=7&acao=UPDATE&pagina=2&cursor=2026-11-10T03:00:00.000Z%7C100",
   )
   expect(response.status).toBe(200)
   const where = {
@@ -92,9 +95,17 @@ it("aplica filtros e paginação no banco sem permitir trocar o escopo", async (
   }
   expect(db.auditoria.findMany).toHaveBeenCalledWith(
     expect.objectContaining({
-      where,
-      skip: 25,
-      take: 25,
+      where: {
+        ...where,
+        OR: [
+          { data_evento: { lt: new Date("2026-11-10T03:00:00.000Z") } },
+          {
+            data_evento: new Date("2026-11-10T03:00:00.000Z"),
+            id: { lt: 100 },
+          },
+        ],
+      },
+      take: 26,
       orderBy: [{ data_evento: "desc" }, { id: "desc" }],
     }),
   )
@@ -104,6 +115,24 @@ it("aplica filtros e paginação no banco sem permitir trocar o escopo", async (
     pagina: 2,
     totalPaginas: 2,
   })
+})
+it("gera cursor pelo último item exibido e usa desempate por ID", async () => {
+  const data = new Date("2026-11-11T12:00:00.000Z")
+  db.auditoria.findMany.mockResolvedValue(
+    Array.from({ length: 26 }, (_, i) => ({
+      id: 100 - i,
+      id_empresa: 10,
+      data_evento: data,
+      dados_anteriores: null,
+      dados_novos: null,
+      usuarios: null,
+    })),
+  )
+  db.auditoria.count.mockResolvedValue(30)
+  const body = await (await consultar()).json()
+  expect(body.itens).toHaveLength(25)
+  expect(body.proximoCursor).toBe("2026-11-11T12:00:00.000Z|76")
+  expect(db.auditoria.findMany.mock.calls[0][0]).not.toHaveProperty("skip")
 })
 it("exibe snapshots seguros e suporta eventos sem usuário ou dados anteriores", async () => {
   db.auditoria.findMany.mockResolvedValue([
@@ -139,6 +168,34 @@ it("retorna erro genérico sem vazar detalhes do banco", async () => {
   const response = await consultar()
   expect(response.status).toBe(500)
   expect(JSON.stringify(await response.json())).not.toContain("credencial")
+})
+it("oculta na leitura o lado de outra empresa em eventos antigos de transferência", async () => {
+  const antes = JSON.stringify({
+    id_empresa: 10,
+    email: "origem@example.invalid",
+  })
+  const depois = JSON.stringify({
+    id_empresa: 20,
+    email: "destino@example.invalid",
+  })
+  db.auditoria.findMany.mockResolvedValue([
+    {
+      id: 1,
+      id_empresa: 10,
+      tabela: "fornecedores",
+      dados_anteriores: antes,
+      dados_novos: depois,
+      usuarios: null,
+    },
+  ])
+  const origem = await (await consultar()).json()
+  expect(origem.itens[0].antes.email).toBe("origem@example.invalid")
+  expect(origem.itens[0].depois).toBeNull()
+  expect(JSON.stringify(origem)).not.toContain("destino@example.invalid")
+  expect(lerSnapshot(antes, 20)).toBeNull()
+  expect(lerSnapshot(depois, 20)).toMatchObject({
+    email: "destino@example.invalid",
+  })
 })
 it("valida datas e protege conteúdo legado não estruturado", () => {
   expect(filtrosAuditoria.parse({})).toEqual({ pagina: 1 })

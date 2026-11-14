@@ -92,6 +92,7 @@ function Consulta({ idEmpresa }: { idEmpresa: number }) {
     filtros: iniciais,
     pagina: 1,
     versao: 0,
+    cursores: [undefined] as Array<string | undefined>,
   })
   const [resultado, setResultado] = useState<Resultado | null>(null)
   const [erro, setErro] = useState("")
@@ -100,6 +101,8 @@ function Consulta({ idEmpresa }: { idEmpresa: number }) {
   useEffect(() => {
     const controller = new AbortController()
     const params = new URLSearchParams({ pagina: String(consulta.pagina) })
+    const cursor = consulta.cursores[consulta.pagina - 1]
+    if (cursor) params.set("cursor", cursor)
     Object.entries(consulta.filtros).forEach(([k, v]) => {
       if (v.trim()) params.set(k, v.trim())
     })
@@ -141,6 +144,7 @@ function Consulta({ idEmpresa }: { idEmpresa: number }) {
       filtros: { ...campos },
       pagina: 1,
       versao: consulta.versao + 1,
+      cursores: [undefined],
     })
   }
   return (
@@ -200,6 +204,7 @@ function Consulta({ idEmpresa }: { idEmpresa: number }) {
                 filtros: iniciais,
                 pagina: 1,
                 versao: consulta.versao + 1,
+                cursores: [undefined],
               })
             }}
           >
@@ -327,9 +332,16 @@ function Consulta({ idEmpresa }: { idEmpresa: number }) {
             </Button>
             <Button
               variant="outline"
-              disabled={carregando || consulta.pagina >= resultado.totalPaginas}
+              disabled={carregando || !resultado.proximoCursor}
               onClick={() =>
-                setConsulta({ ...consulta, pagina: consulta.pagina + 1 })
+                setConsulta({
+                  ...consulta,
+                  pagina: consulta.pagina + 1,
+                  cursores: [
+                    ...consulta.cursores.slice(0, consulta.pagina),
+                    resultado.proximoCursor ?? undefined,
+                  ],
+                })
               }
             >
               Próxima
