@@ -90,13 +90,11 @@ export async function atualizarEstado(
     throw new ProducaoError(409, "A ordem foi alterada por outra operação.")
 }
 export async function proximoNumero(tx: Transaction, idEmpresa: number) {
+  const where = {
+    id_empresa_entidade: { id_empresa: idEmpresa, entidade: "ordem_producao" },
+  }
   const sequence = await tx.sequencias_automaticas.upsert({
-    where: {
-      id_empresa_entidade: {
-        id_empresa: idEmpresa,
-        entidade: "ordem_producao",
-      },
-    },
+    where,
     create: {
       id_empresa: idEmpresa,
       entidade: "ordem_producao",
@@ -104,7 +102,31 @@ export async function proximoNumero(tx: Transaction, idEmpresa: number) {
     },
     update: { ultimo_numero: { increment: BigInt(1) } },
   })
-  return sequence.ultimo_numero.toString()
+  let numero = sequence.ultimo_numero
+  const ocupado = (valor: bigint) =>
+    tx.ordem_producao.findUnique({
+      where: {
+        id_empresa_numero: { id_empresa: idEmpresa, numero: valor.toString() },
+      },
+      select: { id: true },
+    })
+  if (!(await ocupado(numero))) return numero.toString()
+
+  // A criação de cabeçalho também aceita números fornecidos pelo usuário.
+  // Pule de uma vez os números comuns já usados por esse caminho.
+  const [row] = await tx.$queryRaw<{ maior: bigint | null }[]>`
+    SELECT MAX(CAST(numero AS UNSIGNED)) AS maior
+    FROM ordem_producao
+    WHERE id_empresa = ${idEmpresa} AND numero REGEXP '^[1-9][0-9]{0,17}$'
+  `
+  const maior = row.maior === null ? BigInt(0) : BigInt(row.maior)
+  numero = (maior > numero ? maior : numero) + BigInt(1)
+  while (await ocupado(numero)) numero++
+  await tx.sequencias_automaticas.update({
+    where,
+    data: { ultimo_numero: numero },
+  })
+  return numero.toString()
 }
 export async function auditar(
   tx: Transaction,

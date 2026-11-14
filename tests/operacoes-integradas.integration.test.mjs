@@ -256,17 +256,125 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       "100 peças G não atendem falta de M",
     )
     assert.equal(await snapshot(), s1)
-    op = await post("/api/ordem_producao", {
-      numero: `OP-${randomUUID()}`,
-      quantidade_planejada: "3.000",
-      id_local_estoque: locais[1].id,
-    })
-    const itemOP = await post(`/api/ordem_producao/${op.id}/itens`, {
-      id_produto: produto,
-      id_variacao: m.id,
+    const rotaOrdens = "/api/ordens-producao"
+    const opcoes = await a.chamar(`${rotaOrdens}/opcoes`)
+    assert.equal(opcoes.status, 200)
+    assert.ok(
+      opcoes.body.data.produtos.some(
+        (p) =>
+          p.id === produto && p.produto_variacoes.some((v) => v.id === m.id),
+      ),
+    )
+    assert.ok(opcoes.body.data.locais.some((l) => l.id === locais[1].id))
+    const abertura = {
+      idProduto: produto,
+      idVariacao: m.id,
+      idLocal: locais[1].id,
       quantidade: "3.000",
-    })
-    await post(`/api/ordem_producao/${op.id}/liberar`, {}, randomUUID(), 200)
+    }
+    const chaveAbertura = randomUUID()
+    const cabecalhoNumerico = await post("/api/ordem_producao", { numero: "1" })
+    op = (await post(rotaOrdens, abertura, chaveAbertura)).ordem
+    assert.equal(op.numero, "2")
+    assert.equal(
+      (await post(rotaOrdens, abertura, chaveAbertura, 200)).ordem.id,
+      op.id,
+    )
+    await post(
+      rotaOrdens,
+      { ...abertura, quantidade: "4.000" },
+      chaveAbertura,
+      409,
+    )
+    assert.equal(
+      await prisma.ordem_producao.count({ where: { id_empresa: empresa } }),
+      2,
+    )
+    const itemOP = op.ordem_producao_item[0]
+    const listar = (filtros = "", opcoes = {}) =>
+      a.chamar(rotaOrdens + filtros, "GET", undefined, opcoes)
+    const resumo = await listar("?status=PLANEJADA&page=1&limit=1")
+    assert.equal(resumo.status, 200)
+    assert.equal(resumo.body.data.count, 2)
+    assert.equal(resumo.body.data.rows[0].id, op.id)
+    assert.equal(resumo.body.data.rows[0].quantidade_planejada, "3")
+    assert.equal(resumo.body.data.rows[0].etapaAtual.ordem, 1)
+    assert.equal(resumo.body.data.rows[0].itens[0].quantidade_produzida, "0")
+    assert.equal((await listar("?page=0")).status, 400)
+    assert.equal((await listar("?status=INEXISTENTE")).status, 400)
+    assert.equal((await listar("", { usuario: null })).status, 401)
+    assert.equal((await listar("", { usuario: 1 })).status, 403)
+    const outroContexto = { usuario: 5, empresa: empresas[1] }
+    assert.deepEqual((await listar("", outroContexto)).body.data.rows, [])
+    const previsao = new Date("2027-01-01T00:00:00Z")
+    const outrasOrdens = []
+    for (const numero of ["EMPRESA-B-01", "EMPRESA-B-02"]) {
+      outrasOrdens.push(
+        await prisma.ordem_producao.create({
+          data: {
+            id_empresa: empresas[1],
+            id_usuario: a.usuarios[5],
+            numero,
+            data_previsao: previsao,
+          },
+        }),
+      )
+    }
+    for (const [i, ordem] of outrasOrdens.entries()) {
+      const resultado = await listar(
+        `?ordenar_por=data_previsao&ordem=asc&page=${i + 1}&limit=1`,
+        outroContexto,
+      )
+      assert.equal(resultado.status, 200)
+      assert.equal(resultado.body.data.count, 2)
+      assert.deepEqual(
+        resultado.body.data.rows.map((linha) => linha.id),
+        [ordem.id],
+      )
+    }
+    assert.deepEqual(
+      (await listar()).body.data.rows.map((linha) => linha.id),
+      [op.id, cabecalhoNumerico.id],
+    )
+    assert.equal(
+      (
+        await a.chamar(
+          `${rotaOrdens}/${op.id}`,
+          "GET",
+          undefined,
+          outroContexto,
+        )
+      ).status,
+      404,
+    )
+    const editar = (observacao, chave) =>
+      a.chamar(
+        `${rotaOrdens}/${op.id}`,
+        "PATCH",
+        {
+          statusEsperado: "PLANEJADA",
+          observacao,
+        },
+        { chave },
+      )
+    const chaveEdicao = randomUUID()
+    assert.equal((await editar("Edição original", chaveEdicao)).status, 200)
+    assert.equal((await editar("Edição posterior", randomUUID())).status, 200)
+    assert.equal((await editar("Edição original", chaveEdicao)).status, 200)
+    assert.equal(
+      (await a.chamar(`${rotaOrdens}/${op.id}`)).body.ordem.observacao,
+      "Edição posterior",
+    )
+    await post(
+      `${rotaOrdens}/${op.id}/avancar`,
+      {
+        statusEsperado: "PLANEJADA",
+        setorEsperado: null,
+        statusDestino: "LIBERADA",
+      },
+      randomUUID(),
+      200,
+    )
     const reservaMaterial = await post("/api/estoque/reservas", {
       origem: "PRODUCAO",
       idOrigem: op.id,
@@ -274,7 +382,45 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       idLocalEstoque: locais[0].id,
       quantidade: "6.000",
     })
-    await post(`/api/ordem_producao/${op.id}/iniciar`, {}, randomUUID(), 200)
+    const primeiraEtapa =
+      await prisma.ordem_producao_fluxo_setor.findFirstOrThrow({
+        where: { id_ordem_producao: op.id },
+        orderBy: { ordem: "asc" },
+      })
+    await post(
+      `${rotaOrdens}/${op.id}/etapas/iniciar`,
+      {
+        etapaId: primeiraEtapa.id,
+      },
+      randomUUID(),
+      200,
+    )
+    const rotaAvanco = `${rotaOrdens}/${op.id}/avancar`
+    const pausa = {
+      statusEsperado: "EM_PRODUCAO",
+      setorEsperado: primeiraEtapa.id_setor,
+      statusDestino: "PAUSADA",
+    }
+    const chavePausa = randomUUID()
+    await post(rotaAvanco, pausa, chavePausa, 200)
+    await post(
+      rotaAvanco,
+      {
+        ...pausa,
+        statusEsperado: "PAUSADA",
+        statusDestino: "EM_PRODUCAO",
+      },
+      randomUUID(),
+      200,
+    )
+    assert.equal(
+      (await post(rotaAvanco, pausa, chavePausa, 200)).ordem.status,
+      "PAUSADA",
+    )
+    assert.equal(
+      (await a.chamar(`${rotaOrdens}/${op.id}`)).body.ordem.status,
+      "EM_PRODUCAO",
+    )
     const consumo = {
       idReserva: reservaMaterial.idReserva,
       quantidade: "6.000",
@@ -320,8 +466,8 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     for (let i = 0; i < etapas.length; i++) {
       if (i)
         await post(
-          `/api/ordem_producao/${op.id}/etapas/${etapas[i].id}/iniciar`,
-          {},
+          `${rotaOrdens}/${op.id}/etapas/iniciar`,
+          { etapaId: etapas[i].id },
           randomUUID(),
           200,
         )
@@ -363,8 +509,8 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         )
       }
       await post(
-        `/api/ordem_producao/${op.id}/etapas/${etapas[i].id}/concluir`,
-        {},
+        `${rotaOrdens}/${op.id}/etapas/concluir`,
+        { etapaId: etapas[i].id },
         randomUUID(),
         200,
       )

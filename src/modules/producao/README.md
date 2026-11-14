@@ -146,6 +146,39 @@ O modelo ordem_producao não contém `data_cadastro`, `data_atualizacao` nem rel
 
 ## Consulta
 
+A tela `/producao/ordens` consulta `GET /api/ordens-producao`. A rota
+usa o envelope paginado abaixo, exige leitura em `ORDENS_PRODUCAO` e
+aceita os filtros de cabeçalho da listagem, incluindo
+`status=AGUARDANDO_MATERIAL` para ordens legadas. A tela usa busca pelo
+número, situação e paginação. A empresa é aplicada antes da contagem e da
+seleção da página. Cada linha contém ID, número, situação, prioridade,
+quantidade planejada, datas, setor atual e primeira etapa pendente ou em
+execução do snapshot. Os itens trazem referências de produto, cor e
+tamanho e quantidade produzida por item. Quantidades decimais são
+strings. Uma página sem resultados retorna `rows: []`.
+
+`GET /api/ordens-producao/opcoes?busca=` exige criação em
+`ORDENS_PRODUCAO`. Retorna até 50 produtos vinculados à empresa, habilitados
+para produção e estoque e com fluxo ativo, suas variações ativas e os locais
+ativos da empresa. O fluxo vem do cadastro do produto. Na abertura a ficha
+técnica vigente, o destino e a grade são revalidados no servidor.
+
+O formulário usa `POST /api/ordens-producao` com `idProduto`,
+`quantidade`, `idLocal` e, para produtos com grade, `idVariacao`. Os
+campos novos são opcionais no contrato anterior. A abertura grava o item,
+consumo planejado e snapshot na mesma transação. A edição usa
+`PATCH /api/ordens-producao/{id}` com `statusEsperado`. Ambas aceitam
+`Idempotency-Key` e devolvem a mesma confirmação em uma repetição da
+operação original. A primeira abertura retorna 201 e a repetição retorna
+200. A chave pertence à empresa, ao usuário e ao conteúdo da operação.
+
+Para avançar, a tela envia situação e setor esperados e mantém a mesma chave
+ao recuperar uma tentativa inconclusiva. Ordens com snapshot
+iniciam e concluem etapas com o ID da etapa. Concluir a última etapa encerra a
+ordem. Ordens legadas sem snapshot usam `/encerrar`. Reservas, consumo real,
+quantidade efetiva e entrada de acabado mantêm as regras operacionais e as
+permissões de estoque existentes.
+
 Listagens: `page=1`, `limit=20` por padrão, máximo 100, skip validado. Itens e etapas usam os mesmos parâmetros. Rows e count são consultados diretamente no Prisma com snapshot RepeatableRead; nenhuma listagem é filtrada em memória. Consulta individual retorna cabeçalho/contadores, sem carregar coleções; consulte sub-recursos paginados.
 
 Filtros: `id_empresa` (conferência do contexto), `id_pedido_cliente`, `id_local_estoque`, `id_setor`, `id_usuario`, `status`, `prioridade`, `numero`, `busca` por número; `data_inicio_de/ate`, `data_previsao_de/ate`, `data_conclusao_de/ate`. Datas finais YYYY-MM-DD incluem o dia UTC completo. Filtros combinados e empresa obrigatória são aplicados no banco. Parâmetros repetidos/desconhecidos são rejeitados.
@@ -153,6 +186,15 @@ Filtros: `id_empresa` (conferência do contexto), `id_pedido_cliente`, `id_local
 `ordenar_por`: id, numero, prioridade, data_inicio, data_previsao, data_conclusao; `ordem`: asc/desc. Ordenação padrão id desc, com ID como desempate quando necessário.
 
 ## Validação
+
+`tests/operacoes-integradas.integration.test.mjs` exercita a listagem e as
+ações da tela por HTTP com o Next compilado e MariaDB local. Além do
+preparador de [operações integradas](../../../docs/operacoes-integradas.md),
+a base de teste desta revisão precisa dos DDLs já existentes
+`20261031000000_eventos_apontamentos_producao`,
+`20261102000000_confirmacoes_producao`,
+`20261105000000_plano_pagamento_compra` e
+`20261110000000_revogacao_sessoes`.
 
 ```sh
 npm test -- tests/unit/ordem_producao tests/unit/api/rate-limit.test.ts

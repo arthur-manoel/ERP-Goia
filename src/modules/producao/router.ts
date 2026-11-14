@@ -1,8 +1,15 @@
 import "server-only"
-import { HttpError } from "@/lib/api/errors"
+import { ConflitoTransitorio, HttpError } from "@/lib/api/errors"
+import { executar as executarIdempotente } from "@/modules/reservas/operacoes"
+import { chaveRecebimento } from "@/modules/recebimentos/recebimentos.schema"
 import type { z } from "zod"
 import { autorizar } from "./producao.authorization"
-import { ProducaoError } from "./producao.repository"
+import {
+  ProducaoError,
+  transacao,
+  type Contexto,
+  type Transaction,
+} from "./producao.repository"
 import {
   abrirSchema,
   alterarSchema,
@@ -13,9 +20,9 @@ import {
 import {
   executarEtapa,
   consultarOrdem,
-  abrirOrdem,
-  alterarOrdem,
-  avancarOrdem,
+  abrirOrdemNaTransacao,
+  alterarOrdemNaTransacao,
+  avancarOrdemNaTransacao,
   encerrarOrdem,
 } from "./producao.service"
 
@@ -30,6 +37,40 @@ type Operacao =
   | "iniciarEtapa"
   | "concluirEtapa"
   | "consultar"
+async function confirmarEscrita<T>(
+  request: Request,
+  ctx: Contexto,
+  tipo:
+    | "ABERTURA_ORDEM_PRODUCAO"
+    | "EDICAO_ORDEM_PRODUCAO"
+    | "AVANCO_ORDEM_PRODUCAO",
+  input: object,
+  operacao: (tx: Transaction) => Promise<T>,
+) {
+  const abrir = tipo === "ABERTURA_ORDEM_PRODUCAO"
+  const header = request.headers.get("Idempotency-Key")
+  const headers = { "Cache-Control": "no-store" }
+  if (header === null)
+    return Response.json(await transacao(operacao), {
+      status: abrir ? 201 : 200,
+      headers,
+    })
+
+  const chave = chaveRecebimento.safeParse(header)
+  if (!chave.success) throw new ProducaoError(400, "Idempotency-Key inválida.")
+  const resultado = await executarIdempotente(
+    ctx,
+    chave.data,
+    tipo,
+    JSON.parse(JSON.stringify(input)),
+    [["ORDENS_PRODUCAO", abrir ? "criar" : "editar"]],
+    async (tx) => JSON.parse(JSON.stringify(await operacao(tx))),
+  )
+  return Response.json(resultado.dados, {
+    status: abrir && resultado.criado ? 201 : 200,
+    headers,
+  })
+}
 async function executar(
   request: Request,
   operacao: Operacao,
@@ -69,6 +110,36 @@ async function executar(
         )
       return parsed.data
     }
+    if (operacao === "abrir") {
+      const input = validar(abrirSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "ABERTURA_ORDEM_PRODUCAO",
+        input,
+        (tx) => abrirOrdemNaTransacao(tx, ctx, input),
+      )
+    }
+    if (operacao === "alterar") {
+      const input = validar(alterarSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "EDICAO_ORDEM_PRODUCAO",
+        { id, ...input },
+        (tx) => alterarOrdemNaTransacao(tx, ctx, id, input),
+      )
+    }
+    if (operacao === "avancar") {
+      const input = validar(avancarSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "AVANCO_ORDEM_PRODUCAO",
+        { id, ...input },
+        (tx) => avancarOrdemNaTransacao(tx, ctx, id, input),
+      )
+    }
     const result =
       operacao === "consultar"
         ? await consultarOrdem(ctx, id)
@@ -79,21 +150,18 @@ async function executar(
               validar(etapaSchema).etapaId,
               operacao === "iniciarEtapa",
             )
-          : operacao === "abrir"
-            ? await abrirOrdem(ctx, validar(abrirSchema))
-            : operacao === "alterar"
-              ? await alterarOrdem(ctx, id, validar(alterarSchema))
-              : operacao === "avancar"
-                ? await avancarOrdem(ctx, id, validar(avancarSchema))
-                : await encerrarOrdem(ctx, id, validar(encerrarSchema))
+          : await encerrarOrdem(ctx, id, validar(encerrarSchema))
     return Response.json(result, {
-      status: operacao === "abrir" ? 201 : 200,
+      status: 200,
       headers: { "Cache-Control": "no-store" },
     })
   } catch (error) {
     if (error instanceof HttpError)
       return Response.json(
-        { error: error.message },
+        {
+          error: error.message,
+          ...(error instanceof ConflitoTransitorio ? { code: error.code } : {}),
+        },
         { status: error.status, headers: { "Cache-Control": "no-store" } },
       )
     console.error("Falha na API de ordens de produção", error)

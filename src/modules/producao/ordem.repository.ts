@@ -7,7 +7,7 @@ import {
   type Contexto,
   type Transaction,
 } from "./producao.repository"
-import type { OrdemFilters, Pagination } from "./ordem.schema"
+import type { OrdemFilters, Pagination, ResumoFilters } from "./ordem.schema"
 export type Header = ordem_producao
 export const counts = {
   _count: {
@@ -38,7 +38,7 @@ export function write<T>(
 }
 function whereFor(
   ctx: Contexto,
-  filters: OrdemFilters,
+  filters: ResumoFilters,
 ): Prisma.ordem_producaoWhereInput {
   const {
     ordenar_por: _order,
@@ -94,25 +94,193 @@ export async function findAll(
   filters: OrdemFilters,
   { page, limit }: Pagination,
 ) {
-  const where = whereFor(ctx, filters)
-  const orderBy: Prisma.ordem_producaoOrderByWithRelationInput[] = [
-    { [filters.ordenar_por]: filters.ordem },
-    ...(filters.ordenar_por === "id" ? [] : [{ id: "asc" as const }]),
-  ]
+  const query = listQuery(ctx, filters, { page, limit })
   const [rows, count] = await prisma.$transaction(
     [
-      prisma.ordem_producao.findMany({
-        where,
-        include: counts,
-        orderBy,
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      prisma.ordem_producao.count({ where }),
+      prisma.ordem_producao.findMany({ ...query, include: counts }),
+      prisma.ordem_producao.count({ where: query.where }),
     ],
     { isolationLevel: "RepeatableRead" },
   )
   return { rows, count }
+}
+function listQuery(
+  ctx: Contexto,
+  filters: ResumoFilters,
+  { page, limit }: Pagination,
+) {
+  return {
+    where: whereFor(ctx, filters),
+    orderBy: [
+      { [filters.ordenar_por]: filters.ordem },
+      ...(filters.ordenar_por === "id" ? [] : [{ id: "asc" as const }]),
+    ],
+    skip: (page - 1) * limit,
+    take: limit,
+  }
+}
+export async function listarResumo(
+  ctx: Contexto,
+  filters: ResumoFilters,
+  pagination: Pagination,
+) {
+  const query = listQuery(ctx, filters, pagination)
+  const [ordens, count] = await prisma.$transaction(
+    [
+      prisma.ordem_producao.findMany({
+        ...query,
+        select: {
+          id: true,
+          numero: true,
+          status: true,
+          prioridade: true,
+          quantidade_planejada: true,
+          data_inicio: true,
+          data_previsao: true,
+          data_conclusao: true,
+          setores: { select: { nome: true, id_empresa: true } },
+          ordem_producao_snapshot: { select: { id_ordem_producao: true } },
+          ordem_producao_item: {
+            orderBy: { id: "asc" },
+            select: {
+              id: true,
+              id_produto: true,
+              id_cor: true,
+              id_tamanho: true,
+              quantidade_produzida: true,
+              produtos: { select: { nome: true } },
+              cores: { select: { nome: true } },
+              tamanhos: { select: { nome: true } },
+            },
+          },
+          ordem_producao_fluxo_setor: {
+            where: {
+              status: { not: "CONCLUIDA" },
+              setores: { id_empresa: ctx.idEmpresa },
+            },
+            orderBy: { ordem: "asc" },
+            take: 1,
+            select: {
+              id: true,
+              status: true,
+              ordem: true,
+              setores: { select: { nome: true } },
+            },
+          },
+        },
+      }),
+      prisma.ordem_producao.count({ where: query.where }),
+    ],
+    { isolationLevel: "RepeatableRead" },
+  )
+  const rows = ordens.map(
+    ({
+      ordem_producao_item,
+      ordem_producao_fluxo_setor,
+      ordem_producao_snapshot,
+      setores,
+      ...ordem
+    }) => ({
+      ...ordem,
+      setorAtual: setores?.id_empresa === ctx.idEmpresa ? setores.nome : null,
+      etapaAtual:
+        ordem_producao_snapshot &&
+        !["CONCLUIDA", "CANCELADA"].includes(ordem.status)
+          ? (ordem_producao_fluxo_setor[0] ?? null)
+          : null,
+      itens: ordem_producao_item,
+    }),
+  )
+  return { rows, count }
+}
+export async function opcoesAbertura(ctx: Contexto, busca: string) {
+  const id_empresa = ctx.idEmpresa
+  const [produtos, locais] = await prisma.$transaction(
+    [
+      prisma.produto_empresa.findMany({
+        where: {
+          id_empresa,
+          status: "ATIVO",
+          produtos: {
+            status: "ATIVO",
+            permite_producao: true,
+            controla_estoque: true,
+            nome: { contains: busca },
+          },
+          produto_fluxo: {
+            fluxos_producao: {
+              id_empresa,
+              status: "ATIVO",
+              fluxo_producao_setor: {
+                some: {},
+                every: { setores: { id_empresa, status: "ATIVO" } },
+              },
+            },
+          },
+        },
+        take: 50,
+        orderBy: [{ produtos: { nome: "asc" } }, { id_produto: "asc" }],
+        select: {
+          produtos: {
+            select: {
+              id: true,
+              nome: true,
+              unidade: true,
+              produto_variacoes: {
+                where: { id_empresa, status: "ATIVO" },
+                orderBy: { id: "asc" },
+                select: {
+                  id: true,
+                  cores: { select: { nome: true } },
+                  tamanhos: { select: { nome: true } },
+                },
+              },
+              estoque: {
+                where: { id_empresa },
+                select: { id_local_estoque: true, id_setor: true },
+              },
+            },
+          },
+          produto_fluxo: {
+            select: {
+              fluxos_producao: {
+                select: {
+                  nome: true,
+                  fluxo_producao_setor: {
+                    orderBy: { ordem: "desc" },
+                    take: 1,
+                    select: { id_setor: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+      prisma.locais_estoque.findMany({
+        where: { id_empresa, status: "ATIVO" },
+        select: { id: true, nome: true },
+        orderBy: [{ nome: "asc" }, { id: "asc" }],
+      }),
+    ],
+    { isolationLevel: "RepeatableRead" },
+  )
+  return {
+    produtos: produtos.flatMap(({ produtos, produto_fluxo }) => {
+      const fluxo = produto_fluxo?.fluxos_producao
+      const etapaFinal = fluxo?.fluxo_producao_setor[0]
+      return fluxo && etapaFinal
+        ? [
+            {
+              ...produtos,
+              fluxo: fluxo.nome,
+              idSetorFinal: etapaFinal.id_setor,
+            },
+          ]
+        : []
+    }),
+    locais,
+  }
 }
 export function count(ctx: Contexto, filters: OrdemFilters) {
   return prisma.ordem_producao.count({ where: whereFor(ctx, filters) })
