@@ -39,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
-import { useConfiguracaoProducao } from "@/features/setores/api"
+import { useConfiguracaoProducao } from "@/features/fluxo-producao/api"
 import type { FluxoProducao } from "../schemas"
 import { FormularioFluxo } from "./formulario-fluxo"
 import { VisualizadorFluxo } from "./visualizador-fluxo"

@@ -12,6 +12,7 @@ export const input = {
 export const row = {
   id: 1,
   id_empresa: 10,
+  id_plano_pagamento: null,
   id_compra: 20,
   id_categoria: 30,
   numero_parcela: 1,

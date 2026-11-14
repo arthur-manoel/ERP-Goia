@@ -2,7 +2,7 @@
 
 ## Ficha técnica ativa
 
-A tela em /produtos/fichas-tecnicas precisa dos dois métodos abaixo. O fluxo de OP já lê as tabelas `ficha_tecnica` e `ficha_tecnica_item` ao incluir o produto na ordem.
+Os dois métodos abaixo estão disponíveis na develop após a integração do PR #142. A tela em /produtos/fichas-tecnicas já usa esse contrato real, valida as respostas e permite recarregar a versão ativa após conflito. O fluxo de OP já lê as tabelas `ficha_tecnica` e `ficha_tecnica_item` ao incluir o produto na ordem.
 
 ### GET /api/fichas-tecnicas/ativa?id_produto=12
 
@@ -54,7 +54,7 @@ Usar `id_ficha_esperada: null` quando o produto ainda estiver sem ficha ativa. A
 - Para produto com grade, variações ativas já cadastradas na mesma empresa. A abertura seleciona uma variação disponível e envia `id_variacao`. O primeiro aceite também pode ser feito com um produto sem grade.
 - Permissões do usuário para Produtos, Setores, Fluxos, Ordens de Produção e Estoque, conforme cada operação.
 
-O CRUD básico de Produtos, Setores e Fluxos, a associação de fluxo ao produto, a abertura da OP, a inclusão de item, a reserva, o consumo e a conclusão têm rotas existentes no develop. Os contratos novos para completar a jornada com grade pela interface são os da ficha técnica ativa e das variações descritas abaixo.
+O CRUD básico de Produtos, Setores e Fluxos, a associação de fluxo ao produto, a abertura da OP, a inclusão de item, a reserva, o consumo e a conclusão têm rotas existentes no develop. A ficha técnica ativa já está integrada. As rotas de variações descritas abaixo continuam pendentes para a gestão da grade pela interface.
 
 ## Grade de cores e tamanhos por produto
 

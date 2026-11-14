@@ -10,6 +10,7 @@ import nextEnv from "@next/env"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { createServer } from "node:net"
+import { tokenDeSessao } from "./helpers/sessao-integracao.mjs"
 const { loadEnvConfig } = nextEnv
 
 // O ambiente configurado só é usado mediante opção explícita e host local.
@@ -73,7 +74,6 @@ test("Estoque: banco real, autorização, saldo, rollback e concorrência", asyn
   let prisma, server, httpBase
   try {
     ;({ prisma } = await import("../src/lib/prisma.ts"))
-    const { signAccessToken } = await import("../src/lib/jwt.ts")
     const { entradaHandler, saidaHandler, ajusteHandler, saldoHandler } =
       await import("../src/modules/movimentacoes-estoque/router.ts")
     const locais = [],
@@ -137,11 +137,7 @@ test("Estoque: banco real, autorização, saldo, rollback e concorrência", asyn
         pode_editar: true,
       },
     })
-    const token = signAccessToken({
-      id: usuario.id,
-      name: marker,
-      role: "PRODUCAO",
-    })
+    const token = await tokenDeSessao(prisma, usuario.id, "PRODUCAO")
     const base = {
       idProduto: produto.id,
       idLocalEstoque: locais[0].id,
@@ -473,7 +469,7 @@ test("Estoque: banco real, autorização, saldo, rollback e concorrência", asyn
         })
         assert.equal(
           (await chamar(entradaHandler, { ...base, quantidade: "1" })).status,
-          403,
+          401,
         )
         await prisma.usuarios.update({
           where: { id: usuario.id },
@@ -711,7 +707,7 @@ test("Estoque: banco real, autorização, saldo, rollback e concorrência", asyn
           where: { id: empresas[0] },
           data: { status: "INATIVA" },
         })
-        assert.equal((await tentativa()).status, 403)
+        assert.equal((await tentativa()).status, 401)
         await prisma.empresas.update({
           where: { id: empresas[0] },
           data: { status: "ATIVA" },
@@ -720,7 +716,7 @@ test("Estoque: banco real, autorização, saldo, rollback e concorrência", asyn
           where: { id: vinculo.id },
           data: { status: "INATIVO" },
         })
-        assert.equal((await tentativa()).status, 403)
+        assert.equal((await tentativa()).status, 401)
         await prisma.usuario_empresa.update({
           where: { id: vinculo.id },
           data: { status: "ATIVO" },

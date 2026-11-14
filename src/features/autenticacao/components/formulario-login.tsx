@@ -34,6 +34,7 @@ export function FormularioLogin({ retorno = "/" }: { retorno?: string }) {
 
   return (
     <form
+      method="post"
       noValidate
       onSubmit={form.handleSubmit(async ({ usuario, senha }) => {
         setErro("")

@@ -12,7 +12,12 @@ import {
   type Contexto,
 } from "./producao.repository"
 
-export async function autorizar(
+/**
+ * Mesma autorização de `autorizar`, mas devolve também as permissões da
+ * empresa (`pode`) e se o usuário é administrador. Só os módulos que enviam
+ * essas informações ao front (setores) usam esta variante.
+ */
+export async function autorizarDetalhado(
   request: Request,
   acao: "ler" | "criar" | "editar" | "excluir",
   recurso: RecursoPermissao = "ORDENS_PRODUCAO",
@@ -61,5 +66,27 @@ export async function autorizar(
   )
   if (!admin && !permissao?.[`pode_${acao}`])
     throw new ProducaoError(403, "Acesso negado.")
-  return { idUsuario, idEmpresa: vinculo.id_empresa }
+  const pode = {
+    ler: admin || permissao?.pode_ler === true,
+    criar: admin || permissao?.pode_criar === true,
+    editar: admin || permissao?.pode_editar === true,
+    excluir: admin || permissao?.pode_excluir === true,
+  }
+  return {
+    idUsuario,
+    idEmpresa: vinculo.id_empresa,
+    pode,
+    administrador: admin,
+  }
+}
+
+/** Contexto mínimo `{ idUsuario, idEmpresa }`: contrato usado pelos demais módulos. */
+export async function autorizar(
+  request: Request,
+  acao: "ler" | "criar" | "editar" | "excluir",
+  recurso: RecursoPermissao = "ORDENS_PRODUCAO",
+): Promise<Contexto | Response> {
+  const ctx = await autorizarDetalhado(request, acao, recurso)
+  if (ctx instanceof Response) return ctx
+  return { idUsuario: ctx.idUsuario, idEmpresa: ctx.idEmpresa }
 }

@@ -1,153 +1,202 @@
-"use client"
+import { z } from "zod"
+import type {
+  AlteracoesSetor,
+  SetorApi,
+  TipoSetor,
+  ValoresSetor,
+} from "./tipos"
 
-import { useEffect, useState } from "react"
-import {
-  mensagemErro,
-  useAutenticacao,
-} from "@/features/autenticacao/provedor-autenticacao"
-import type { FluxoProducao } from "@/features/fluxo-producao/schemas"
-import type { Setor } from "./schemas"
+export type Requisitar = (url: string, init?: RequestInit) => Promise<Response>
 
-type Registro = {
-  id: number
-  nome: string
-  descricao: string | null
-  ativo: boolean
+const idSchema = z.number().int().positive()
+export const setorSchemaApi = z.object({
+  id: idSchema,
+  nome: z.string(),
+  tipo: z.string(),
+  descricao: z.string().nullable(),
+  ativo: z.boolean(),
+  recursos: z.array(z.string()),
+})
+const permissoesSchema = z.object({
+  ler: z.boolean(),
+  criar: z.boolean(),
+  editar: z.boolean(),
+  excluir: z.boolean(),
+})
+export const metaSetoresSchema = z.object({
+  permissoes: permissoesSchema,
+  administrador: z.boolean(),
+})
+const tipoSchemaApi = z.object({
+  id: idSchema,
+  nome: z.string(),
+  ativo: z.boolean(),
+})
+
+/** Toda chamada leva o X-Empresa-Id da empresa da tela; `requisitar` recusa se a ativa mudou. */
+export function cabecalhosEmpresa(idEmpresa: number, json = false) {
+  idSchema.max(2_147_483_647).parse(idEmpresa)
+  return {
+    "X-Empresa-Id": String(idEmpresa),
+    ...(json ? { "Content-Type": "application/json" } : {}),
+  }
 }
-type RegistroFluxo = Registro & { setores: { id: number; ordem: number }[] }
-type Dados = { sectors: Setor[]; productionFlows: FluxoProducao[] }
-type Api = ReturnType<typeof useAutenticacao>["requisitar"]
 
-async function listar<T>(
-  requisitar: Api,
-  colecao: "setores" | "fluxos",
-  signal: AbortSignal,
+function validar<T>(schema: z.ZodType<T>, dados: unknown): T {
+  const resultado = schema.safeParse(dados)
+  if (!resultado.success) throw new Error("Resposta de setores inválida.")
+  return resultado.data
+}
+
+async function lerResposta(resposta: Response): Promise<unknown> {
+  const corpo: unknown = await resposta.json().catch(() => null)
+  if (!resposta.ok) {
+    const mensagem =
+      typeof corpo === "object" && corpo && "error" in corpo
+        ? (corpo as { error: unknown }).error
+        : undefined
+    throw new Error(
+      typeof mensagem === "string"
+        ? mensagem
+        : resposta.status === 403
+          ? "Você não tem permissão para esta operação."
+          : `Falha na requisição (${resposta.status}).`,
+    )
+  }
+  return corpo
+}
+
+async function setorDaResposta(resposta: Response, idEsperado?: number) {
+  const { setor } = validar(
+    z.object({ setor: setorSchemaApi }),
+    await lerResposta(resposta),
+  )
+  if (idEsperado !== undefined && setor.id !== idEsperado)
+    throw new Error("Resposta de setores inválida.")
+  return setor
+}
+
+export async function listarTipos(
+  requisitar: Requisitar,
+  idEmpresa: number,
+  filtro?: { status?: "ATIVO" | "INATIVO"; sinal?: AbortSignal },
 ) {
-  const rota = colecao === "setores" ? "/api/setores" : "/api/fluxos-producao"
-  const registros: T[] = []
-  let totalPaginas = 1
-  for (let pagina = 1; pagina <= totalPaginas; pagina++) {
-    const resposta = await requisitar(`${rota}?pagina=${pagina}&limite=100`, {
-      signal,
-    })
-    if (!resposta.ok) throw new Error(await mensagemErro(resposta))
-    const corpo = (await resposta.json()) as Record<typeof colecao, T[]> & {
-      paginacao: { totalPaginas: number }
-    }
-    registros.push(...corpo[colecao])
-    totalPaginas = corpo.paginacao.totalPaginas
-  }
-  return registros
+  const query = filtro?.status ? `?status=${filtro.status}` : ""
+  const dados = validar(
+    z.object({ tipos: z.array(tipoSchemaApi) }),
+    await lerResposta(
+      await requisitar(`/api/tipos-setor${query}`, {
+        signal: filtro?.sinal,
+        headers: cabecalhosEmpresa(idEmpresa),
+      }),
+    ),
+  )
+  return dados.tipos satisfies TipoSetor[]
 }
 
-function apresentar(registro: Registro) {
-  return {
-    id: String(registro.id),
-    name: registro.nome,
-    description: registro.descricao ?? "",
-    status: registro.ativo ? ("Ativo" as const) : ("Inativo" as const),
-  }
+export async function criarSetor(
+  requisitar: Requisitar,
+  idEmpresa: number,
+  valores: ValoresSetor,
+) {
+  const descricao = valores.descricao.trim()
+  return setorDaResposta(
+    await requisitar("/api/setores", {
+      method: "POST",
+      headers: cabecalhosEmpresa(idEmpresa, true),
+      body: JSON.stringify({
+        nome: valores.nome.trim(),
+        tipo: valores.tipo,
+        ...(descricao ? { descricao } : {}),
+      }),
+    }),
+  )
 }
 
-export function useConfiguracaoProducao(incluirFluxos: boolean) {
-  const { empresa, requisitar } = useAutenticacao()
-  const idEmpresa = empresa?.id
-  const [revisao, setRevisao] = useState(0)
-  const [resultado, setResultado] = useState<{
-    idEmpresa: number
-    revisao: number
-    data: Dados | null
-    error: string
-  } | null>(null)
+export async function editarSetor(
+  requisitar: Requisitar,
+  idEmpresa: number,
+  setor: SetorApi,
+  alteracoes: AlteracoesSetor,
+) {
+  if (!Object.keys(alteracoes).length)
+    throw new Error("Nenhuma alteração para salvar.")
+  return setorDaResposta(
+    await requisitar(`/api/setores/${setor.id}`, {
+      method: "PATCH",
+      headers: cabecalhosEmpresa(idEmpresa, true),
+      body: JSON.stringify(alteracoes),
+    }),
+    setor.id,
+  )
+}
 
-  useEffect(() => {
-    if (!idEmpresa) return
-    const controle = new AbortController()
-    const { signal } = controle
-    void Promise.all([
-      listar<Registro>(requisitar, "setores", signal),
-      incluirFluxos ? listar<RegistroFluxo>(requisitar, "fluxos", signal) : [],
-    ])
-      .then(([setores, fluxos]) => {
-        if (signal.aborted) return
-        setResultado({
-          idEmpresa,
-          revisao,
-          error: "",
-          data: {
-            sectors: setores.map((setor) => ({
-              ...apresentar(setor),
-              type: "Outro",
-            })),
-            productionFlows: fluxos.map((fluxo) => ({
-              ...apresentar(fluxo),
-              steps: fluxo.setores
-                .toSorted((a, b) => a.ordem - b.ordem)
-                .map((setor) => ({ sectorId: String(setor.id) })),
-            })),
-          },
-        })
-      })
-      .catch((error: unknown) => {
-        if (!signal.aborted)
-          setResultado({
-            idEmpresa,
-            revisao,
-            data: null,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Não foi possível carregar os registros.",
-          })
-      })
-    return () => controle.abort()
-  }, [idEmpresa, incluirFluxos, requisitar, revisao])
+/** Inativar/reativar: único caminho que envia `ativo`. */
+export async function alterarStatusSetor(
+  requisitar: Requisitar,
+  idEmpresa: number,
+  setor: SetorApi,
+  ativo: boolean,
+) {
+  return setorDaResposta(
+    await requisitar(`/api/setores/${setor.id}`, {
+      method: "PATCH",
+      headers: cabecalhosEmpresa(idEmpresa, true),
+      body: JSON.stringify({ ativo }),
+    }),
+    setor.id,
+  )
+}
 
-  const atual =
-    resultado?.idEmpresa === idEmpresa && resultado?.revisao === revisao
-      ? resultado
-      : null
-  function reload() {
-    setRevisao((valor) => valor + 1)
-  }
+export async function substituirRecursos(
+  requisitar: Requisitar,
+  idEmpresa: number,
+  setor: SetorApi,
+  recursos: string[],
+) {
+  return setorDaResposta(
+    await requisitar(`/api/setores/${setor.id}/recursos`, {
+      method: "PUT",
+      headers: cabecalhosEmpresa(idEmpresa, true),
+      body: JSON.stringify({ recursos }),
+    }),
+    setor.id,
+  )
+}
 
-  async function salvar(rota: string, dados: object, id?: string) {
-    const resposta = await requisitar(id ? `${rota}/${id}` : rota, {
-      method: id ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(dados),
-    })
-    if (!resposta.ok) throw new Error(await mensagemErro(resposta))
-    reload()
-  }
+export async function criarTipo(
+  requisitar: Requisitar,
+  idEmpresa: number,
+  nome: string,
+) {
+  const { tipo } = validar(
+    z.object({ tipo: tipoSchemaApi }),
+    await lerResposta(
+      await requisitar("/api/tipos-setor", {
+        method: "POST",
+        headers: cabecalhosEmpresa(idEmpresa, true),
+        body: JSON.stringify({ nome: nome.trim() }),
+      }),
+    ),
+  )
+  return tipo
+}
 
-  return {
-    idEmpresa,
-    data: atual?.data,
-    error: atual?.error ?? (idEmpresa ? "" : "Selecione uma empresa ativa."),
-    reload,
-    salvarSetor: (valores: Omit<Setor, "id">, id?: string) =>
-      salvar(
-        "/api/setores",
-        {
-          nome: valores.name,
-          descricao: valores.description || null,
-          ativo: valores.status === "Ativo",
-        },
-        id,
-      ),
-    salvarFluxo: (valores: Omit<FluxoProducao, "id">, id?: string) =>
-      salvar(
-        "/api/fluxos-producao",
-        {
-          nome: valores.name,
-          descricao: valores.description || null,
-          ativo: valores.status === "Ativo",
-          setores: valores.steps.map(({ sectorId }) => Number(sectorId)),
-        },
-        id,
-      ),
-    alterarStatusFluxo: (id: string, ativo: boolean) =>
-      salvar("/api/fluxos-producao", { ativo }, id),
-  }
+export async function alterarStatusTipo(
+  requisitar: Requisitar,
+  idEmpresa: number,
+  tipo: TipoSetor,
+  ativo: boolean,
+) {
+  const { tipo: salvo } = validar(
+    z.object({ tipo: tipoSchemaApi }),
+    await lerResposta(
+      await requisitar(`/api/tipos-setor/${tipo.id}`, {
+        method: "PATCH",
+        headers: cabecalhosEmpresa(idEmpresa, true),
+        body: JSON.stringify({ ativo }),
+      }),
+    ),
+  )
+  return salvo
 }

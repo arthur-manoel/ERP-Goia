@@ -10,11 +10,13 @@ const mocks = vi.hoisted(() => ({
   incluirItem: vi.fn(),
   editarItem: vi.fn(),
   removerItem: vi.fn(),
+  consultarOpcoes: vi.fn(),
 }))
 vi.mock("../../../src/modules/pedidos/pedidos.authorization", () => ({
   autorizar: mocks.auth,
 }))
 vi.mock("../../../src/modules/pedidos/pedidos.service", () => mocks)
+vi.mock("../../../src/modules/pedidos/pedidos.opcoes", () => mocks)
 const ctx = { params: Promise.resolve({ id: "10", idItem: "20" }) }
 const body = {
   idCliente: 1,
@@ -39,6 +41,7 @@ function request(
   })
 }
 beforeEach(() => {
+  mocks.consultarOpcoes.mockResolvedValue({ clientes: [], produtos: [] })
   mocks.auth.mockResolvedValue({ idUsuario: 1, idEmpresa: 10 })
   mocks.criarPedido.mockResolvedValue({
     idPedido: 10,
@@ -62,6 +65,33 @@ beforeEach(() => {
     mocks.removerItem,
   ])
     fn.mockResolvedValue({ idPedido: 10, versao: 2 })
+})
+it("opções usa somente a empresa autorizada e exige leitura de pedidos", async () => {
+  const resposta = await routes.opcoesHandler(
+    request("GET", undefined, {}, "?busca=camisa"),
+  )
+  expect(resposta.status).toBe(200)
+  expect(mocks.auth).toHaveBeenCalledWith(expect.any(Request), "ler")
+  expect(mocks.consultarOpcoes).toHaveBeenCalledWith(
+    { idUsuario: 1, idEmpresa: 10 },
+    "camisa",
+  )
+  expect(resposta.headers.get("Cache-Control")).toBe("private, no-store")
+})
+it("opções rejeita empresa injetada pela query e não consulta sem permissão", async () => {
+  expect(
+    (
+      await routes.opcoesHandler(
+        request("GET", undefined, {}, "?id_empresa=20"),
+      )
+    ).status,
+  ).toBe(400)
+  expect(mocks.consultarOpcoes).not.toHaveBeenCalled()
+  mocks.auth.mockResolvedValue(
+    Response.json({ error: "Acesso negado." }, { status: 403 }),
+  )
+  expect((await routes.opcoesHandler(request())).status).toBe(403)
+  expect(mocks.consultarOpcoes).not.toHaveBeenCalled()
 })
 it("POST usa permissão comercial e contexto do servidor", async () => {
   const r = await routes.criarHandler(request("POST", body))

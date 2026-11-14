@@ -62,6 +62,8 @@ Backend de ordens de produção: CRUD multiempresa, ciclo de vida, itens e apont
 
 ### Interface de pedidos de venda, reservas, produção e recebimentos
 
+Em `/vendas/pedidos`, o cadastro consulta a API por número/cliente e status, cria rascunhos com cliente, produto e variação de cor/tamanho e permite editar cabeçalho e itens com a versão consultada. A criação preserva a chave de idempotência e o conteúdo da tentativa em `sessionStorage` para repetição após falha de comunicação. As opções de clientes e produtos elegíveis vêm de `GET /api/pedidos/opcoes`, com a empresa e a permissão de pedidos verificadas no servidor. A edição de cada item é uma operação independente e atualiza os totais retornados pelo banco.
+
 As telas `/vendas/pedidos`, `/producao/ordens`, `/estoque/reservas`, `/financeiro` e `/financeiro/contas-receber` executam as ações operacionais nos registros reais via JWT e empresa ativa. Reservas distinguem saldo físico, reservado e disponível por variação/local, com pendências explícitas para planejamento. Consumo real e entrada na fábrica usam o serviço oficial; envio e recebimento de transferência antecedem a disponibilidade na loja. Entregas consomem as reservas e baixam uma única vez; o fechamento gera as parcelas e a tela financeira registra recebimentos parciais/totais.
 
 Cadastro e edição estrutural de pedidos e OPs usam os contratos das APIs existentes. Regras, limites, scripts DB-first e reprodução local dos três cards na mesma entrega: [operações integradas](docs/operacoes-integradas.md). A aplicação do DDL compartilhado/produção depende do responsável antes da implantação; a publicação da PR não altera o banco.
@@ -370,23 +372,36 @@ transacionais, mantendo o bloqueio por usuário durante as decisões do service.
 `POST /api/auth/login` retorna `{ id, name, role, accessToken }` e grava o refresh
 no cookie `refresh_token`: httpOnly, secure em produção, sameSite lax,
 path `/api/auth`, validade de sete dias. `POST /api/auth/refresh` rotaciona o cookie
-e retorna `{ accessToken }`; token ausente, expirado, revogado ou reutilizado
-retorna 401. Reuso de token já rotacionado revoga todos os refresh tokens do usuário.
-`POST /api/auth/logout` revoga o refresh e limpa o cookie. O cookie antigo
-`session_id` é removido nos fluxos de autenticação.
+e retorna `{ accessToken }`. O refresh ausente, expirado, revogado ou reutilizado
+recebe 401. Reutilizar um refresh rotacionado de uma sessão ainda ativa revoga
+todas as sessões do usuário. A reutilização de uma sessão já encerrada recebe
+401 e preserva outras sessões. Quando o navegador envia Bearer na renovação,
+o cookie deve pertencer à mesma sessão.
+
+`POST /api/auth/logout` encerra a sessão identificada pelo cookie ou por um
+Bearer ainda válido. Um refresh antigo da mesma sessão também identifica a
+sessão após a rotação. Um Bearer inválido recebe 401. Quando as duas credenciais
+identificam sessões diferentes, a API retorna 409. A API só confirma o logout
+depois de persistir a revogação.
+O sucesso limpa o cookie de refresh e o antigo cookie `session_id`. Outras
+sessões do usuário permanecem válidas.
 
 Configure `ACCESS_TOKEN_SECRET` com um segredo aleatório por ambiente (o `.env`
 local é ignorado pelo Git). Os JWTs usam HS256 e expiram em 15 minutos.
 O cliente envia `Authorization: Bearer <accessToken>` nas rotas protegidas e
-chama refresh para renovar o acesso; serialize as renovações, inclusive entre
-abas, pois reuso concorrente também causa revogação. Logout e alteração de perfil
-não invalidam JWTs já emitidos: eles permanecem válidos até expirar.
+chama refresh para renovar o acesso. Serialize as renovações, inclusive entre
+abas, para evitar reuso. O JWT contém um identificador aleatório de sessão
+(`sid`) preservado na rotação. Em cada requisição protegida, o servidor confere
+assinatura, validade, refresh ativo da mesma sessão e perfil atual. Sessões
+revogadas recebem 401 de imediato. Uma sessão válida sem permissão recebe 403.
+Uma falha ao consultar a sessão recebe 500 e interrompe a operação protegida.
 
 O `src/instrumentation.ts` registra automaticamente o adapter Prisma em cada
 instância Node.js do Next, antes de atender requisições, usando o singleton de
 `src/lib/prisma.ts`. Não é necessário configurar o adapter nas rotas.
 O adapter consulta `usuarios`, traduz `nome`/`senha` para `name`/`passwordHash`
-e rejeita usuários inativos. O perfil é recalculado no login e no refresh:
+e rejeita usuários inativos. O perfil é recalculado no login, no refresh e na
+autorização.
 
 - `usuarios.nivel_acesso = ADMIN` corresponde a `ADMINISTRACAO`.
 - Para `USUARIO`, são considerados nomes de cargos ativos e nomes/tipos de
@@ -405,18 +420,41 @@ o client com `npm run db:generate` e `npm run db:validate`.
 
 A persistência dos refresh tokens usa Prisma diretamente, com hash SHA-256;
 o hash fica na coluna `token` da tabela existente `refresh_tokens`.
-`replaced_by` guarda o ID inteiro do registro sucessor e `data_revogacao`
-registra a rotação, o logout ou a revogação por reutilização.
+`replaced_by` guarda o ID do sucessor, `sessao_id` agrupa os refresh tokens
+da sessão e `data_revogacao` registra a rotação ou revogação. A consulta usa
+o índice `idx_refresh_sessao`. Emissão, rotação e revogação usam o mesmo
+bloqueio por usuário, de modo que um refresh concorrente ao logout fica
+revogado mesmo que já tenha emitido um JWT. A versão por usuário seria
+adequada para revogar todos os dispositivos, mas o logout atual é por sessão.
+
+A alteração de nome ou status pela API de setores compara o perfil antes e
+depois, sob o mesmo bloqueio e na mesma transação que grava o setor. Quando
+um perfil efetivo mudaria, a API exige administração global ou vínculo de
+administrador ativo na empresa. Quem tiver o perfil alterado perde todas as
+sessões e precisa entrar novamente. A API de
+usuários em `develop` cadastra funcionários. Alterações diretas de nível global,
+status da conta, vínculos, empresa, cargos ou setores exigem que o responsável
+pelo banco identifique os usuários afetados e bloqueie suas linhas em
+`usuarios` por ID crescente com `SELECT ... FOR UPDATE`. Na mesma transação
+da alteração, deve atualizar os registros ativos de `refresh_tokens` desses
+usuários para `revogado = 1, data_revogacao = CURRENT_TIMESTAMP` antes do
+commit. Permissões de módulo e ação continuam sendo consultadas separadamente.
 
 ```ts
 const auth = await requireRole(request, ["ADMINISTRACAO", "FINANCEIRO"]);
 if (auth.error) return auth.error;
-// auth.user contém id e role; nenhuma consulta ao banco nesta autorização.
+// auth.user contém id e role de uma sessão ativa.
 ```
 
 A migration `prisma/migrations/20260920000000_refresh_token_rotation/migration.sql`
 adiciona somente `replaced_by INTEGER NULL` à tabela `refresh_tokens`.
-Aplique essa alteração antes de subir o código. A migration que criava a tabela
+A migration [de revogação](prisma/migrations/20261110000000_revogacao_sessoes/migration.sql)
+acrescenta a coluna e o índice de sessão. O responsável deve verificar o schema
+anterior, aplicar os incrementos pendentes no banco e conferir a estrutura antes
+de ativar o código novo. No corte, encerre o tráfego para todas as instâncias
+antigas antes de liberar as novas, pois o código antigo ainda aceita JWT sem
+`sid`. JWTs e refresh tokens anteriores exigem novo login. Os registros antigos
+ficam com `sessao_id` nulo. A migration que criava a tabela
 paralela foi removida. Se ela já foi aplicada em algum ambiente, reconcilie o
 histórico antes do deploy; esta alteração não remove automaticamente tabelas existentes.
 O projeto veio de introspecção, sem histórico de migrations; foi gerado um baseline do schema anterior em `20260918000000_baseline`.
@@ -430,12 +468,14 @@ banco compartilhado. Somente depois de validar a estrutura prévia e reconciliar
 ```bash
 npx prisma migrate deploy
 npx prisma generate
-node --test tests/auth.test.mjs
+  node --test tests/auth.test.mjs
+  npm test -- tests/unit/autenticacao tests/unit/estoque/authorization.test.ts
 ```
 
 Teste de integração (Node >=22.15) com persistência e adapter de usuários reais:
-use uma cópia **local de testes** MySQL/MariaDB com o baseline e a migration
-acima aplicados. O teste cria usuários próprios e os remove ao terminar.
+use uma cópia **local de testes** MySQL/MariaDB com a estrutura anterior e os
+incrementos de rotação e revogação aplicados. O teste cria usuários próprios e
+os remove ao terminar.
 Por padrão, ele exige `AUTH_TEST_DATABASE_URL` e não aplica DDL automaticamente.
 
 ```bash

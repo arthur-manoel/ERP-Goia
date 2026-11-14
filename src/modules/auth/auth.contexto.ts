@@ -12,7 +12,10 @@ export function contextoHandler(request: Request) {
       "VENDAS",
       "FINANCEIRO",
     ])
-    if (auth.error) throw new HttpError(auth.error.status, "Não autenticado.")
+    if (auth.error) {
+      const { error } = (await auth.error.json()) as { error: string }
+      throw new HttpError(auth.error.status, error)
+    }
     const idUsuario = Number(auth.user.id)
     if (
       !Number.isSafeInteger(idUsuario) ||

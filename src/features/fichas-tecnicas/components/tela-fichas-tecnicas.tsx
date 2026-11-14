@@ -14,9 +14,14 @@ import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import type { Produto, RespostaPaginada } from "@/features/produtos/tipos"
 import { quantidade } from "@/modules/reservas/reservas.schema"
 
-const rota = "/api/fichas-tecnicas/ativa"
-type Item = { id_produto_componente: number; quantidade: string }
-type Ficha = { id: number; versao: number; itens: Item[] }
+import {
+  consultarFicha,
+  salvarFicha,
+  ConflitoFichaError,
+  type Ficha,
+  type ItemFicha,
+} from "../api"
+
 type Catalogo = Pick<
   Produto,
   "id" | "nome" | "codigo" | "unidade" | "permite_producao" | "controla_estoque"
@@ -108,6 +113,7 @@ function Conteudo({ idEmpresa }: { idEmpresa: number }) {
         <FichaProduto
           key={produto}
           idProduto={Number(produto)}
+          idEmpresa={idEmpresa}
           catalogo={catalogo}
         />
       )}
@@ -117,14 +123,16 @@ function Conteudo({ idEmpresa }: { idEmpresa: number }) {
 
 function FichaProduto({
   idProduto,
+  idEmpresa,
   catalogo,
 }: {
   idProduto: number
+  idEmpresa: number
   catalogo: Catalogo[]
 }) {
   const { requisitar } = useAutenticacao()
   const [ficha, setFicha] = useState<Ficha | null>()
-  const [itens, setItens] = useState<Item[]>([])
+  const [itens, setItens] = useState<ItemFicha[]>([])
   const [componente, setComponente] = useState("")
   const [consumo, setConsumo] = useState("")
   const [erro, setErro] = useState("")
@@ -132,6 +140,7 @@ function FichaProduto({
   const [ocupado, setOcupado] = useState(false)
   const [sucesso, setSucesso] = useState(false)
   const trava = useRef(false)
+  const [conflito, setConflito] = useState(false)
   const opcoes = catalogo.filter(
     (item) =>
       item.id !== idProduto &&
@@ -141,15 +150,8 @@ function FichaProduto({
   useEffect(() => {
     const controle = new AbortController()
     const { signal } = controle
-    void requisitar(`${rota}?id_produto=${idProduto}`, { signal })
-      .then(async (resposta) => {
-        if (!resposta.ok)
-          throw new Error(
-            resposta.status === 404
-              ? "A API de ficha técnica ainda não está disponível."
-              : await mensagemErro(resposta),
-          )
-        const { data } = (await resposta.json()) as { data: Ficha | null }
+    void consultarFicha(requisitar, idEmpresa, idProduto, signal)
+      .then((data) => {
         if (!signal.aborted) {
           setFicha(data)
           setItens(data?.itens ?? [])
@@ -164,9 +166,13 @@ function FichaProduto({
           )
       })
     return () => controle.abort()
-  }, [idProduto, requisitar, revisao])
+  }, [idEmpresa, idProduto, requisitar, revisao])
 
   function adicionar() {
+    if (itens.length >= 500) {
+      setErro("A ficha permite até 500 componentes.")
+      return
+    }
     const validado = quantidade.safeParse(consumo.trim().replace(",", "."))
     if (
       !opcoes.some((item) => String(item.id) === componente) ||
@@ -195,21 +201,17 @@ function FichaProduto({
     setErro("")
     setSucesso(false)
     try {
-      const resposta = await requisitar(rota, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id_produto: idProduto,
-          id_ficha_esperada: ficha?.id ?? null,
-          itens,
-        }),
+      const data = await salvarFicha(requisitar, idEmpresa, {
+        id_produto: idProduto,
+        id_ficha_esperada: ficha?.id ?? null,
+        itens,
       })
-      if (!resposta.ok) throw new Error(await mensagemErro(resposta))
-      const { data } = (await resposta.json()) as { data: Ficha }
+      setConflito(false)
       setFicha(data)
       setItens(data.itens)
       setSucesso(true)
     } catch (error) {
+      setConflito(error instanceof ConflitoFichaError)
       setErro(
         error instanceof Error ? error.message : "Falha ao salvar a ficha.",
       )
@@ -246,6 +248,27 @@ function FichaProduto({
         <Alert variant="destructive">
           <AlertDescription>{erro}</AlertDescription>
         </Alert>
+      )}
+      {conflito && (
+        <div className="space-y-2">
+          <p className="text-sm">
+            Recarregar substitui a composição em edição pela versão ativa salva.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={ocupado}
+            onClick={() => {
+              setFicha(undefined)
+              setErro("")
+              setSucesso(false)
+              setConflito(false)
+              setRevisao((valor) => valor + 1)
+            }}
+          >
+            Recarregar ficha ativa
+          </Button>
+        </div>
       )}
       {sucesso && <p role="status">Ficha técnica ativada.</p>}
       <fieldset disabled={ocupado} className="space-y-4">
@@ -308,7 +331,7 @@ function FichaProduto({
           Adicionar insumo
         </Button>
       </fieldset>
-      <Button type="submit" disabled={ocupado || !itens.length}>
+      <Button type="submit" disabled={ocupado || conflito || !itens.length}>
         {ocupado ? "Salvando…" : "Salvar e ativar"}
       </Button>
     </form>

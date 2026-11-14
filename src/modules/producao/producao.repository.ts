@@ -14,7 +14,22 @@ export class ProducaoError extends HttpError {
     super(status, message)
   }
 }
-export type Contexto = { idUsuario: number; idEmpresa: number }
+export type PermissoesContexto = {
+  ler: boolean
+  criar: boolean
+  editar: boolean
+  excluir: boolean
+}
+/**
+ * `pode` e `administrador` são calculados por `autorizar` no servidor para o
+ * recurso da rota. Ausentes = nenhuma permissão (falha fechada).
+ */
+export type Contexto = {
+  idUsuario: number
+  idEmpresa: number
+  pode?: PermissoesContexto
+  administrador?: boolean
+}
 export type Transaction = Prisma.TransactionClient
 
 const include = {
@@ -22,7 +37,9 @@ const include = {
   ordem_producao_fluxo_setor: { orderBy: { ordem: "asc" as const } },
   ordem_producao_movimentacao_setor: { orderBy: { id: "asc" as const } },
 } satisfies Prisma.ordem_producaoInclude
-export type Ordem = Prisma.ordem_producaoGetPayload<{ include: typeof include }>
+export type Ordem = Prisma.ordem_producaoGetPayload<{
+  include: typeof include
+}>
 
 export function vinculosAtivos(idUsuario: number) {
   return prisma.usuario_empresa.findMany({
@@ -38,12 +55,15 @@ export function vinculosAtivos(idUsuario: number) {
     },
   })
 }
-export async function transacao<T>(operation: (tx: Transaction) => Promise<T>) {
+export async function transacao<T>(
+  operation: (tx: Transaction) => Promise<T>,
+  isolationLevel: Prisma.TransactionIsolationLevel = "Serializable",
+) {
   try {
     // Serializable protege também edição/recalculo e o histórico de setores.
     // Não repetir automaticamente uma transação que perdeu a disputa de estado.
     return await prisma.$transaction(operation, {
-      isolationLevel: "Serializable",
+      isolationLevel,
       maxWait: 10000,
       timeout: 30000,
     })
