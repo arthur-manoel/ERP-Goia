@@ -12,6 +12,8 @@ export type Entidade = "setor" | "fluxo"
 export type Registro = {
   id: number
   nome: string
+  /** Somente setores. */
+  tipo?: string
   descricao: string | null
   status: "ATIVO" | "INATIVO"
   createdAt: Date
@@ -41,7 +43,10 @@ export type Snapshot = {
 // Identificadores vêm exclusivamente desta enumeração interna. Valores usam binds Prisma.
 const tabela = (tipo: Entidade) =>
   tipo === "setor" ? Prisma.sql`setores` : Prisma.sql`fluxos_producao`
-const colunas = Prisma.sql`id, nome, descricao, status, data_cadastro AS createdAt, data_atualizacao AS updatedAt`
+const colunasFluxo = Prisma.sql`id, nome, descricao, status, data_cadastro AS createdAt, data_atualizacao AS updatedAt`
+const colunasSetor = Prisma.sql`id, nome, tipo, descricao, status, data_cadastro AS createdAt, data_atualizacao AS updatedAt`
+const colunasDe = (tipo: Entidade) =>
+  tipo === "setor" ? colunasSetor : colunasFluxo
 export async function buscar(
   tx: Transaction,
   ctx: Contexto,
@@ -49,7 +54,7 @@ export async function buscar(
   id: number,
 ) {
   const rows = await tx.$queryRaw<Registro[]>(
-    Prisma.sql`SELECT ${colunas} FROM ${tabela(tipo)} WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa} FOR UPDATE`,
+    Prisma.sql`SELECT ${colunasDe(tipo)} FROM ${tabela(tipo)} WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa} FOR UPDATE`,
   )
   if (!rows[0])
     throw new ProducaoError(
@@ -68,7 +73,7 @@ export async function listar(
     ${input.nome ? Prisma.sql`AND LOCATE(${input.nome}, nome) > 0` : Prisma.empty}
     ${input.status ? Prisma.sql`AND status = ${input.status}` : Prisma.empty}`
   const rows = await tx.$queryRaw<Registro[]>(
-    Prisma.sql`SELECT ${colunas} FROM ${tabela(tipo)} WHERE ${where} ORDER BY nome, id LIMIT ${input.limite} OFFSET ${(input.pagina - 1) * input.limite}`,
+    Prisma.sql`SELECT ${colunasDe(tipo)} FROM ${tabela(tipo)} WHERE ${where} ORDER BY nome, id LIMIT ${input.limite} OFFSET ${(input.pagina - 1) * input.limite}`,
   )
   const [count] = await tx.$queryRaw<Array<{ total: bigint }>>(
     Prisma.sql`SELECT COUNT(*) AS total FROM ${tabela(tipo)} WHERE ${where}`,
@@ -83,14 +88,19 @@ export async function gravar(
   id?: number,
 ) {
   const status = input.ativo === false ? "INATIVO" : "ATIVO"
+  const tipoSetor = input.tipo ?? "Outro"
   if (id !== undefined) {
     await tx.$executeRaw(
-      Prisma.sql`UPDATE ${tabela(tipo)} SET nome = ${input.nome}, descricao = ${input.descricao ?? null}, status = ${status}, data_atualizacao = CURRENT_TIMESTAMP(3) WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa}`,
+      tipo === "setor"
+        ? Prisma.sql`UPDATE setores SET nome = ${input.nome}, tipo = ${tipoSetor}, descricao = ${input.descricao ?? null}, status = ${status}, data_atualizacao = CURRENT_TIMESTAMP(3) WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa}`
+        : Prisma.sql`UPDATE ${tabela(tipo)} SET nome = ${input.nome}, descricao = ${input.descricao ?? null}, status = ${status}, data_atualizacao = CURRENT_TIMESTAMP(3) WHERE id = ${id} AND id_empresa = ${ctx.idEmpresa}`,
     )
     return id
   }
   await tx.$executeRaw(
-    Prisma.sql`INSERT INTO ${tabela(tipo)} (id_empresa, nome, descricao, status) VALUES (${ctx.idEmpresa}, ${input.nome}, ${input.descricao ?? null}, ${status})`,
+    tipo === "setor"
+      ? Prisma.sql`INSERT INTO setores (id_empresa, nome, tipo, descricao, status) VALUES (${ctx.idEmpresa}, ${input.nome}, ${tipoSetor}, ${input.descricao ?? null}, ${status})`
+      : Prisma.sql`INSERT INTO ${tabela(tipo)} (id_empresa, nome, descricao, status) VALUES (${ctx.idEmpresa}, ${input.nome}, ${input.descricao ?? null}, ${status})`,
   )
   const [row] = await tx.$queryRaw<
     Array<{ id: bigint }>
@@ -236,7 +246,12 @@ export function produtosDoFluxo(
 export function auditarCadastro(
   tx: Transaction,
   ctx: Contexto,
-  tabela: "setores" | "fluxos_producao" | "produto_fluxo",
+  tabela:
+    | "setores"
+    | "fluxos_producao"
+    | "produto_fluxo"
+    | "tipos_setor"
+    | "permissoes_setor",
   id: number,
   antes: unknown,
   depois: unknown,
@@ -264,4 +279,71 @@ export function auditarCadastro(
             ),
     },
   })
+}
+
+// ---- permissoes_setor e tipos_setor (sempre filtrados pela empresa do contexto) ----
+export async function recursosDosSetores(tx: Transaction, ids: number[]) {
+  const mapa = new Map<number, string[]>()
+  if (!ids.length) return mapa
+  const rows = await tx.permissoes_setor.findMany({
+    where: { id_setor: { in: ids } },
+    orderBy: [{ id_setor: "asc" }, { recurso: "asc" }],
+  })
+  for (const row of rows)
+    mapa.set(row.id_setor, [...(mapa.get(row.id_setor) ?? []), row.recurso])
+  return mapa
+}
+export async function substituirRecursos(
+  tx: Transaction,
+  idSetor: number,
+  recursos: string[],
+) {
+  await tx.permissoes_setor.deleteMany({ where: { id_setor: idSetor } })
+  if (recursos.length)
+    await tx.permissoes_setor.createMany({
+      data: recursos.map((recurso) => ({ id_setor: idSetor, recurso })),
+    })
+}
+export function fluxosAtivosDoSetor(
+  tx: Transaction,
+  ctx: Contexto,
+  idSetor: number,
+) {
+  return tx.$queryRaw<
+    Array<{ nome: string }>
+  >`SELECT f.nome FROM fluxos_producao f JOIN fluxo_producao_setor fs ON fs.id_fluxo = f.id WHERE fs.id_setor = ${idSetor} AND f.id_empresa = ${ctx.idEmpresa} AND f.status = 'ATIVO' ORDER BY f.nome`
+}
+export function tiposDaEmpresa(
+  tx: Transaction,
+  ctx: Contexto,
+  status?: "ATIVO" | "INATIVO",
+) {
+  return tx.tipos_setor.findMany({
+    where: { id_empresa: ctx.idEmpresa, ...(status ? { status } : {}) },
+    orderBy: { nome: "asc" },
+  })
+}
+export function tipoAtivoPorNome(tx: Transaction, ctx: Contexto, nome: string) {
+  return tx.tipos_setor.findFirst({
+    where: { id_empresa: ctx.idEmpresa, nome, status: "ATIVO" },
+  })
+}
+export async function buscarTipo(tx: Transaction, ctx: Contexto, id: number) {
+  const tipo = await tx.tipos_setor.findFirst({
+    where: { id, id_empresa: ctx.idEmpresa },
+  })
+  if (!tipo) throw new ProducaoError(404, "Tipo de setor não encontrado.")
+  return tipo
+}
+export function criarTipo(tx: Transaction, ctx: Contexto, nome: string) {
+  return tx.tipos_setor.create({
+    data: { id_empresa: ctx.idEmpresa, nome, status: "ATIVO" },
+  })
+}
+export function alterarStatusTipo(
+  tx: Transaction,
+  id: number,
+  status: "ATIVO" | "INATIVO",
+) {
+  return tx.tipos_setor.update({ where: { id }, data: { status } })
 }
