@@ -18,8 +18,7 @@ import { useAutenticacao } from "../provedor-autenticacao"
 
 export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
   const [aberto, setAberto] = useState(false)
-  const [saindo, setSaindo] = useState(false)
-  const { estado, usuario: conta, empresa, sair } = useAutenticacao()
+  const { estado, usuario: conta, empresa, sair, saindo } = useAutenticacao()
   const usuarioAtual =
     estado === "autenticado" && conta
       ? {
@@ -96,7 +95,6 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
               variant="outline"
               disabled={saindo}
               onClick={async () => {
-                setSaindo(true)
                 try {
                   await sair()
                   setAberto(false)
@@ -104,8 +102,6 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
                   toast.error(
                     "Não foi possível encerrar a sessão. Tente novamente.",
                   )
-                } finally {
-                  setSaindo(false)
                 }
               }}
             >

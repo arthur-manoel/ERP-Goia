@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import {
   KeyRound,
   Pencil,
@@ -93,8 +93,44 @@ const permissoesDoUsuario = (usuario?: UsuarioAdmin): PermissoesUsuario => {
 }
 
 export function TelaUsuarios() {
-  const { requisitar, empresa } = useAutenticacao()
+  const { empresa, chaveEmpresa } = useAutenticacao()
+  if (!empresa)
+    return (
+      <PageHeader
+        titulo="Usuários"
+        descricao="Selecione uma empresa para consultar seus usuários."
+      />
+    )
+  return (
+    <UsuariosDaEmpresa
+      key={chaveEmpresa}
+      empresa={empresa}
+      chaveEmpresa={chaveEmpresa}
+    />
+  )
+}
+
+function UsuariosDaEmpresa({
+  empresa,
+  chaveEmpresa,
+}: {
+  empresa: { id: number; nome: string }
+  chaveEmpresa: number
+}) {
+  const { requisitar: requisitarSessao, conferirEmpresa } = useAutenticacao()
+  const requisitar = useCallback(
+    async (url: string, init?: RequestInit) => {
+      conferirEmpresa(chaveEmpresa)
+      const headers = new Headers(init?.headers)
+      headers.set("X-Empresa-Id", String(empresa.id))
+      const resposta = await requisitarSessao(url, { ...init, headers })
+      conferirEmpresa(chaveEmpresa)
+      return resposta
+    },
+    [chaveEmpresa, conferirEmpresa, empresa.id, requisitarSessao],
+  )
   const [filtro, setFiltro] = useState<FiltroUsuarios>(filtrosUsuariosIniciais)
+  const consultaAtual = useRef<AbortController | null>(null)
   const [buscaDigitada, setBuscaDigitada] = useState("")
   const [dados, setDados] = useState<Awaited<
     ReturnType<typeof listarUsuarios>
@@ -107,33 +143,54 @@ export function TelaUsuarios() {
   const [permissoes, setPermissoes] =
     useState<PermissoesUsuario>(permissoesVazias)
 
-  const carregar = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!empresa) return
-      setCarregando(true)
-      setErro("")
-      try {
-        const resultado = await listarUsuarios(requisitar, filtro, signal)
-        if (!signal?.aborted) setDados(resultado)
-      } catch (causa) {
-        if (!signal?.aborted)
-          setErro(
-            causa instanceof Error
-              ? causa.message
-              : "Não foi possível carregar os usuários.",
+  const carregar = useCallback(async () => {
+    consultaAtual.current?.abort()
+    const controller = new AbortController()
+    consultaAtual.current = controller
+    const { signal } = controller
+    setCarregando(true)
+    setErro("")
+    try {
+      const resultado = await listarUsuarios(requisitar, filtro, signal)
+      if (!signal.aborted) {
+        conferirEmpresa(chaveEmpresa)
+        if (
+          resultado.usuarios.some(
+            (u) =>
+              u.usuario_empresa.length !== 1 ||
+              u.usuario_empresa[0].id_empresa !== empresa.id,
           )
-      } finally {
-        if (!signal?.aborted) setCarregando(false)
+        )
+          throw new Error(
+            "A lista recebida não corresponde à empresa selecionada.",
+          )
+        setDados(resultado)
       }
-    },
-    [empresa, filtro, requisitar],
-  )
+    } catch (causa) {
+      if (!signal.aborted) {
+        setDados(null)
+        setErro(
+          causa instanceof Error
+            ? causa.message
+            : "Não foi possível carregar os usuários.",
+        )
+      }
+    } finally {
+      if (!signal.aborted) setCarregando(false)
+    }
+  }, [chaveEmpresa, conferirEmpresa, empresa.id, filtro, requisitar])
   useEffect(() => {
     const controller = new AbortController()
-    void Promise.resolve().then(() => carregar(controller.signal))
-    return () => controller.abort()
+    void Promise.resolve().then(() => {
+      if (!controller.signal.aborted) void carregar()
+    })
+    return () => {
+      controller.abort()
+      consultaAtual.current?.abort()
+    }
   }, [carregar])
 
+  const pronto = !carregando && !erro && dados !== null
   const cargos = dados?.cargos ?? []
   const setores = dados?.setores ?? []
   const totalPaginas = dados?.paginacao.totalPaginas ?? 0
@@ -141,7 +198,7 @@ export function TelaUsuarios() {
   const vinculo = usuarioModal?.usuario_empresa[0]
   async function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
-    if (!modal || salvando) return
+    if (!modal || salvando || !pronto) return
     const form = new FormData(evento.currentTarget)
     setSalvando(true)
     try {
@@ -211,7 +268,7 @@ export function TelaUsuarios() {
   }
 
   async function confirmarInativacao() {
-    if (!inativar || salvando) return
+    if (!inativar || salvando || !pronto) return
     setSalvando(true)
     try {
       await inativarVinculo(requisitar, inativar.id)
@@ -232,6 +289,7 @@ export function TelaUsuarios() {
   }
 
   async function reativar(usuario: UsuarioAdmin) {
+    if (salvando || !pronto) return
     setSalvando(true)
     try {
       await editarUsuario(requisitar, usuario.id, { statusVinculo: "ATIVO" })
@@ -249,6 +307,7 @@ export function TelaUsuarios() {
   }
 
   function abrir(modalNovo: Modal) {
+    if (modalNovo && !pronto) return
     if (modalNovo?.tipo === "permissoes")
       setPermissoes(permissoesDoUsuario(modalNovo.usuario))
     setModal(modalNovo)
@@ -338,32 +397,25 @@ export function TelaUsuarios() {
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
+              disabled={!pronto}
               onClick={() => abrir({ tipo: "minha-senha" })}
             >
               <KeyRound /> Minha senha
             </Button>
             <Button
               variant="outline"
+              disabled={!pronto}
               onClick={() => abrir({ tipo: "vincular" })}
             >
               <UserPlus /> Vincular existente
             </Button>
-            <Button onClick={() => abrir({ tipo: "criar" })}>
+            <Button disabled={!pronto} onClick={() => abrir({ tipo: "criar" })}>
               <Plus /> Novo usuário
             </Button>
           </div>
         }
       />
 
-      {!empresa && (
-        <Alert>
-          <AlertTitle>Selecione uma empresa</AlertTitle>
-          <AlertDescription>
-            Escolha uma empresa para consultar e gerenciar seus vínculos de
-            usuários.
-          </AlertDescription>
-        </Alert>
-      )}
       {erro && (
         <Alert variant="destructive">
           <AlertTitle>Não foi possível carregar usuários</AlertTitle>
@@ -499,7 +551,7 @@ export function TelaUsuarios() {
                 </TableCell>
               </TableRow>
             ) : null}
-            {!carregando &&
+            {pronto &&
               dados?.usuarios.map((usuario) => {
                 const link = usuario.usuario_empresa[0]
                 if (!link) return null
@@ -595,7 +647,7 @@ export function TelaUsuarios() {
                   </TableRow>
                 )
               })}
-            {!carregando && !dados?.usuarios.length && (
+            {pronto && !dados?.usuarios.length && (
               <TableRow>
                 <TableCell
                   colSpan={6}

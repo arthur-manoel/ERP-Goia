@@ -9,6 +9,7 @@ import {
 import { ProtecaoRota } from "@/features/autenticacao/components/protecao-rota"
 import { comBloqueioSessao } from "@/features/autenticacao/requisicoes-sessao"
 import { ProdutosProntosView } from "@/features/produtos/components/produtos-prontos-view"
+import { TelaUsuarios } from "@/features/usuarios/components/tela-usuarios"
 const router = vi.hoisted(() => ({ replace: vi.fn() }))
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
@@ -72,14 +73,14 @@ function Modulo() {
     createElement("input", { "aria-label": "Dados da operação" }),
   )
 }
-async function montar() {
+async function montar(modulo = createElement(Modulo)) {
   await act(async () => {
     root.render(
       createElement(
         ProvedorAutenticacao,
         null,
         createElement(Capturar),
-        createElement(ProtecaoRota, null, createElement(Modulo)),
+        createElement(ProtecaoRota, null, modulo),
       ),
     )
   })
@@ -777,7 +778,7 @@ it.each([true, false])(
   },
 )
 
-it("logout sem confirmação encerra a sessão local e informa a falha sem invalidar outras abas", async () => {
+it("logout sem confirmação mantém a empresa e permite repetir a saída", async () => {
   const publicar = vi.fn()
   class CanalTeste extends EventTarget {
     postMessage = publicar
@@ -796,8 +797,110 @@ it("logout sem confirmação encerra a sessão local e informa a falha sem inval
       "Logout temporariamente indisponível.",
     )
   })
-  expect(ctx.estado).toBe("anonimo")
+  expect(ctx.estado).toBe("autenticado")
+  expect(ctx.empresa?.id).toBe(10)
+  expect(ctx.saindo).toBe(false)
   expect(publicar).not.toHaveBeenCalled()
+  await act(async () => ctx.sair())
+  expect(ctx.estado).toBe("anonimo")
+  expect(
+    chamadas.mock.calls.filter(([url]) => url === "/api/auth/logout"),
+  ).toHaveLength(2)
+})
+
+it("mantém o logout disponível depois de uma resposta inconclusiva", async () => {
+  await montar()
+  chamadas.mockImplementationOnce(
+    async () => new Response(null, { status: 200 }),
+  )
+  await act(async () => {
+    await expect(ctx.sair()).rejects.toThrow("confirmar")
+  })
+  expect(ctx.estado).toBe("autenticado")
+  await act(async () => ctx.sair())
+  expect(ctx.estado).toBe("anonimo")
+})
+
+it("troca de empresa desmonta linhas e ações e ignora resposta atrasada de B", async () => {
+  resposta = async () =>
+    json(1, [
+      { id: 10, nome: "Empresa A" },
+      { id: 20, nome: "Empresa B" },
+    ])
+  const listar = (id: number, nome: string) =>
+    Response.json({
+      usuarios: [
+        {
+          id: 50,
+          nome,
+          email: "operador@example.test",
+          status: "ATIVO",
+          data_cadastro: "2026-01-01T00:00:00Z",
+          _count: { usuario_empresa: 0 },
+          usuario_empresa: [
+            {
+              id,
+              id_empresa: id,
+              id_cargo: id,
+              id_setor: null,
+              nivel_acesso: "USUARIO",
+              status: "INATIVO",
+              cargos: { nome: "Operador", status: "ATIVO" },
+              setores: null,
+              permissoes_usuario: [],
+            },
+          ],
+        },
+      ],
+      paginacao: { pagina: 1, limite: 20, total: 1, totalPaginas: 1 },
+      cargos: [],
+      setores: [],
+    })
+  const anterior = chamadas.getMockImplementation()!
+  const atrasada = pendente<Response>()
+  const mutacoes: string[] = []
+  let tentativasB = 0
+  chamadas.mockImplementation(async (url, init) => {
+    if (!url.startsWith("/api/usuarios")) return anterior(url, init)
+    const empresa = new Headers(init?.headers).get("X-Empresa-Id")
+    if (init?.method === "PATCH") {
+      mutacoes.push(empresa!)
+      return Response.json({ usuario: { id: 50 } })
+    }
+    if (empresa === "20") {
+      if (++tentativasB === 1)
+        return Response.json({ error: "Erro B" }, { status: 503 })
+      if (tentativasB === 2) return atrasada.promise
+      return listar(20, "Linha da empresa B")
+    }
+    return listar(10, "Linha da empresa A")
+  })
+  const botao = (rotulo: string) =>
+    [...host.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === rotulo,
+    )
+
+  await montar(createElement(TelaUsuarios))
+  await act(async () => ctx.selecionarEmpresa(10))
+  expect(host.textContent).toContain("Linha da empresa A")
+  const acaoA = botao("Reativar vínculo")!
+  await act(async () => {
+    ctx.selecionarEmpresa(20)
+    acaoA.click()
+  })
+  expect(host.textContent).not.toContain("Linha da empresa A")
+  expect(host.textContent).toContain("Erro B")
+  expect(botao("Reativar vínculo")).toBeUndefined()
+  expect(mutacoes).toEqual([])
+  await act(async () => botao("Tentar novamente")!.click())
+  await act(async () => ctx.selecionarEmpresa(10))
+  await act(async () => atrasada.resolve(listar(20, "Linha antiga B")))
+  expect(host.textContent).toContain("Linha da empresa A")
+  expect(host.textContent).not.toContain("Linha antiga B")
+  await act(async () => ctx.selecionarEmpresa(20))
+  expect(host.textContent).toContain("Linha da empresa B")
+  await act(async () => botao("Reativar vínculo")!.click())
+  expect(mutacoes).toEqual(["20"])
 })
 it("resposta de módulo após trocar empresa é descartada", async () => {
   resposta = async () =>
@@ -1066,7 +1169,7 @@ it("sem sessão identificada o logout não usa apenas o cookie de outra aba", as
       "Não foi possível identificar a sessão.",
     )
   })
-  expect(ctx.estado).toBe("anonimo")
+  expect(ctx.estado).toBe("erro")
   expect(chamadas.mock.calls.some(([url]) => url === "/api/auth/logout")).toBe(
     false,
   )

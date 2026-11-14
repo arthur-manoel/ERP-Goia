@@ -10,8 +10,15 @@ import { SeletorEmpresa } from "./seletor-empresa"
 export function ProtecaoRota({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { estado, empresa, empresas, erroAcesso, recarregarAcesso, sair } =
-    useAutenticacao()
+  const {
+    estado,
+    empresa,
+    empresas,
+    erroAcesso,
+    recarregarAcesso,
+    sair,
+    saindo,
+  } = useAutenticacao()
   useEffect(() => {
     if (estado === "anonimo")
       router.replace(`/login?retorno=${encodeURIComponent(pathname)}`)
@@ -56,15 +63,16 @@ export function ProtecaoRota({ children }: { children: React.ReactNode }) {
             </Button>
             <Button
               variant="ghost"
+              disabled={saindo}
               onClick={() =>
                 void sair().catch(() =>
                   toast.error(
-                    "A sessão local foi encerrada, mas não foi possível confirmar o logout no servidor. Tente novamente antes de sair deste navegador.",
+                    "Não foi possível confirmar o encerramento da sessão. Tente sair novamente.",
                   ),
                 )
               }
             >
-              Sair
+              {saindo ? "Saindo…" : "Sair"}
             </Button>
           </div>
         </div>

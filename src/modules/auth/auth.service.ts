@@ -238,7 +238,16 @@ export async function logout(
   }
   if (accessToken === undefined) return
   const valid = readAccessToken(accessToken)
-  if (!valid) throw new HttpError(401, "Não foi possível identificar a sessão.")
+  if (!valid) {
+    if (
+      claims &&
+      !(await repository.withUserTokens(Number(claims.id), (tokens) =>
+        tokens.findActiveRefresh(Number(claims.id), claims.sid),
+      ))
+    )
+      return
+    throw new HttpError(401, "Não foi possível identificar a sessão.")
+  }
   await repository.withUserTokens(Number(valid.id), (tokens) =>
     tokens.revokeSession(Number(valid.id), valid.sid),
   )

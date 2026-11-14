@@ -32,6 +32,9 @@ type Contexto = {
   selecionarEmpresa: (id: number) => void
   entrar: (email: string, password: string) => Promise<void>
   sair: () => Promise<void>
+  saindo: boolean
+  chaveEmpresa: number
+  conferirEmpresa: (chave: number) => void
   requisitar: (url: string, init?: RequestInit) => Promise<Response>
 }
 const AutenticacaoContexto = createContext<Contexto | null>(null)
@@ -85,6 +88,8 @@ export function ProvedorAutenticacao({
   const [empresas, setEmpresas] = useState<EmpresaSessao[]>([])
   const [empresa, setEmpresa] = useState<EmpresaSessao | null>(null)
   const [erroAcesso, setErroAcesso] = useState<string | null>(null)
+  const [saindo, setSaindo] = useState(false)
+  const [chaveEmpresa, setChaveEmpresa] = useState(0)
   const token = useRef<string | null>(null)
   const tokenRecebido = useRef<string | null>(null)
   const usuarioAtual = useRef<UsuarioSessao | null>(null)
@@ -100,6 +105,7 @@ export function ProvedorAutenticacao({
   const ultimaMudanca = useRef(0)
   const loginPendente = useRef<number | null>(null)
   const logoutPendente = useRef<Promise<void> | null>(null)
+  const logoutSolicitado = useRef<number | null>(null)
 
   const avisarLogin = useCallback(() => {
     const instante = instanteDaSessao()
@@ -116,6 +122,8 @@ export function ProvedorAutenticacao({
     tokenRecebido.current = null
     usuarioAtual.current = null
     empresaAtual.current = null
+    logoutSolicitado.current = null
+    setChaveEmpresa(++versaoEmpresa.current)
     setUsuario(null)
     setEmpresas([])
     setEmpresa(null)
@@ -186,7 +194,8 @@ export function ProvedorAutenticacao({
           atual?.id === validada?.id && atual?.nome === validada?.nome
             ? atual
             : validada
-        if (atual?.id !== escolhida?.id) versaoEmpresa.current++
+        if (atual?.id !== escolhida?.id)
+          setChaveEmpresa(++versaoEmpresa.current)
         if (instante !== undefined && usuarioAtual.current === null)
           ultimaMudanca.current = Math.max(ultimaMudanca.current, instante)
         token.current = accessToken
@@ -214,6 +223,7 @@ export function ProvedorAutenticacao({
   const restaurar = useCallback(
     (silencioso = false) => {
       const versao = versaoSessao.current
+      if (logoutSolicitado.current === versao) return Promise.resolve(false)
       const emCurso = renovacaoAcesso.current
       if (emCurso?.versao === versao) return emCurso.resultado
       const idUsuario = usuarioAtual.current?.id
@@ -222,7 +232,11 @@ export function ProvedorAutenticacao({
       )
         .then(
           async (sessao) => {
-            if (versaoSessao.current !== versao) return false
+            if (
+              versaoSessao.current !== versao ||
+              logoutSolicitado.current === versao
+            )
+              return false
             if (!sessao) {
               limpar()
               return null
@@ -236,7 +250,11 @@ export function ProvedorAutenticacao({
             )
           },
           () => {
-            if (versaoSessao.current === versao) falhaAcesso()
+            if (
+              versaoSessao.current === versao &&
+              logoutSolicitado.current !== versao
+            )
+              falhaAcesso()
             return false
           },
         )
@@ -290,6 +308,7 @@ export function ProvedorAutenticacao({
   }, [limpar])
 
   const recarregarAcesso = useCallback(async () => {
+    if (logoutSolicitado.current === versaoSessao.current) return
     const silencioso = empresaAtual.current !== null
     if (!silencioso) {
       setEstado("carregando")
@@ -301,7 +320,8 @@ export function ProvedorAutenticacao({
     (id: number) => {
       const escolhida = empresas.find((e) => e.id === id)
       if (!escolhida || !usuarioAtual.current) return
-      if (empresaAtual.current?.id !== id) versaoEmpresa.current++
+      if (empresaAtual.current?.id !== id)
+        setChaveEmpresa(++versaoEmpresa.current)
       lembrar(usuarioAtual.current.id, id)
       empresaAtual.current = escolhida
       setEmpresa(escolhida)
@@ -347,12 +367,15 @@ export function ProvedorAutenticacao({
     [avisarLogin, carregarAcesso, esvaziar],
   )
   const sair = useCallback(async () => {
+    if (logoutPendente.current) return logoutPendente.current
     const accessToken = tokenRecebido.current ?? token.current
-    if (!accessToken && logoutPendente.current) return logoutPendente.current
-    limpar()
     if (!accessToken) throw new Error("Não foi possível identificar a sessão.")
     const sid = idSessao(accessToken)
+    const versao = versaoSessao.current
     const ultimoLogin = ultimaMudanca.current
+    setSaindo(true)
+    logoutSolicitado.current = versao
+    consulta.current?.abort()
     const resultado = comBloqueioSessao(async () => {
       // Um login apenas enfileirado ainda pode falhar. O Bearer impede que o
       // logout revogue uma sessão diferente caso o cookie já tenha mudado.
@@ -362,16 +385,29 @@ export function ProvedorAutenticacao({
         headers: { Authorization: `Bearer ${accessToken}` },
       })
       if (!response.ok) throw new Error(await mensagemErro(response))
+      const confirmacao = await response.json().catch(() => null)
+      if (confirmacao?.ok !== true)
+        throw new Error("Não foi possível confirmar o encerramento da sessão.")
+      if (versaoSessao.current === versao) limpar()
       if (sid) canalSessao.current?.postMessage(`logout:${sid}`)
     }).finally(() => {
-      if (logoutPendente.current === resultado) logoutPendente.current = null
+      if (logoutPendente.current === resultado) {
+        logoutPendente.current = null
+        setSaindo(false)
+      }
     })
     logoutPendente.current = resultado
     return resultado
   }, [limpar])
+  const conferirEmpresa = useCallback((chave: number) => {
+    if (chave !== versaoEmpresa.current || !empresaAtual.current)
+      throw new DOMException("Sessão ou empresa alterada.", "AbortError")
+  }, [])
   const requisitar = useCallback(
     async (url: string, init: RequestInit = {}) => {
       const versao = versaoSessao.current
+      if (logoutSolicitado.current === versao)
+        throw new Error("Saída sem confirmação. Tente sair novamente.")
       if (!token.current) throw new Error("Entre para acessar o ERP.")
       if (!empresaAtual.current)
         throw new Error("Selecione uma empresa para continuar.")
@@ -384,6 +420,7 @@ export function ProvedorAutenticacao({
       const conferir = () => {
         if (
           versaoSessao.current !== versao ||
+          logoutSolicitado.current === versao ||
           versaoEmpresa.current !== selecao ||
           usuarioAtual.current?.id !== idUsuario ||
           empresaAtual.current?.id !== idEmpresa
@@ -432,6 +469,9 @@ export function ProvedorAutenticacao({
         selecionarEmpresa,
         entrar,
         sair,
+        saindo,
+        chaveEmpresa,
+        conferirEmpresa,
         requisitar,
       }}
     >
