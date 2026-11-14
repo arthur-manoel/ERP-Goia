@@ -2,6 +2,7 @@
 
 import { lerRespostaOperacao } from "@/features/erp/resposta-operacao"
 import { CadastroPedidos } from "@/features/pedidos/components/cadastro-pedidos"
+import { CadastroOpApi } from "@/features/producao/components/cadastro-op-api"
 
 import Link from "next/link"
 import {
@@ -186,7 +187,12 @@ async function json<T>(response: Response): Promise<T> {
     throw new Error(value.error ?? "Não foi possível consultar os dados.")
   return (value.data ?? value) as T
 }
-function useConsulta<T>(url: string | null, requisitar: Api, revisao: number) {
+function useConsulta<T>(
+  url: string | null,
+  requisitar: Api,
+  revisao: number,
+  manterDados = false,
+) {
   const [estado, setEstado] = useState<{
     url?: string
     dados: T | null
@@ -205,15 +211,15 @@ function useConsulta<T>(url: string | null, requisitar: Api, revisao: number) {
       })
       .catch((e: unknown) => {
         if (!controller.signal.aborted)
-          setEstado({
+          setEstado((anterior) => ({
             url,
-            dados: null,
+            dados: manterDados ? anterior.dados : null,
             erro: e instanceof Error ? e.message : "Falha na consulta.",
-          })
+          }))
       })
     return () => controller.abort()
-  }, [url, requisitar, revisao])
-  return estado.url === url ? estado : { dados: null, erro: "" }
+  }, [url, requisitar, revisao, manterDados])
+  return estado.url === url || manterDados ? estado : { dados: null, erro: "" }
 }
 function Seletor({
   titulo,
@@ -358,6 +364,8 @@ function Conteudo({
     `/api/estoque/reservas/opcoes?busca=${encodeURIComponent(buscaProduto)}`,
     requisitar,
     revisao,
+    // A busca de produtos não deve desmontar a OP nem apagar o formulário aberto.
+    true,
   )
   async function enviar(
     url: string,
@@ -849,6 +857,7 @@ function DocumentoOperacional({
   const [busca, setBusca] = useState("")
   const [pagina, setPagina] = useState(1)
   const [escolhido, setId] = useState("")
+  const [revisaoCadastro, setRevisaoCadastro] = useState(0)
   const urlInicial = useSyncExternalStore(
     useCallback((fn) => {
       window.addEventListener("popstate", fn)
@@ -867,19 +876,19 @@ function DocumentoOperacional({
   const url =
     origem === "PEDIDO"
       ? `/api/pedidos?pagina=${pagina}&limite=25&busca=${encodeURIComponent(busca)}`
-      : `/api/ordem_producao?page=${pagina}&limit=25&busca=${encodeURIComponent(busca)}`
+      : `/api/ordens-producao?page=${pagina}&limit=25&busca=${encodeURIComponent(busca)}`
   const lista = useConsulta<{
     dados?: { idPedido: number; numero: string; status: string }[]
     paginacao?: { totalPaginas: number }
     rows?: Documento[]
     totalPages?: number
-  }>(url, requisitar, revisao)
+  }>(url, requisitar, revisao + revisaoCadastro)
   const detalhes = useConsulta<Pedido | Ordem>(
     id
       ? `/api/${origem === "PEDIDO" ? "pedidos" : "ordem_producao"}/${id}/operacao`
       : null,
     requisitar,
-    revisao,
+    revisao + revisaoCadastro,
   )
   const rows =
     lista.dados?.rows ??
@@ -897,6 +906,26 @@ function DocumentoOperacional({
           : "Registrar consumo e concluir produção"
       }
     >
+      {origem === "PRODUCAO" && (
+        <CadastroOpApi
+          key={`cadastro:${revisaoCadastro}`}
+          produtos={opcoes.produtos}
+          bloqueado={bloqueado}
+          aoSalvar={(novoId) => {
+            setId(novoId)
+            setRevisaoCadastro((r) => r + 1)
+          }}
+        />
+      )}
+      {origem === "PRODUCAO" && id && (
+        <CadastroOpApi
+          key={`editar:${id}:${revisao}:${revisaoCadastro}`}
+          id={id}
+          produtos={opcoes.produtos}
+          bloqueado={bloqueado}
+          aoSalvar={() => setRevisaoCadastro((r) => r + 1)}
+        />
+      )}
       <Field>
         <FieldLabel htmlFor="buscar-documento">
           Buscar número do documento
@@ -1476,6 +1505,21 @@ function DetalheDocumento({
               </form>
             )}
           <div className="flex flex-wrap gap-2">
+            {ordem.status === "AGUARDANDO_MATERIAL" && (
+              <Button
+                variant="outline"
+                disabled={bloqueado || faltaDestino}
+                onClick={() =>
+                  enviar(`/api/ordens-producao/${ordem.id}/avancar`, {
+                    statusEsperado: ordem.status,
+                    setorEsperado: ordem.id_setor,
+                    statusDestino: "LIBERADA",
+                  })
+                }
+              >
+                Avançar OP para liberada
+              </Button>
+            )}
             {(["liberar", "iniciar", "pausar", "retomar"] as const).map(
               (acao) => (
                 <Button

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { randomBytes, randomUUID } from "node:crypto"
 import { once } from "node:events"
+import mariadb from "mariadb"
 import { bancoLocal, httpProducao, typescript } from "./integracao-pedidos.mjs"
 
 export const normalizar = (value) =>
@@ -30,6 +31,23 @@ export async function ambienteRecebiveis() {
   const tokens = []
   let base
 
+  // MySQL 8 não aceita CREATE/DROP TRIGGER no protocolo de prepared statements.
+  async function executarDdlFixture(sql) {
+    const u = bancoLocal(url)
+    const connection = await mariadb.createConnection({
+      host: u.hostname,
+      port: Number(u.port || 3306),
+      user: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      database: u.pathname.slice(1),
+    })
+    try {
+      await connection.query(sql)
+    } finally {
+      await connection.end()
+    }
+  }
+
   async function encerrar() {
     if (server?.exitCode === null) {
       const exited = once(server, "exit")
@@ -38,7 +56,7 @@ export async function ambienteRecebiveis() {
     }
     if (prisma) {
       for (const name of triggers)
-        await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS \`${name}\``)
+        await executarDdlFixture(`DROP TRIGGER IF EXISTS \`${name}\``)
       if (empresas.length) {
         const scope = { in: empresas }
         const pedidos = await prisma.pedido_cliente.findMany({
@@ -299,7 +317,7 @@ export async function ambienteRecebiveis() {
     assert.equal(
       response.headers.get("Cache-Control"),
       rota.startsWith("/api/clientes/") ||
-        /^\/api\/ordens-producao\/\d+$/.test(rota) ||
+        /^\/api\/ordens-producao(?:\?|$|\/\d+$)/.test(rota) ||
         (method === "PATCH" && /^\/api\/contas_receber\/\d+$/.test(rota)) ||
         /^\/api\/estoque\/(entradas|saidas|ajustes|saldo)(?:\?|$)/.test(rota) ||
         (rota.startsWith("/api/ordem_producao") &&
@@ -428,13 +446,13 @@ export async function ambienteRecebiveis() {
     assert.match(predicado, /^[A-Za-z0-9_ =.]+$/)
     const name = `teste_recebiveis_${marker}_${triggers.size}`
     triggers.add(name)
-    await prisma.$executeRawUnsafe(
+    await executarDdlFixture(
       `CREATE TRIGGER \`${name}\` BEFORE INSERT ON \`${tabela}\` FOR EACH ROW BEGIN IF ${predicado} THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Falha controlada em fixture local'; END IF; END`,
     )
     try {
       return await operation()
     } finally {
-      await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS \`${name}\``)
+      await executarDdlFixture(`DROP TRIGGER IF EXISTS \`${name}\``)
       triggers.delete(name)
     }
   }

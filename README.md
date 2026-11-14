@@ -301,7 +301,7 @@ O alias `@/*` aponta para `src/*`.
 | Comando | Finalidade |
 | --- | --- |
 | `npm run dev` | Servidor de desenvolvimento |
-| `npm run build` | Build de produção |
+| `npm run build` | Build de produção com Webpack |
 | `npm start` | Servir o build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Gera os tipos de rota do Next e roda `tsc` |
@@ -311,6 +311,10 @@ O alias `@/*` aponta para `src/*`.
 | `npm run db:generate` | Regenera o Prisma Client |
 | `npm run db:validate` | Valida `prisma/schema.prisma` |
 | `npm run db:studio` | Prisma Studio |
+
+O build usa `next build --webpack`, opção suportada pelo Next.js instalado,
+para contornar a falha do processo auxiliar do Turbopack observada no Windows.
+O mesmo comando é usado localmente e no CI.
 
 ---
 
