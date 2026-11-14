@@ -388,6 +388,21 @@ test("Cancelamentos HTTP e MariaDB: etapas, efeitos, permissões, concorrência 
         const avaria = d.devolucoes[0].recebimentos.find(
           (r) => r.condicao === "AVARIADA",
         )
+        const lerKardex = async () => {
+          const r = await a.chamar(
+            `/api/estoque/kardex?idLocalEstoque=${a.local.id}`,
+          )
+          assert.equal(r.status, 200, JSON.stringify(r.body))
+          return r.body
+        }
+        const antesDescarte = await lerKardex()
+        assert.ok(
+          !antesDescarte.dados.some(
+            (r) =>
+              r.origem?.id === avaria.id &&
+              r.origem?.tipo === "DESCARTE_DEVOLUCAO",
+          ),
+        )
         const fisico = await a.saldo()
         await a.post(op(c, "destinacoes"), {
           idRecebimento: avaria.id,
@@ -398,6 +413,23 @@ test("Cancelamentos HTTP e MariaDB: etapas, efeitos, permissões, concorrência 
           idSetor: a.setor.id,
         })
         assert.deepEqual(await a.saldo(), fisico)
+        const depoisDescarte = await lerKardex()
+        const pares = depoisDescarte.dados.filter(
+          (r) =>
+            r.origem?.id === avaria.id &&
+            ["DEVOLUCAO_PEDIDO", "DESCARTE_DEVOLUCAO"].includes(r.origem.tipo),
+        )
+        assert.deepEqual(
+          pares.map((r) => [r.origem.tipo, r.delta]),
+          [
+            ["DESCARTE_DEVOLUCAO", "-0.600"],
+            ["DEVOLUCAO_PEDIDO", "0.600"],
+          ],
+        )
+        assert.equal(pares[0].idMovimentoRelacionado, pares[1].idMovimentacao)
+        assert.equal(pares[1].idMovimentoRelacionado, pares[0].idMovimentacao)
+        assert.ok(pares[0].idMovimentoOriginal)
+        assert.equal(pares[1].idMovimentoOriginal, pares[0].idMovimentoOriginal)
         const body = a.reembolsoInput(d.creditos[0], "10.00")
         disputa(
           await Promise.all([
@@ -413,6 +445,7 @@ test("Cancelamentos HTTP e MariaDB: etapas, efeitos, permissões, concorrência 
           op(c, "reembolsos"),
           a.reembolsoInput(d.creditos[0], "3.32"),
         )
+        assert.deepEqual(await lerKardex(), depoisDescarte)
         d = await a.detalhe(c)
         assert.equal(d.status, "CONCLUIDA")
         assert.equal(d.creditos[0].reembolsado, "13.32")

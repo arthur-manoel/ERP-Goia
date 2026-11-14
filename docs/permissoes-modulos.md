@@ -93,6 +93,7 @@ novos recursos. As suítes próprias indicadas cobrem operações e regras adici
 | `/estoque`, `/estoque/{id}` | GET | ESTOQUE / L | S | A | I, unit/estoque |
 | `/estoque` | POST, vínculo com saldo inicial zero | ESTOQUE / C | S | A | I, unit/estoque |
 | `/estoque/saldo` | GET de saldo físico/reservado/disponível | ESTOQUE / L | S | A | I, unit/movimentacoes-estoque (develop a5d3b72) |
+| `/estoque/kardex` | GET do histórico físico e saldo comprovado por posição | ESTOQUE / L | S | A | I, kardex.integration.test.mjs |
 | `/estoque/entradas`, `/estoque/saidas` | POST de movimentação | ESTOQUE / L **e** C | S | A | I, unit/movimentacoes-estoque (develop a5d3b72) |
 | `/estoque/ajustes` | POST de ajuste | ESTOQUE / L **e** E | S | A | I, unit/movimentacoes-estoque (develop a5d3b72) |
 | `/estoque/movimentacoes/opcoes` | GET de opções demonstrativas autenticadas | ESTOQUE / L | S | A | I, unit/movimentacao/opcoes |
