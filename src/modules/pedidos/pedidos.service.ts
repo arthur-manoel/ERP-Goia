@@ -21,6 +21,57 @@ async function validarCliente(tx: repo.Transaction, ctx: Contexto, id: number) {
   if (!cliente) throw new PedidoError(404, "Cadastro não encontrado.")
   if (cliente.status !== "ATIVO")
     throw new PedidoError(409, "Cliente não está ativo.")
+  return cliente
+}
+async function prepararEntrega(
+  tx: repo.Transaction,
+  ctx: Contexto,
+  idCliente: number,
+  idEndereco?: number | null,
+) {
+  const cliente = await validarCliente(tx, ctx, idCliente)
+  const endereco = idEndereco
+    ? await tx.cliente_endereco.findFirst({
+        where: {
+          id: idEndereco,
+          id_cliente: idCliente,
+          ativo: true,
+          clientes: { id_empresa: ctx.idEmpresa },
+          tipo: { in: ["PRINCIPAL", "ENTREGA"] },
+        },
+      })
+    : await tx.cliente_endereco.findFirst({
+        where: {
+          id_cliente: idCliente,
+          ativo: true,
+          clientes: { id_empresa: ctx.idEmpresa },
+          OR: [{ principal: true }, { tipo: "PRINCIPAL" }, { tipo: "ENTREGA" }],
+        },
+        orderBy: [{ principal: "desc" }, { id: "asc" }],
+      })
+  if (idEndereco && !endereco)
+    throw new PedidoError(404, "Endereço de entrega não encontrado.")
+  const contato = await tx.cliente_contato.findFirst({
+    where: {
+      id_cliente: idCliente,
+      ativo: true,
+      tipo: { in: ["TELEFONE", "CELULAR", "WHATSAPP"] },
+    },
+    orderBy: [{ principal: "desc" }, { id: "asc" }],
+  })
+  return {
+    id_endereco_entrega: endereco?.id ?? null,
+    destinatario: cliente.nome_razao_social,
+    telefone_entrega: contato?.valor ?? cliente.telefone,
+    endereco_entrega: endereco?.endereco ?? cliente.endereco,
+    numero_entrega: endereco?.numero ?? cliente.numero,
+    complemento_entrega: endereco?.complemento ?? cliente.complemento,
+    bairro_entrega: endereco?.bairro ?? cliente.bairro,
+    cidade_entrega: endereco?.cidade ?? cliente.cidade,
+    estado_entrega: endereco?.estado ?? cliente.estado,
+    cep_entrega: endereco?.cep ?? cliente.cep,
+    referencia_entrega: endereco?.referencia ?? null,
+  }
 }
 async function prepararItens(
   tx: repo.Transaction,
@@ -140,7 +191,12 @@ export async function criarPedido(
         criado: false,
       }
     }
-    await validarCliente(tx, ctx, input.idCliente)
+    const entrega = await prepararEntrega(
+      tx,
+      ctx,
+      input.idCliente,
+      input.idEnderecoEntrega,
+    )
     const itens = (await prepararItens(tx, ctx, input.itens)).map((item) => ({
       ...item,
       valor_total: subtotal(
@@ -155,6 +211,7 @@ export async function criarPedido(
         id_empresa: ctx.idEmpresa,
         id_usuario: ctx.idUsuario,
         id_cliente: input.idCliente,
+        ...entrega,
         numero,
         status: "RASCUNHO",
         data_previsao_entrega: dataCivil(input.dataEntregaPrevista),

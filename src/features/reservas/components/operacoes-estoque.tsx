@@ -101,6 +101,23 @@ type Opcoes = {
 type Documento = { id: number; numero: string; status: string }
 type Pedido = Documento & {
   versao: number
+  id_endereco_entrega: number | null
+  destinatario: string | null
+  telefone_entrega: string | null
+  endereco_entrega: string | null
+  numero_entrega: string | null
+  complemento_entrega: string | null
+  bairro_entrega: string | null
+  cidade_entrega: string | null
+  estado_entrega: string | null
+  cep_entrega: string | null
+  referencia_entrega: string | null
+  contatosCliente: {
+    tipo: string
+    valor: string
+    descricao: string | null
+    principal: boolean
+  }[]
   pedido_cliente_fechamento: { id: number }[]
   pedido_cliente_item: {
     id: number
@@ -1170,6 +1187,57 @@ function DetalheDocumento({
       <p className="font-semibold">
         {documento.numero} · {documento.status}
       </p>
+      {pedido && (
+        <section
+          className="space-y-2 rounded-lg border p-4"
+          aria-label="Endereço e contatos da entrega"
+        >
+          <h3 className="font-semibold">Entrega e contatos do cliente</h3>
+          <p className="text-sm">
+            {[
+              pedido.destinatario,
+              pedido.endereco_entrega,
+              pedido.numero_entrega,
+              pedido.complemento_entrega,
+              pedido.bairro_entrega,
+              pedido.cidade_entrega,
+              pedido.estado_entrega,
+              pedido.cep_entrega,
+            ]
+              .filter(Boolean)
+              .join(", ") || "Endereço não informado no pedido."}
+          </p>
+          {pedido.referencia_entrega && (
+            <p className="text-sm text-muted-foreground">
+              Referência: {pedido.referencia_entrega}
+            </p>
+          )}
+          <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            {(pedido.contatosCliente.length
+              ? pedido.contatosCliente
+              : pedido.telefone_entrega
+                ? [
+                    {
+                      tipo: "TELEFONE",
+                      valor: pedido.telefone_entrega,
+                      descricao: null,
+                      principal: false,
+                    },
+                  ]
+                : []
+            ).map((contato, index) => (
+              <li key={`${contato.tipo}-${index}`}>
+                {contato.tipo}: {contato.valor}
+                {contato.descricao ? ` · ${contato.descricao}` : ""}
+                {contato.principal ? " · principal" : ""}
+              </li>
+            ))}
+            {!pedido.contatosCliente.length && !pedido.telefone_entrega && (
+              <li>Nenhum contato cadastrado.</li>
+            )}
+          </ul>
+        </section>
+      )}
       {pedido && (
         <Table>
           <TableHeader>

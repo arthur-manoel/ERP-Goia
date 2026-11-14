@@ -172,6 +172,18 @@ export async function operacoesHandler(
                 numero: true,
                 status: true,
                 versao: true,
+                id_cliente: true,
+                id_endereco_entrega: true,
+                destinatario: true,
+                telefone_entrega: true,
+                endereco_entrega: true,
+                numero_entrega: true,
+                complemento_entrega: true,
+                bairro_entrega: true,
+                cidade_entrega: true,
+                estado_entrega: true,
+                cep_entrega: true,
+                referencia_entrega: true,
                 pedido_cliente_fechamento: { select: { id: true } },
                 pedido_cliente_item: {
                   select: {
@@ -190,7 +202,21 @@ export async function operacoesHandler(
               },
             })
             if (!pedido) throw new NotFoundError("Pedido não encontrado.")
-            return textoJson(pedido)
+            const contatosCliente = await tx.cliente_contato.findMany({
+              where: {
+                id_cliente: pedido.id_cliente,
+                ativo: true,
+                clientes: { id_empresa: ctx.idEmpresa },
+              },
+              select: {
+                tipo: true,
+                valor: true,
+                descricao: true,
+                principal: true,
+              },
+              orderBy: [{ principal: "desc" }, { id: "asc" }],
+            })
+            return textoJson({ ...pedido, contatosCliente })
           }
           if (op === "producao") {
             if (new URL(request.url).search)

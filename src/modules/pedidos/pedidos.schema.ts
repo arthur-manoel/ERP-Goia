@@ -55,6 +55,7 @@ export const itemSchema = z.strictObject({
 export const criarSchema = z
   .strictObject({
     idCliente: idSchema,
+    idEnderecoEntrega: idSchema.nullable().optional().default(null),
     dataEntregaPrevista: dataCivilSchema,
     observacao: z.string().trim().max(2000).nullable().optional().default(null),
     itens: z.array(itemSchema).min(1).max(MAX_ITENS),
