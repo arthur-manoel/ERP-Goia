@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { EmConstrucao } from "@/components/layout/em-construcao"
+import { TelaAuditoria } from "@/features/auditoria/tela-auditoria"
 import { PageHeader } from "@/components/layout/page-header"
 
 export const metadata: Metadata = { title: "Auditoria" }
@@ -11,7 +11,7 @@ export default function Page() {
         titulo="Auditoria"
         descricao="Registro das operações feitas no sistema."
       />
-      <EmConstrucao tabelas={["auditoria"]} />
+      <TelaAuditoria />
     </>
   )
 }

@@ -1,0 +1,52 @@
+# Auditoria das operações (#14)
+
+Tela em `/admin/auditoria` e consulta em `GET /api/auditoria`. Usa a tabela existente; não exige SQL, schema ou migration.
+
+## Acesso e consulta
+
+JWT válido e `X-Empresa-Id` obrigatório. O vínculo, usuário e empresa devem estar ativos. Somente proprietário (`usuario_empresa.nivel_acesso = EMPRESA`) ou administrador (`usuarios.nivel_acesso = ADMIN`) consulta o histórico. A autorização é relida na transação da consulta, sem depender apenas do perfil no JWT. Eventos sem empresa não são expostos.
+
+Filtros opcionais: `inicio` e `fim` (`YYYY-MM-DD`, dias completos em America/Fortaleza), `usuario` (ID), `tabela` (nome exato), `registro` (ID), `acao` (`INSERT`, `UPDATE`, `DELETE`, `LOGIN`, `LOGOUT`) e `pagina` (padrão 1). Após a primeira página, enviar também o `cursor` devolvido pela anterior. Parâmetros desconhecidos, repetidos, datas/cursor inválidos e intervalos invertidos retornam 400.
+
+Retorno: `{ itens, total, pagina, totalPaginas, proximoCursor }`. Página de até 25 eventos, ordenada por data e ID decrescentes. O cursor contém a data e o ID do último evento exibido; a próxima consulta usa comparação estrita, sem deslocamento por `skip`, evitando repetição quando chegam eventos mais recentes entre páginas. `proximoCursor = null` encerra a navegação. A tela mantém o histórico de cursores para voltar e o limpa ao alterar filtros, empresa ou sessão. Novos eventos mais recentes aparecem ao reiniciar a consulta; a contagem corresponde ao filtro no momento de cada requisição, sem congelar o histórico entre requisições.
+
+Contagem e leitura usam o mesmo snapshot RepeatableRead por requisição, sem cache. A tela cancela consultas antigas e valida a estrutura da resposta, as datas, a empresa de cada evento e a página antes de renderizar; respostas incompatíveis exibem erro com opção de repetição.
+
+`antes` e `depois` são JSON interpretado. Chaves de senha, hash de senha, token, segredo, autorização e cookie são ocultadas recursivamente na resposta. Texto legado que não seja JSON é substituído por uma mensagem, evitando expor segredos não estruturados. Snapshots de eventos antigos cujo campo `id_empresa` indique outra empresa também são ocultados na leitura. O conteúdo original no banco permanece intacto.
+
+## Cobertura de gravação
+
+| Operações de negócio disponíveis | Gravação |
+| --- | --- |
+| Clientes e usuários | Helpers transacionais existentes em `src/modules/clientes` e `src/modules/usuarios` |
+| Setores, fluxos e vínculo produto/fluxo | Helper existente em `src/modules/fluxos` |
+| Pedidos, fechamento e contas a receber | Helpers existentes em `src/modules/pedidos`, `src/modules/pedido-recebiveis` e `modules/financeiro` |
+| Compras, requisições, pedidos de compra e notas | Helper existente em `src/modules/compras` |
+| Produção, itens, etapas, apontamentos e correções | Helpers existentes em `src/modules/producao` e `src/modules/apontamentos` |
+| Estoque, mínimos, movimentos, reservas, entregas e recebimentos | Helpers existentes dos respectivos módulos |
+| Cancelamentos, estornos, reembolsos e habilitação de cargos | Helpers existentes em `src/modules/cancelamentos` |
+| Associações empresa/fornecedor | Helper existente em `src/modules/empresa-fornecedor` |
+| Contas a pagar/receber e despesas | Helper existente em `modules/financeiro` |
+| Cores, tamanhos, categorias, fornecedores, produtos e tipos de produto | **Incluída nesta entrega**, em `modules/catalogos/auditoria.ts` |
+
+Os catálogos registram criação e alteração/inativação com snapshots completos e usuário do JWT. `AsyncLocalStorage` propaga exclusivamente o autor e as empresas da requisição autenticada, sem alterar contratos dos services. Chamadas internas sem sessão registram autor nulo (sistema).
+
+O helper reutiliza a transação recebida ou abre uma para a escrita isolada. Nas requisições de escrita isolada, bloqueia as empresas em ordem de ID antes do cadastro, seguindo a ordem dos demais módulos e evitando inversão com a FK de auditoria. Produtos compartilhados incluem todas as empresas proprietárias nesse bloqueio. Edição e estoque seguem a ordem empresa → vínculos em `produto_empresa` → produto, inclusive nas alterações de unidade/categoria e entradas/ajustes avulsos. Atualizações bloqueiam o registro antes do snapshot anterior. Falha do log ou JSON acima de 65.535 bytes rejeita a mesma transação. `BigInt` é serializado como texto decimal, inclusive em arrays/objetos, sem perda de precisão; o limite é aplicado ao JSON final. Alterações sem efeito não geram evento. Inativação é `UPDATE`, preservando o cadastro.
+
+Produtos compartilhados geram um evento por empresa proprietária. Transferências de cadastros preservam o evento na origem e no destino, com snapshots separados: a origem recebe somente `antes`, e o destino somente `depois`. Nenhuma empresa recebe os contatos da outra. Sem transferência, ambos os snapshots permanecem disponíveis para a mesma empresa. Tipos de produto são globais: o evento é atribuído às empresas do contexto do autor, sem publicar eventos globais a outras empresas.
+
+Consultas, relatórios e telas ainda em construção não criam eventos de alteração de negócio. Rotação de tokens e processamento interno de notificações continuam com seus próprios registros operacionais; tokens não são copiados para o histórico de negócio. Esta entrega não reconstrói operações antigas que nunca foram auditadas.
+
+## Validação
+
+`npm test -- tests/unit/auditoria` cobre autorização no banco, isolamento, filtros, paginação, sigilo, autoria, concorrência de contexto e propagação de falhas na transação. Os testes unitários usam Prisma simulado.
+
+`tests/auditoria.integration.test.mjs` exercita os Route Handlers reais com Request/Response e Prisma real. Exige `AUDITORIA_TEST_DATABASE_URL` apontando para MySQL local dedicado, vazio e com sufixo `_test`, com o schema atual já preparado. Não lê `.env` e recusa hosts remotos. Executar com `node --test tests/auditoria.integration.test.mjs`; sem URL explícita, o teste fica ignorado.
+
+Os testes de integração verificam commit, autor/snapshots, rollback físico de criação e edição nos seis catálogos quando um trigger rejeita o INSERT em auditoria, consulta protegida e cadeia de snapshots após duas edições simultâneas. Os triggers temporários e os registros fictícios são removidos no `finally`. Não executar em banco compartilhado.
+
+Validação local em 11/11/2026: **9 testes de integração aprovados no MySQL 8.0.46**, em instância própria na porta 3347, e **1.731 testes unitários aprovados**. O build padrão com Turbopack passou em recompilação sem cache e sem instrumentação; nenhuma configuração de bundler foi alterada.
+
+Validação visual concluída em 12/11/2026: temas claro/escuro, viewport de celular em 390 × 844 px, comparação antes/depois no desktop e no celular, abertura/fechamento com retorno de foco e criação sem snapshot anterior. [Capturas e contexto da prévia com dados fictícios](../../../docs/imagens/auditoria/README.md). Nenhuma alteração no componente foi necessária.
+
+Revisão de 14/11/2026: **1.740 testes unitários e 12 testes de integração aprovados**. As regressões adicionais cobrem transferência com administradores distintos de origem/destino, inserções entre páginas com datas empatadas, edição de produto em paralelo a entrada física de estoque e serialização de BigInt no limite de TEXT. Os testes no MySQL isolado incluem edição com unidade informada e a cadeia dos snapshots, além do rollback físico.

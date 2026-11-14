@@ -21,6 +21,7 @@ const product = {
   permite_producao: 0,
 }
 beforeEach(() => {
+  db.produto_empresa.findMany.mockResolvedValue([{ id_empresa: 10 }])
   resetRateLimitsForTests()
   db.$queryRaw.mockImplementation(async (sql, ids) => {
     const query = sql.join("")

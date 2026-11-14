@@ -531,7 +531,12 @@ export async function validarPerfil(tx: Transaction, idUsuario: number) {
         include: {
           empresas: { select: { status: true } },
           cargos: { select: { nome: true, status: true } },
-          setores: { select: { nome: true, tipo: true, status: true } },
+          setores: {
+            select: {
+              status: true,
+              permissoes_setor: { select: { recurso: true } },
+            },
+          },
         },
       },
     },

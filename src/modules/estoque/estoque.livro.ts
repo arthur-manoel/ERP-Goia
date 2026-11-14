@@ -29,6 +29,9 @@ export async function bloquearProdutoEstoque(
   ctx: Contexto,
   idProduto: number,
 ) {
+  // Também protege entradas/ajustes avulsos: a auditoria referencia a empresa.
+  // Não adquirir o lock dessa FK apenas depois de bloquear vínculo/produto.
+  await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
   const rows = await tx.$queryRaw<{ id: number }[]>`
     SELECT id FROM produto_empresa
     WHERE id_empresa = ${ctx.idEmpresa} AND id_produto = ${idProduto} FOR UPDATE`

@@ -20,7 +20,9 @@ export function serializarJsonTextMysql(
   valor: unknown,
   criarErro: (mensagem: string) => Error,
 ): string {
-  const texto = JSON.stringify(valor)
+  const texto = JSON.stringify(valor, (_chave, item) =>
+    typeof item === "bigint" ? item.toString() : item,
+  )
   if (texto === undefined || !cabeEmTextMysql(texto))
     throw criarErro(
       "O conteúdo da auditoria excede o limite de 65.535 bytes em UTF-8. Reduza os textos ou a quantidade de itens da operação.",

@@ -1,3 +1,4 @@
+import { gravarCatalogo } from "../catalogos/auditoria"
 import {
   Prisma,
   type tamanhos as Tamanho,
@@ -12,7 +13,9 @@ import type {
 
 export type { Tamanho }
 export async function create(data: CreateTamanhoData): Promise<Tamanho> {
-  return prisma.tamanhos.create({ data })
+  return await gravarCatalogo("tamanhos", null, undefined, (tx) =>
+    tx.tamanhos.create({ data }),
+  )
 }
 export async function findAll(
   filters: TamanhoFilters,
@@ -57,10 +60,12 @@ export async function update(
   companies: number[],
 ): Promise<Tamanho | null> {
   try {
-    return await prisma.tamanhos.update({
-      where: { ...scope(companies), id },
-      data,
-    })
+    return await gravarCatalogo("tamanhos", id, undefined, (tx) =>
+      tx.tamanhos.update({
+        where: { ...scope(companies), id },
+        data,
+      }),
+    )
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
