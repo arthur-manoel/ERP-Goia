@@ -302,7 +302,7 @@ O alias `@/*` aponta para `src/*`.
 | Comando | Finalidade |
 | --- | --- |
 | `npm run dev` | Servidor de desenvolvimento |
-| `npm run build` | Build de produção |
+| `npm run build` | Build de produção com Webpack |
 | `npm start` | Servir o build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Gera os tipos de rota do Next e roda `tsc` |
@@ -314,6 +314,8 @@ O alias `@/*` aponta para `src/*`.
 | `npm run db:studio` | Prisma Studio |
 
 ---
+
+O build de produção usa `next build --webpack`, opção suportada pelo Next.js 16.3, para evitar a falha de inicialização do processo de CSS do Turbopack observada no Windows. O comando `npm run build` é o mesmo usado localmente e no CI; o desenvolvimento com `npm run dev` continua usando Turbopack.
 
 ## Qualidade: CI, formatação e hooks
 
