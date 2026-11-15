@@ -5,7 +5,12 @@ import { db } from "../../helpers/prisma"
 type Entrada = (
   request: Request,
   context: {
-    params: Promise<{ id: string; idItem: string; idApontamento: string }>
+    params: Promise<{
+      id: string
+      idItem: string
+      idApontamento: string
+      indicador: string
+    }>
   },
 ) => Promise<Response>
 const routes = import.meta.glob("../../../src/app/api/**/route.ts", {
@@ -20,7 +25,12 @@ for (const [file, exports] of Object.entries(routes)) {
     const path = file.split("/api/")[1].replace("/route.ts", "")
     it(`${method} /api/${path}: autentica e nega ausência de vínculo/permissão`, async () => {
       const context = {
-        params: Promise.resolve({ id: "1", idItem: "1", idApontamento: "1" }),
+        params: Promise.resolve({
+          id: "1",
+          idItem: "1",
+          idApontamento: "1",
+          indicador: "saldo",
+        }),
       }
       const make = (authorization?: string) =>
         new Request("http://localhost/api/" + path, {
