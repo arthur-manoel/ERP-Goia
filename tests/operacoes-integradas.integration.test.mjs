@@ -257,7 +257,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     )
     assert.equal(await snapshot(), s1)
     await t.test(
-      "card OP: abertura, listagem e edição pelas URLs da tela",
+      "card OP: abertura com previsão hoje, edição e início da primeira etapa",
       async () => {
         const criada = await post("/api/ordens-producao", {
           idProduto: produto,
@@ -265,7 +265,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           tamanho: "UNICO",
           prioridade: "NORMAL",
           observacao: "Validação HTTP do card",
-          dataPrevisao: null,
+          dataPrevisao: `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`,
         })
         const id = criada.ordem.id
         const listagem = await a.chamar(
@@ -280,7 +280,6 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           tamanho: "UNICO",
           prioridade: "ALTA",
           observacao: "Edição persistida pelo card",
-          dataPrevisao: null,
         })
         assert.equal(editar.status, 200, JSON.stringify(editar.body))
         const detalhe = await a.chamar(`/api/ordens-producao/${id}`)
@@ -294,6 +293,42 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           where: { id },
         })
         assert.equal(persistida.quantidade_planejada.toFixed(3), "2.000")
+        await post(
+          `/api/ordem_producao/${id}/regularizar`,
+          {
+            motivo: "Destino da fixture de previsão para hoje",
+            idLocal: locais[1].id,
+            variacoes: [
+              {
+                idItem: criada.ordem.ordem_producao_item[0].id,
+                idVariacao: m.id,
+              },
+            ],
+          },
+          randomUUID(),
+          200,
+        )
+        await post(`/api/ordem_producao/${id}/liberar`, {}, randomUUID(), 200)
+        const [primeiraEtapa] =
+          await prisma.ordem_producao_fluxo_setor.findMany({
+            where: { id_ordem_producao: id },
+            orderBy: { ordem: "asc" },
+          })
+        await post(
+          `/api/ordem_producao/${id}/etapas/${primeiraEtapa.id}/iniciar`,
+          {},
+          randomUUID(),
+          200,
+        )
+        const iniciada = await prisma.ordem_producao.findUniqueOrThrow({
+          where: { id },
+        })
+        assert.equal(iniciada.status, "EM_PRODUCAO")
+        assert.ok(iniciada.data_inicio)
+        assert.equal(
+          iniciada.data_previsao.toISOString(),
+          persistida.data_previsao.toISOString(),
+        )
         const semLogin = await a.chamar(
           "/api/ordens-producao",
           "GET",

@@ -165,6 +165,11 @@ Filtros: `id_empresa` (conferência do contexto), `id_pedido_cliente`, `id_local
 
 ## Validação
 
+A previsão e o início são comparados pelo dia UTC, conforme as datas civis da
+API. Uma previsão à meia-noite permite iniciar a OP ou a etapa em qualquer
+horário do mesmo dia. Previsão de dia anterior continua inválida; o horário
+real de início é preservado e datas de início futuras continuam bloqueadas.
+
 ```sh
 npm test -- tests/unit/ordem_producao tests/unit/api/rate-limit.test.ts
 node --test tests/producao.test.mjs

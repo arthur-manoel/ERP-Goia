@@ -5,6 +5,7 @@ import { GET as listarCard } from "../../../src/app/api/ordens-producao/route"
 import * as route from "../../../src/app/api/ordem_producao/[id]/route"
 import { POST as liberar } from "../../../src/app/api/ordem_producao/[id]/liberar/route"
 import { POST as iniciar } from "../../../src/app/api/ordem_producao/[id]/iniciar/route"
+import { POST as iniciarEtapa } from "../../../src/app/api/ordens-producao/[id]/etapas/iniciar/route"
 import { POST as pausar } from "../../../src/app/api/ordem_producao/[id]/pausar/route"
 import { POST as retomar } from "../../../src/app/api/ordem_producao/[id]/retomar/route"
 import { POST as concluir } from "../../../src/app/api/ordem_producao/[id]/concluir/route"
@@ -460,6 +461,34 @@ it("início, pausa e retomada preservam a data original e impedem duplicação",
   expect((await retomar(await req("POST"), context())).status).toBe(200)
   expect(row.data_inicio).toEqual(date)
 })
+it.each(["ordem", "etapa"])(
+  "inicia %s no mesmo dia da previsão enviada à meia-noite UTC",
+  async (caminho) => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-11-14T15:30:00.000Z"))
+    try {
+      production()
+      row.id_local_estoque = 9
+      db.locais_estoque.findFirst.mockResolvedValue({ id: 9 })
+      db.produto_variacoes.findMany.mockResolvedValue([])
+      row.status = "LIBERADA"
+      row.data_inicio = null
+      row.data_previsao = new Date("2026-11-14T00:00:00.000Z")
+      stages[0].status = "PENDENTE"
+      const resposta =
+        caminho === "etapa"
+          ? await iniciarEtapa(await req("POST", { etapaId: 9 }), context())
+          : await iniciar(await req("POST"), context())
+      expect(resposta.status).toBe(200)
+      expect(row.status).toBe("EM_PRODUCAO")
+      expect(row.data_inicio).toEqual(new Date("2026-11-14T15:30:00.000Z"))
+      expect(row.data_previsao).toEqual(new Date("2026-11-14T00:00:00.000Z"))
+      expect(stages[0].status).toBe("EM_PRODUCAO")
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)
 it.each(["liberar", "iniciar"] as const)(
   "impede %s com OP sem local de entrada",
   async (acao) => {
@@ -474,6 +503,28 @@ it.each(["liberar", "iniciar"] as const)(
     expect((await resposta.json()).error).toContain("local de entrada")
   },
 )
+it("continua bloqueando início de etapa com previsão no dia anterior", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] })
+  vi.setSystemTime(new Date("2026-11-14T15:30:00.000Z"))
+  try {
+    production()
+    row.id_local_estoque = 9
+    db.locais_estoque.findFirst.mockResolvedValue({ id: 9 })
+    db.produto_variacoes.findMany.mockResolvedValue([])
+    row.status = "LIBERADA"
+    row.data_inicio = null
+    row.data_previsao = new Date("2026-11-13T00:00:00.000Z")
+    stages[0].status = "PENDENTE"
+    expect(
+      (await iniciarEtapa(await req("POST", { etapaId: 9 }), context())).status,
+    ).toBe(400)
+    expect(row.data_inicio).toBeNull()
+    expect(stages[0].status).toBe("PENDENTE")
+    expect(db.ordem_producao.updateMany).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
+})
 it.each([
   "reserva_estoque",
   "consumo_producao",
