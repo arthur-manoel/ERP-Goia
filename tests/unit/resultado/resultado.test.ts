@@ -209,3 +209,87 @@ it("retorna zeros sem lançamentos", async () => {
     isolationLevel: "RepeatableRead",
   })
 })
+
+it("acumula créditos de vários títulos e mantém as categorias independentes", async () => {
+  db.contas_receber.groupBy.mockResolvedValue([
+    { id_categoria: 1, _sum: { valor_final: new Prisma.Decimal("100.10") } },
+    { id_categoria: 4, _sum: { valor_final: new Prisma.Decimal("50.00") } },
+  ])
+  db.categoria_financeira.findMany.mockResolvedValue([
+    { id: 1, nome: "Vendas A" },
+    { id: 4, nome: "Vendas B" },
+  ])
+  db.contas_receber.findMany.mockResolvedValue([
+    {
+      id_categoria: 1,
+      valor_final: new Prisma.Decimal("50.05"),
+      pedido_credito_receber: [{ valor: new Prisma.Decimal("10.01") }],
+    },
+    {
+      id_categoria: 1,
+      valor_final: new Prisma.Decimal("50.05"),
+      pedido_credito_receber: [{ valor: new Prisma.Decimal("20.02") }],
+    },
+    {
+      id_categoria: 4,
+      valor_final: new Prisma.Decimal("50.00"),
+      pedido_credito_receber: [{ valor: new Prisma.Decimal("50.00") }],
+    },
+  ])
+  const dados = await consultarResultado(periodo, ctx)
+  expect(dados.receita).toBe("70.07")
+  expect(dados.grupos.filter((g) => g.tipo === "Receita")).toEqual([
+    { tipo: "Receita", categoria: "Vendas A", valor: "70.07" },
+    { tipo: "Receita", categoria: "Vendas B", valor: "0.00" },
+  ])
+})
+it("não esconde crédito excessivo de um título no total da categoria", async () => {
+  db.contas_receber.findMany.mockResolvedValue([
+    {
+      id_categoria: 1,
+      valor_final: new Prisma.Decimal("10.00"),
+      pedido_credito_receber: [{ valor: new Prisma.Decimal("10.01") }],
+    },
+  ])
+  const res = await GET(req())
+  expect(res.status).toBe(409)
+  expect((await res.json()).error).toContain("Créditos excedem")
+})
+it("preserva margem e percentual negativos quando há prejuízo", () => {
+  expect(
+    calcularResultado([
+      { tipo: "Receita", categoria: "Vendas", valor: "100.10" },
+      { tipo: "Custo", categoria: "Insumos", valor: "150.15" },
+    ]),
+  ).toMatchObject({ margem: "-50.05", percentual: "-50.0" })
+})
+it.each([true, false])(
+  "exige permissão financeira de leitura no vínculo: %s",
+  async (podeLer) => {
+    db.usuario_empresa.findFirst.mockResolvedValue({
+      nivel_acesso: "USUARIO",
+      usuarios: { nivel_acesso: "USUARIO" },
+      permissoes_usuario: [
+        { recurso: "FINANCEIRO", pode_ler: podeLer, pode_editar: false },
+      ],
+    })
+    const resposta = await GET(req("finance-token"))
+    expect(resposta.status).toBe(podeLer ? 200 : 403)
+    if (!podeLer) expect(db.contas_receber.groupBy).not.toHaveBeenCalled()
+  },
+)
+it("exige seleção explícita quando há mais de uma empresa", async () => {
+  db.usuario_empresa.findMany.mockResolvedValue([
+    { id_empresa: 10 },
+    { id_empresa: 20 },
+  ])
+  const request = req()
+  request.headers.delete("X-Empresa-Id")
+  expect((await GET(request)).status).toBe(400)
+  expect(db.contas_receber.groupBy).not.toHaveBeenCalled()
+})
+it("aplica o limite de consultas sem executar o relatório excedente", async () => {
+  for (let i = 0; i < 120; i++) expect((await GET(req())).status).toBe(200)
+  expect((await GET(req())).status).toBe(429)
+  expect(db.contas_receber.groupBy).toHaveBeenCalledTimes(120)
+})

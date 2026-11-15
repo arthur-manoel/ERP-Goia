@@ -58,3 +58,15 @@ A revisão posterior encontrou que o cancelamento parcial preserva `valor_final`
 Uma nova base MySQL isolada confirmou dois créditos de R$ 10,01 e R$ 20,02 no mesmo título. A receita do mês passou de R$ 300,00 para R$ 269,97, e a margem de R$ 129,98 para R$ 99,95. Créditos registrados em dezembro ajustaram corretamente o vencimento de novembro. A empresa vazia continuou com receita zero. As capturas acima documentam a fixture original, sem créditos; os seus valores permanecem válidos nesse cenário.
 
 A suíte completa passou com 1.888 testes; os 20 testes específicos incluem créditos múltiplos e rejeição de créditos inválidos ou superiores ao título.
+
+## Revisão de cobertura e usabilidade
+
+A nova revisão ampliou a cobertura para 27 testes específicos e 1.895 testes na suíte completa. Foram conferidos créditos em vários títulos e categorias, crédito integral, excesso de crédito por título (HTTP 409), prejuízo com receita positiva, usuário financeiro com/sem leitura, seleção obrigatória de empresa e limite de 120 consultas por minuto.
+
+A interface passou a mostrar rótulos visíveis nas duas datas, anunciar carregamento com `role=status`, formatar percentuais com vírgula e oferecer Tentar novamente no próprio erro. Em MySQL isolado, retirar a permissão da fixture e atualizar removeu os totais e mostrou o erro; restaurar a permissão e clicar Tentar novamente recuperou receita de R$ 300,00 e margem de R$ 129,98, sem recarregar a página. As capturas desktop/móvel nos dois temas foram atualizadas; a largura móvel permaneceu em 390 px sem overflow da página.
+
+Lint, tipos, formatação, validação do Prisma e build de produção com Webpack passaram novamente. A base e a credencial temporárias foram removidas após os testes.
+
+![Falha de permissão e nova tentativa](qa/resultado-erro-recuperacao.jpg)
+
+![Consulta recuperada](qa/resultado-recuperado.jpg)

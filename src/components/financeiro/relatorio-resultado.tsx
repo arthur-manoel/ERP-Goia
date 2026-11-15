@@ -92,22 +92,27 @@ function ResultadoEmpresa() {
   const dados = atual?.dados
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <Input
-          type="date"
-          aria-label="De"
-          value={de}
-          onChange={(e) => setDe(e.target.value)}
-          className="w-[160px]"
-        />
-        <span>até</span>
-        <Input
-          type="date"
-          aria-label="Até"
-          value={ate}
-          onChange={(e) => setAte(e.target.value)}
-          className="w-[160px]"
-        />
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-sm">
+          De
+          <Input
+            type="date"
+            aria-label="De"
+            value={de}
+            onChange={(e) => setDe(e.target.value)}
+            className="w-[160px]"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Até
+          <Input
+            type="date"
+            aria-label="Até"
+            value={ate}
+            onChange={(e) => setAte(e.target.value)}
+            className="w-[160px]"
+          />
+        </label>
         <Button variant="outline" onClick={() => setRevisao((r) => r + 1)}>
           Atualizar
         </Button>
@@ -135,10 +140,17 @@ function ResultadoEmpresa() {
       ) : atual?.erro ? (
         <Alert variant="destructive">
           <AlertTitle>Não foi possível carregar o resultado</AlertTitle>
-          <AlertDescription>{atual.erro}</AlertDescription>
+          <AlertDescription>
+            {atual.erro}
+            <Button variant="outline" onClick={() => setRevisao((r) => r + 1)}>
+              Tentar novamente
+            </Button>
+          </AlertDescription>
         </Alert>
       ) : !dados ? (
-        <Skeleton aria-label="Carregando resultado" className="h-64 w-full" />
+        <div role="status" aria-label="Carregando resultado">
+          <Skeleton className="h-64 w-full" />
+        </div>
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -160,7 +172,7 @@ function ResultadoEmpresa() {
                     <p className="text-sm text-muted-foreground">
                       {dados.percentual === null
                         ? "Sem receita para calcular percentual"
-                        : `${dados.percentual}% da receita`}
+                        : `${dados.percentual.replace(".", ",")}% da receita`}
                     </p>
                   )}
                 </CardContent>
