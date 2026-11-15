@@ -24,6 +24,11 @@ import {
   type ClienteApi,
   type CamposCliente,
 } from "../api"
+import {
+  formatarCep,
+  formatarCpfCnpj,
+  formatarTelefone,
+} from "../formatacao"
 import { useConsultaCliente } from "../use-consulta"
 
 type Props = {
@@ -32,6 +37,41 @@ type Props = {
   aoFechar: () => void
   aoSalvar: () => void
   retornarFoco: () => void
+}
+
+type CampoComMascara = "cpfCnpj" | "telefone" | "cep"
+
+function ehCampoComMascara(
+  nome: keyof CamposCliente,
+): nome is CampoComMascara {
+  return nome === "cpfCnpj" || nome === "telefone" || nome === "cep"
+}
+
+function formatarCampo(nome: CampoComMascara, valor: string) {
+  if (nome === "cpfCnpj") return formatarCpfCnpj(valor)
+  if (nome === "telefone") return formatarTelefone(valor)
+  return formatarCep(valor)
+}
+
+function quantidadeSignificativa(valor: string, nome: CampoComMascara) {
+  return nome === "cpfCnpj"
+    ? (valor.match(/[A-Z0-9]/gi) ?? []).length
+    : (valor.match(/\d/g) ?? []).length
+}
+
+function posicaoComMascara(
+  valor: string,
+  nome: CampoComMascara,
+  quantidade: number,
+) {
+  if (!quantidade) return 0
+  let encontradas = 0
+  for (let indice = 0; indice < valor.length; indice++) {
+    const significativo =
+      nome === "cpfCnpj" ? /[A-Z0-9]/i.test(valor[indice]) : /\d/.test(valor[indice])
+    if (significativo && ++encontradas === quantidade) return indice + 1
+  }
+  return valor.length
 }
 
 export function EditarClienteApi({
@@ -152,10 +192,31 @@ export function FormularioClienteApi({
           aria-invalid={!!erros[nome]}
           aria-describedby={erros[nome] ? `${id}-erro` : undefined}
           onChange={(e) => {
-            const valor =
+            const valorDigitado =
               nome === "estado" || nome === "cpfCnpj"
                 ? e.target.value.toUpperCase()
                 : e.target.value
+            const comMascara = ehCampoComMascara(nome)
+            const valor = comMascara
+              ? formatarCampo(nome, valorDigitado)
+              : valorDigitado
+            if (comMascara) {
+              const entrada = e.currentTarget
+              const cursor = entrada.selectionStart ?? valorDigitado.length
+              const relevantesAntes = quantidadeSignificativa(
+                valorDigitado.slice(0, cursor),
+                nome,
+              )
+              const novaPosicao = posicaoComMascara(
+                valor,
+                nome,
+                relevantesAntes,
+              )
+              requestAnimationFrame(() => {
+                if (document.activeElement === entrada)
+                  entrada.setSelectionRange(novaPosicao, novaPosicao)
+              })
+            }
             setCampos((atual) => ({ ...atual, [nome]: valor }))
             setErro("")
             setErros((atual) => {
@@ -201,13 +262,13 @@ export function FormularioClienteApi({
             {campo(
               "cpfCnpj",
               "CPF / CNPJ (opcional)",
-              20,
+              18,
               "text",
               "Com ou sem máscara; CNPJ também aceita letras",
             )}
             <div className="grid gap-4 sm:grid-cols-2">
               {campo("email", "E-mail", 150, "email")}
-              {campo("telefone", "Telefone", 30, "tel")}
+              {campo("telefone", "Telefone", 15, "tel")}
             </div>
             <section className="space-y-4" aria-label="Endereço do cliente">
               <h3 className="text-sm font-medium">Endereço (opcional)</h3>

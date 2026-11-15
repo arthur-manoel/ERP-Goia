@@ -33,6 +33,12 @@ export function formatarDocumento(valor: string, tipo: "PF" | "PJ") {
   return tipo === "PJ" ? formatarCnpj(valor) : formatarCpf(valor)
 }
 
+export function formatarCpfCnpj(valor: string) {
+  const documento = valor.toUpperCase().replace(/[^A-Z0-9]/g, "")
+  const ehCnpj = documento.length > 11 || /[A-Z]/.test(documento)
+  return ehCnpj ? formatarCnpj(valor) : formatarCpf(valor)
+}
+
 export function formatarTelefone(valor: string) {
   const digitos = somenteDigitos(valor, 11)
   if (!digitos) return ""

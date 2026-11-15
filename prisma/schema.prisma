@@ -1623,7 +1623,7 @@ model venda {
   id                        Int                         @id @default(autoincrement())
   id_pedido_cliente         Int?
   id_empresa                Int
-  id_cliente                Int
+  id_cliente                Int?
   id_usuario                Int
   numero                    String                      @db.VarChar(50)
   status                    venda_status                @default(RASCUNHO)
@@ -1654,7 +1654,7 @@ model venda {
   parcelas                  venda_parcelas[]
   historico_status          venda_status_historico[]
   reserva_estoque           reserva_estoque[]
-  clientes                  clientes                    @relation("venda_cliente_empresa", fields: [id_empresa, id_cliente], references: [id_empresa, id], map: "fk_venda_cliente_empresa")
+  clientes                  clientes?                   @relation("venda_cliente_empresa", fields: [id_empresa, id_cliente], references: [id_empresa, id], map: "fk_venda_cliente_empresa")
   empresas                  empresas                    @relation(fields: [id_empresa], references: [id], map: "fk_venda_empresa")
   usuario_empresa           usuario_empresa             @relation("venda_usuario_empresa", fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], map: "fk_venda_usuario_empresa")
   condicoes_pagamento       condicoes_pagamento?        @relation(fields: [id_condicao_pagamento], references: [id], onDelete: SetNull, onUpdate: Cascade)
