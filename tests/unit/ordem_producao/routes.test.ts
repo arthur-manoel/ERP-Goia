@@ -461,11 +461,18 @@ it("início, pausa e retomada preservam a data original e impedem duplicação",
   expect((await retomar(await req("POST"), context())).status).toBe(200)
   expect(row.data_inicio).toEqual(date)
 })
-it.each(["ordem", "etapa"])(
-  "inicia %s no mesmo dia da previsão enviada à meia-noite UTC",
-  async (caminho) => {
+it.each(
+  ["ordem", "etapa"].flatMap((caminho) =>
+    ["12:30:00", "21:00:00", "23:30:00", "23:59:59.999"].map((hora) => ({
+      caminho,
+      inicio: `2026-11-14T${hora}-03:00`,
+    })),
+  ),
+)(
+  "inicia $caminho às $inicio sem alterar a previsão do mesmo dia",
+  async ({ caminho, inicio }) => {
     vi.useFakeTimers({ toFake: ["Date"] })
-    vi.setSystemTime(new Date("2026-11-14T15:30:00.000Z"))
+    vi.setSystemTime(new Date(inicio))
     try {
       production()
       row.id_local_estoque = 9
@@ -481,7 +488,7 @@ it.each(["ordem", "etapa"])(
           : await iniciar(await req("POST"), context())
       expect(resposta.status).toBe(200)
       expect(row.status).toBe("EM_PRODUCAO")
-      expect(row.data_inicio).toEqual(new Date("2026-11-14T15:30:00.000Z"))
+      expect(row.data_inicio).toEqual(new Date(inicio))
       expect(row.data_previsao).toEqual(new Date("2026-11-14T00:00:00.000Z"))
       expect(stages[0].status).toBe("EM_PRODUCAO")
     } finally {
@@ -503,9 +510,9 @@ it.each(["liberar", "iniciar"] as const)(
     expect((await resposta.json()).error).toContain("local de entrada")
   },
 )
-it("continua bloqueando início de etapa com previsão no dia anterior", async () => {
+it("bloqueia previsão vencida apenas após meia-noite em São Paulo", async () => {
   vi.useFakeTimers({ toFake: ["Date"] })
-  vi.setSystemTime(new Date("2026-11-14T15:30:00.000Z"))
+  vi.setSystemTime(new Date("2026-11-15T00:00:00-03:00"))
   try {
     production()
     row.id_local_estoque = 9
@@ -513,7 +520,7 @@ it("continua bloqueando início de etapa com previsão no dia anterior", async (
     db.produto_variacoes.findMany.mockResolvedValue([])
     row.status = "LIBERADA"
     row.data_inicio = null
-    row.data_previsao = new Date("2026-11-13T00:00:00.000Z")
+    row.data_previsao = new Date("2026-11-14T00:00:00.000Z")
     stages[0].status = "PENDENTE"
     expect(
       (await iniciarEtapa(await req("POST", { etapaId: 9 }), context())).status,

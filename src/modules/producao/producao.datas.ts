@@ -1,12 +1,20 @@
-// Datas civis da API são representadas em UTC (YYYY-MM-DD à meia-noite).
-// A previsão limita o dia de início, não a hora efetiva dentro desse dia.
+const calendarioProducao = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+})
+
+// A previsão codifica uma data civil em UTC; convertê-la de fuso recuaria
+// indevidamente essa data. Já o início é um instante real no dia de São Paulo.
 export function previsaoAnteriorAoDiaDeInicio(
   previsao: Date | null | undefined,
   inicio: Date | null | undefined,
 ) {
-  return !!(
-    previsao &&
-    inicio &&
-    previsao.toISOString().slice(0, 10) < inicio.toISOString().slice(0, 10)
-  )
+  if (!previsao || !inicio) return false
+  const partes = calendarioProducao.formatToParts(inicio)
+  const diaInicio = ["year", "month", "day"]
+    .map((tipo) => partes.find((parte) => parte.type === tipo)!.value)
+    .join("-")
+  return previsao.toISOString().slice(0, 10) < diaInicio
 }

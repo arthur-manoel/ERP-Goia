@@ -265,7 +265,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           tamanho: "UNICO",
           prioridade: "NORMAL",
           observacao: "Validação HTTP do card",
-          dataPrevisao: `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`,
+          dataPrevisao: `${dia}T00:00:00.000Z`,
         })
         const id = criada.ordem.id
         const listagem = await a.chamar(

@@ -165,9 +165,10 @@ Filtros: `id_empresa` (conferência do contexto), `id_pedido_cliente`, `id_local
 
 ## Validação
 
-A previsão e o início são comparados pelo dia UTC, conforme as datas civis da
-API. Uma previsão à meia-noite permite iniciar a OP ou a etapa em qualquer
-horário do mesmo dia. Previsão de dia anterior continua inválida; o horário
+A previsão preserva a data civil codificada em UTC pela API; o início efetivo
+usa o dia no fuso `America/Sao_Paulo`. Assim, uma previsão para hoje permite
+iniciar a OP ou a etapa até 23h59 em São Paulo, mesmo após a virada UTC.
+Previsão de dia anterior continua inválida; o horário
 real de início é preservado e datas de início futuras continuam bloqueadas.
 
 ```sh
