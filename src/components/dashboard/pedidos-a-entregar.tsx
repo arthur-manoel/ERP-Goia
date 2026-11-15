@@ -24,7 +24,7 @@ const base = {
   id: "indicador-pedidos",
   titulo: "Pedidos a entregar",
   icone: PackageCheck,
-  link: { href: "/vendas", rotulo: "Ver pedidos" },
+  link: { href: "/vendas/pedidos", rotulo: "Ver pedidos" },
 }
 
 export function PedidosAEntregar({ className }: { className?: string }) {

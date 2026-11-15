@@ -204,6 +204,26 @@ test("Dashboard: banco real, HTTP, prazos, isolamento e permissões", async () =
       data: { pode_ler: false },
     })
     assert.equal((await consultar("saldo", empresas[0], tokenFin)).status, 403)
+    // Isola a regra do vínculo: a leitura volta a ser permitida antes de inativá-lo.
+    await prisma.permissoes_usuario.updateMany({
+      where: { id_usuario_empresa: vinculo.id },
+      data: { pode_ler: true },
+    })
+    await prisma.usuario_empresa.update({
+      where: { id: vinculo.id },
+      data: { status: "INATIVO" },
+    })
+    assert.equal((await consultar("saldo", empresas[0], tokenFin)).status, 403)
+    await prisma.empresas.update({
+      where: { id: empresas[1] },
+      data: { status: "INATIVA" },
+    })
+    assert.equal((await consultar("pedidos", empresas[1])).status, 403)
+    await prisma.usuarios.update({
+      where: { id: admin.id },
+      data: { status: "INATIVO" },
+    })
+    assert.equal((await consultar("pedidos")).status, 401)
     console.log(
       "Dashboard HTTP validada: status, prazos, saldo decimal, virada do mês, empresa vazia, isolamento e revogação de permissão.",
     )

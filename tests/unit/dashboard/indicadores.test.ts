@@ -138,6 +138,64 @@ describe("indicadores reais da dashboard", () => {
     expect((await request("saldo")).status).toBe(403)
     expect(db.movimentacoes_financeiras.groupBy).not.toHaveBeenCalled()
   })
+  it.each([
+    ["ordens", "ORDENS_PRODUCAO", "production-token"],
+    ["pedidos", "PEDIDOS", "test-token"],
+    ["saldo", "FINANCEIRO", "finance-token"],
+  ])(
+    "restringe %s à leitura do próprio recurso",
+    async (indicador, recurso, token) => {
+      db.usuario_empresa.findMany.mockResolvedValue([vinculo(recurso, false)])
+      expect((await request(indicador, token)).status).toBe(403)
+      db.usuario_empresa.findMany.mockResolvedValue([vinculo(recurso)])
+      db.ordem_producao.findMany.mockResolvedValue([])
+      db.pedido_cliente.findMany.mockResolvedValue([])
+      db.movimentacoes_financeiras.groupBy.mockResolvedValue([])
+      expect((await request(indicador, token)).status).toBe(200)
+      expect(db.usuario_empresa.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: {
+            id_usuario: expect.any(Number),
+            status: "ATIVO",
+            usuarios: { status: "ATIVO" },
+            empresas: { status: "ATIVA" },
+          },
+        }),
+      )
+    },
+  )
+  it("rejeita indicador inexistente sem consultar o banco", async () => {
+    expect((await request("__proto__")).status).toBe(404)
+    expect(db.usuario_empresa.findMany).not.toHaveBeenCalled()
+  })
+  it("exige seleção explícita com múltiplos vínculos e rejeita headers inválidos", async () => {
+    db.usuario_empresa.findMany.mockResolvedValue([
+      vinculo("PEDIDOS"),
+      { ...vinculo("PEDIDOS"), id_empresa: 20 },
+    ])
+    const response = await GET(
+      new Request("http://localhost/api/dashboard/pedidos", {
+        headers: { Authorization: "Bearer test-token" },
+      }),
+      { params: Promise.resolve({ indicador: "pedidos" }) },
+    )
+    expect(response.status).toBe(400)
+    for (const empresa of ["0", "-1", "10.0", "10e0", "2147483648"])
+      expect((await request("pedidos", "test-token", empresa)).status).toBe(403)
+    expect(db.pedido_cliente.findMany).not.toHaveBeenCalled()
+  })
+  it("isola falhas de banco e não expõe detalhes técnicos", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    db.usuario_empresa.findMany.mockResolvedValue([vinculo("PEDIDOS")])
+    db.pedido_cliente.findMany.mockRejectedValue(
+      new Error("Credencial interna do banco"),
+    )
+    const response = await request("pedidos")
+    expect(await response.json()).toEqual({
+      success: true,
+      data: { estado: "erro" },
+    })
+  })
   it("entrega somente dados autorizados e impede cache da resposta", async () => {
     db.usuario_empresa.findMany.mockResolvedValue([vinculo("FINANCEIRO")])
     db.movimentacoes_financeiras.groupBy.mockResolvedValue([])

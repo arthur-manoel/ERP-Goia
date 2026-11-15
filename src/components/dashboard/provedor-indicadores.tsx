@@ -1,76 +1,78 @@
 "use client"
 
+import Link from "next/link"
 import { createContext, useContext, useEffect, useState } from "react"
 import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
-import type {
-  ResultadoIndicador,
-  OrdensProducaoAbertas,
-  PedidosAEntregar,
-  SaldoDoMes,
-} from "@/lib/dashboard/tipos"
+import { SeletorEmpresa } from "@/features/autenticacao/seletor-empresa"
+import type { ResultadoIndicador } from "@/lib/dashboard/tipos"
+import {
+  carregarIndicadores,
+  type DadosIndicadores,
+  type ResultadosIndicadores,
+  type RequisitarIndicador,
+} from "./carregar-indicadores"
 
-type Dados = {
-  ordens: OrdensProducaoAbertas
-  pedidos: PedidosAEntregar
-  saldo: SaldoDoMes
-}
-type Resultados = { [K in keyof Dados]?: ResultadoIndicador<Dados[K]> }
-const Contexto = createContext<Resultados>({})
+const Contexto = createContext<ResultadosIndicadores>({})
 
 export function ProvedorIndicadores({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const { estado, usuario, empresa, requisitar } = useAutenticacao()
-  const chave =
-    estado === "autenticado" && usuario && empresa
-      ? `${usuario.email}:${empresa.id}`
-      : null
-  const [resultado, setResultado] = useState<{
-    chave: string
-    dados: Resultados
-  } | null>(null)
-  useEffect(() => {
-    if (!chave) return
-    let ativo = true
-    for (const indicador of ["ordens", "pedidos", "saldo"] as const) {
-      void requisitar(`/api/dashboard/${indicador}`)
-        .then(async (response) => {
-          if (response.status === 403)
-            return { estado: "sem_permissao" } as const
-          if (!response.ok) throw new Error("Falha ao consultar indicador.")
-          return (await response.json()).data as ResultadoIndicador<
-            Dados[typeof indicador]
-          >
-        })
-        .catch(() => ({ estado: "erro" }) as const)
-        .then((dados) => {
-          if (ativo)
-            setResultado((anterior) => ({
-              chave,
-              dados: {
-                ...(anterior?.chave === chave ? anterior.dados : {}),
-                [indicador]: dados,
-              },
-            }))
-        })
-    }
-    return () => {
-      ativo = false
-    }
-  }, [chave, requisitar])
+  const { estado, usuario, empresa, empresas, requisitar } = useAutenticacao()
+  if (estado === "carregando")
+    return <p role="status">Carregando acesso à dashboard…</p>
+  if (estado === "anonimo" || !usuario)
+    return (
+      <p>
+        <Link href="/login" className="underline">
+          Entre
+        </Link>{" "}
+        para consultar a dashboard.
+      </p>
+    )
   return (
-    <Contexto.Provider
-      value={resultado?.chave === chave ? resultado.dados : {}}
-    >
-      {children}
-    </Contexto.Provider>
+    <>
+      {empresas.length > 1 && <SeletorEmpresa />}
+      {empresa ? (
+        <CarregadorIndicadores
+          key={`${usuario.email}:${empresa.id}`}
+          requisitar={requisitar}
+        >
+          {children}
+        </CarregadorIndicadores>
+      ) : (
+        <p role="status">
+          {empresas.length
+            ? "Selecione uma empresa para consultar os indicadores."
+            : "Sem acesso a uma empresa ativa."}
+        </p>
+      )}
+    </>
   )
 }
 
-export function useIndicador<K extends keyof Dados>(
+// A chave do componente reinicia todo o estado ao mudar usuário ou empresa.
+function CarregadorIndicadores({
+  children,
+  requisitar,
+}: {
+  children: React.ReactNode
+  requisitar: RequisitarIndicador
+}) {
+  const [dados, setDados] = useState<ResultadosIndicadores>({})
+  useEffect(
+    () =>
+      carregarIndicadores(requisitar, (resultado) =>
+        setDados((anterior) => ({ ...anterior, ...resultado })),
+      ),
+    [requisitar],
+  )
+  return <Contexto.Provider value={dados}>{children}</Contexto.Provider>
+}
+
+export function useIndicador<K extends keyof DadosIndicadores>(
   indicador: K,
-): ResultadoIndicador<Dados[K]> | undefined {
+): ResultadoIndicador<DadosIndicadores[K]> | undefined {
   return useContext(Contexto)[indicador]
 }

@@ -25,7 +25,7 @@ export function ResumoAtencao() {
         "pedido atrasado",
         "pedidos atrasados",
       ),
-      href: "/vendas",
+      href: "/vendas/pedidos",
     })
   }
   if (ordens?.estado === "ok" && (ordens.dados.atrasadas ?? 0) > 0) {
