@@ -1,3 +1,4 @@
+import { schemasDadosIndicadores } from "@/lib/dashboard/validacao"
 import type {
   ResultadoIndicador,
   OrdensProducaoAbertas,
@@ -54,9 +55,12 @@ export function carregarIndicadores(
         ) {
           throw new Error("Resposta inválida do indicador.")
         }
-        return resultado as ResultadoIndicador<
-          DadosIndicadores[typeof indicador]
-        >
+        return resultado.estado === "ok"
+          ? {
+              estado: "ok" as const,
+              dados: schemasDadosIndicadores[indicador].parse(resultado.dados),
+            }
+          : (resultado as Exclude<ResultadoIndicador<never>, { estado: "ok" }>)
       })
       .catch(() => ({ estado: "erro" }) as const)
       .then((dados) => {

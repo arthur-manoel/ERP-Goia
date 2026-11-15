@@ -8,7 +8,17 @@ describe("carregamento independente da dashboard", () => {
     const requisitar = vi.fn(async (url: string) => {
       if (url.endsWith("ordens")) throw new Error("Offline")
       if (url.endsWith("saldo")) return new Response(null, { status: 403 })
-      return Response.json({ data: { estado: "ok", dados: { total: 8 } } })
+      return Response.json({
+        data: {
+          estado: "ok",
+          dados: {
+            total: 8,
+            atrasados: 1,
+            vencemHoje: 0,
+            proximos: { quantidade: 0, janelaDias: 7 },
+          },
+        },
+      })
     })
     const cancelar = carregarIndicadores(requisitar, receber)
     await concluir()
@@ -16,7 +26,17 @@ describe("carregamento independente da dashboard", () => {
       expect.arrayContaining([
         { ordens: { estado: "erro" } },
         { saldo: { estado: "sem_permissao" } },
-        { pedidos: { estado: "ok", dados: { total: 8 } } },
+        {
+          pedidos: {
+            estado: "ok",
+            dados: {
+              total: 8,
+              atrasados: 1,
+              vencemHoje: 0,
+              proximos: { quantidade: 0, janelaDias: 7 },
+            },
+          },
+        },
       ]),
     )
     expect(requisitar).toHaveBeenCalledTimes(4)
@@ -46,7 +66,13 @@ describe("carregamento independente da dashboard", () => {
     })
     cancelarNegado()
   })
-  it.each([{}, { data: null }, { data: { estado: "ok" } }])(
+  it.each([
+    {},
+    { data: null },
+    { data: { estado: "ok" } },
+    { data: { estado: "ok", dados: {} } },
+    { data: { estado: "ok", dados: [] } },
+  ])(
     "converte resposta incompleta em erro em vez de carregamento infinito",
     async (body) => {
       const receber = vi.fn()
@@ -58,6 +84,47 @@ describe("carregamento independente da dashboard", () => {
       expect(receber).toHaveBeenCalledTimes(4)
       for (const [resultado] of receber.mock.calls)
         expect(Object.values(resultado)).toEqual([{ estado: "erro" }])
+      cancelar()
+    },
+  )
+  it.each([
+    ["pedidos", { total: 1, atrasados: 0, vencemHoje: 0, proximos: null }],
+    [
+      "pedidos",
+      {
+        total: 1,
+        atrasados: 2,
+        vencemHoje: 0,
+        proximos: { quantidade: 0, janelaDias: 7 },
+      },
+    ],
+    ["ordens", { total: 1, porStatus: {} }],
+    [
+      "ordens",
+      { total: 1, porStatus: [{ rotulo: "Planejada", quantidade: 2 }] },
+    ],
+    ["saldo", { valor: "NaN", evolucaoDiaria: [] }],
+    ["saldo", { valor: "10.00", evolucaoDiaria: "inválido" }],
+    ["estoque", { total: 1, maisCriticos: [{}] }],
+  ])(
+    "recusa dados internos inválidos de %s sem derrubar os outros cards",
+    async (indicador, dados) => {
+      const receber = vi.fn()
+      const cancelar = carregarIndicadores(async (url) => {
+        if (
+          url.endsWith(indicador) ||
+          (indicador === "estoque" && url.endsWith("estoque-minimo"))
+        )
+          return Response.json(
+            indicador === "estoque"
+              ? { indicador: dados }
+              : { data: { estado: "ok", dados } },
+          )
+        return new Response(null, { status: 403 })
+      }, receber)
+      await concluir()
+      expect(receber).toHaveBeenCalledWith({ [indicador]: { estado: "erro" } })
+      expect(receber).toHaveBeenCalledTimes(4)
       cancelar()
     },
   )

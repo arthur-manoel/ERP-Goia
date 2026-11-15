@@ -2,7 +2,7 @@
 
 A dashboard consulta `GET /api/dashboard/{pedidos|ordens|saldo}` e a API existente `GET /api/estoque-minimo` pelo mesmo provedor de autenticação. Cada indicador carrega de forma independente e compartilha o resultado entre o card e o resumo de atenção. A seleção de empresa aparece na própria dashboard para usuários com vários vínculos. Ao trocar de empresa, o estado dos indicadores é reiniciado e requisições anteriores são canceladas; respostas tardias são descartadas. Sem empresa selecionada, a tela solicita a seleção em vez de manter carregamento indefinido.
 
-A API valida JWT e sessão ativa, perfil, vínculo ativo do usuário com a empresa e permissão de leitura do recurso. Administradores também precisam de vínculo ativo. Os recursos são `PEDIDOS`, `ORDENS_PRODUCAO` e `FINANCEIRO`; respostas usam `Cache-Control: no-store`. Indicadores sem permissão ficam ocultos, incluindo o estoque. Os quatro indicadores compartilham o ciclo de troca de empresa; respostas incompletas geram erro de consulta, sem manter carregamento indefinido.
+A API valida JWT e sessão ativa, perfil, vínculo ativo do usuário com a empresa e permissão de leitura do recurso. Administradores também precisam de vínculo ativo. Os recursos são `PEDIDOS`, `ORDENS_PRODUCAO` e `FINANCEIRO`; respostas usam `Cache-Control: no-store`. Indicadores sem permissão ficam ocultos, incluindo o estoque. Os quatro indicadores compartilham o ciclo de troca de empresa; o contrato de cada indicador é validado com Zod, incluindo campos internos, listas, decimais e coerência das contagens. Respostas incompletas ou incoerentes geram erro de consulta antes de alcançar os componentes, sem manter carregamento indefinido ou causar exceções na renderização.
 
 ## Regras
 

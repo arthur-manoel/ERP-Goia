@@ -14,6 +14,8 @@ test("Dashboard: banco real, HTTP, prazos, isolamento e permissões", async () =
   process.env.ACCESS_TOKEN_SECRET = randomUUID() + randomUUID()
   const hooks = typescript()
   const { prisma } = await import("../src/lib/prisma.ts")
+  const { schemasDadosIndicadores } =
+    await import("../src/lib/dashboard/validacao.ts")
   const { diaDoERP } = await import("../src/lib/dashboard/indicadores-reais.ts")
   const empresas = [],
     usuarios = []
@@ -150,6 +152,7 @@ test("Dashboard: banco real, HTTP, prazos, isolamento e permissões", async () =
       assert.equal(r.headers.get("Cache-Control"), "no-store")
       const body = await r.json()
       assert.equal(body.data.estado, "ok")
+      schemasDadosIndicadores[indicador].parse(body.data.dados)
       return body.data.dados
     }
     const estoqueHttp = (bearer = token) =>
@@ -161,7 +164,10 @@ test("Dashboard: banco real, HTTP, prazos, isolamento e permissões", async () =
       })
     const estoque = await estoqueHttp()
     assert.equal(estoque.status, 200)
-    assert.equal((await estoque.json()).indicador.total, 0)
+    const indicadorEstoque = schemasDadosIndicadores.estoque.parse(
+      (await estoque.json()).indicador,
+    )
+    assert.equal(indicadorEstoque.total, 0)
     assert.equal((await estoqueHttp(tokenFin)).status, 403)
     const pedidosReais = await dados("pedidos")
     assert.deepEqual(pedidosReais, {
