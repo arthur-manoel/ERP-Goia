@@ -4,11 +4,7 @@ import {
   editarSchema,
   listarSchema,
 } from "@/modules/clientes/clientes.schema"
-import {
-  formatarCep,
-  formatarCpfCnpj,
-  formatarTelefone,
-} from "./formatacao"
+import { formatarCep, formatarCpfCnpj, formatarTelefone } from "./formatacao"
 
 const id = z.number().int().positive()
 export const clienteApiSchema = z.object({

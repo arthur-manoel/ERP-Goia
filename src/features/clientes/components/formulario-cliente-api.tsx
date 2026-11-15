@@ -24,11 +24,7 @@ import {
   type ClienteApi,
   type CamposCliente,
 } from "../api"
-import {
-  formatarCep,
-  formatarCpfCnpj,
-  formatarTelefone,
-} from "../formatacao"
+import { formatarCep, formatarCpfCnpj, formatarTelefone } from "../formatacao"
 import { useConsultaCliente } from "../use-consulta"
 
 type Props = {
@@ -41,9 +37,7 @@ type Props = {
 
 type CampoComMascara = "cpfCnpj" | "telefone" | "cep"
 
-function ehCampoComMascara(
-  nome: keyof CamposCliente,
-): nome is CampoComMascara {
+function ehCampoComMascara(nome: keyof CamposCliente): nome is CampoComMascara {
   return nome === "cpfCnpj" || nome === "telefone" || nome === "cep"
 }
 
@@ -68,7 +62,9 @@ function posicaoComMascara(
   let encontradas = 0
   for (let indice = 0; indice < valor.length; indice++) {
     const significativo =
-      nome === "cpfCnpj" ? /[A-Z0-9]/i.test(valor[indice]) : /\d/.test(valor[indice])
+      nome === "cpfCnpj"
+        ? /[A-Z0-9]/i.test(valor[indice])
+        : /\d/.test(valor[indice])
     if (significativo && ++encontradas === quantidade) return indice + 1
   }
   return valor.length
