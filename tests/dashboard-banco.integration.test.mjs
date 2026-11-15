@@ -152,6 +152,17 @@ test("Dashboard: banco real, HTTP, prazos, isolamento e permissões", async () =
       assert.equal(body.data.estado, "ok")
       return body.data.dados
     }
+    const estoqueHttp = (bearer = token) =>
+      fetch(`${http.base}/api/estoque-minimo`, {
+        headers: {
+          Authorization: `Bearer ${bearer}`,
+          "X-Empresa-Id": String(empresas[0]),
+        },
+      })
+    const estoque = await estoqueHttp()
+    assert.equal(estoque.status, 200)
+    assert.equal((await estoque.json()).indicador.total, 0)
+    assert.equal((await estoqueHttp(tokenFin)).status, 403)
     const pedidosReais = await dados("pedidos")
     assert.deepEqual(pedidosReais, {
       total: 6,

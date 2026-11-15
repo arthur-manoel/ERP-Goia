@@ -27,7 +27,10 @@ const base = {
 }
 
 export function InsumosAbaixoDoMinimo({ className }: { className?: string }) {
-  const { estado, empresas, empresa, dados, falha } = useIndicadorEstoque()
+  const { estado, empresas, empresa, dados, falha, semPermissao } =
+    useIndicadorEstoque()
+
+  if (semPermissao) return null
 
   if (
     estado === "carregando" ||
@@ -52,7 +55,7 @@ export function InsumosAbaixoDoMinimo({ className }: { className?: string }) {
       <IndicadorCard {...base} className={className}>
         <p className="text-sm text-muted-foreground">
           {empresas.length
-            ? "Selecione uma empresa na tela de estoque."
+            ? "Selecione uma empresa para consultar o estoque."
             : "Sem acesso ao estoque em empresa ativa."}
         </p>
       </IndicadorCard>

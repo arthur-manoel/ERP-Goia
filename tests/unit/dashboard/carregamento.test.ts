@@ -19,9 +19,48 @@ describe("carregamento independente da dashboard", () => {
         { pedidos: { estado: "ok", dados: { total: 8 } } },
       ]),
     )
-    expect(requisitar).toHaveBeenCalledTimes(3)
+    expect(requisitar).toHaveBeenCalledTimes(4)
     cancelar()
   })
+  it("carrega estoque pela API existente e respeita a falta de permissão", async () => {
+    const receber = vi.fn()
+    const requisitar = vi.fn(async (url: string) =>
+      url === "/api/estoque-minimo"
+        ? Response.json({ indicador: { total: 2, maisCriticos: [] } })
+        : new Response(null, { status: 403 }),
+    )
+    const cancelar = carregarIndicadores(requisitar, receber)
+    await concluir()
+    expect(receber).toHaveBeenCalledWith({
+      estoque: { estado: "ok", dados: { total: 2, maisCriticos: [] } },
+    })
+    cancelar()
+    receber.mockClear()
+    const cancelarNegado = carregarIndicadores(
+      async () => new Response(null, { status: 403 }),
+      receber,
+    )
+    await concluir()
+    expect(receber).toHaveBeenCalledWith({
+      estoque: { estado: "sem_permissao" },
+    })
+    cancelarNegado()
+  })
+  it.each([{}, { data: null }, { data: { estado: "ok" } }])(
+    "converte resposta incompleta em erro em vez de carregamento infinito",
+    async (body) => {
+      const receber = vi.fn()
+      const cancelar = carregarIndicadores(
+        async () => Response.json(body),
+        receber,
+      )
+      await concluir()
+      expect(receber).toHaveBeenCalledTimes(4)
+      for (const [resultado] of receber.mock.calls)
+        expect(Object.values(resultado)).toEqual([{ estado: "erro" }])
+      cancelar()
+    },
+  )
   it("descarta respostas da empresa anterior mesmo quando o transporte ignora o cancelamento", async () => {
     const receber = vi.fn()
     let responder!: (r: Response) => void
@@ -34,7 +73,7 @@ describe("carregamento independente da dashboard", () => {
     await concluir()
     expect(receber).not.toHaveBeenCalled()
   })
-  it("cancela as três requisições e descarta erros após desmontar", async () => {
+  it("cancela as quatro requisições e descarta erros após desmontar", async () => {
     const receber = vi.fn()
     let signal: AbortSignal | undefined
     const cancelar = carregarIndicadores(async (_url, init) => {
