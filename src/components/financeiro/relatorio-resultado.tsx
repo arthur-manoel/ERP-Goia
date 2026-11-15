@@ -117,11 +117,13 @@ function ResultadoEmpresa() {
         <AlertDescription>
           Receitas são os títulos a receber; custos são os títulos de compras a
           pagar, ambos pelo vencimento e valor final, incluindo títulos em
-          aberto. Despesas sem vínculo são apuradas pela data da despesa.
-          Despesas vinculadas a títulos já integram os custos de compras e não
-          são somadas novamente. Cancelados são excluídos. Margem = receita −
-          custos − despesas. Este resultado por vencimento não representa o
-          lucro contábil por competência nem o fluxo de caixa.
+          aberto. Créditos de cancelamento são descontados da receita no período
+          do título original, incluindo valores a restituir. Despesas sem
+          vínculo são apuradas pela data da despesa. Despesas vinculadas a
+          títulos já integram os custos de compras e não são somadas novamente.
+          Cancelados são excluídos. Margem = receita − custos − despesas. Este
+          resultado por vencimento não representa o lucro contábil por
+          competência nem o fluxo de caixa.
         </AlertDescription>
       </Alert>
       {!valido ? (

@@ -50,3 +50,11 @@ Somente registros fictícios aparecem nas imagens.
 ## Limites
 
 A homologação foi local com MySQL real e dados fictícios, não nos dados privados de produção. Mantêm-se os [critérios e limites financeiros do relatório](../src/modules/resultado/README.md). O build com Webpack passou; o build padrão com Turbopack encontrou uma falha ao iniciar o subprocesso de CSS neste Windows. A configuração de build do projeto não foi alterada.
+
+## Revisão dos créditos de cancelamento
+
+A revisão posterior encontrou que o cancelamento parcial preserva `valor_final` e registra a redução em `pedido_credito_receber`. O relatório foi corrigido para descontar o valor integral desses créditos da receita da categoria, incluindo saldo anulado e valores a restituir. O reembolso posterior não é descontado novamente. Como o relatório usa o estado atual dos títulos, créditos lançados depois ajustam o período de vencimento original.
+
+Uma nova base MySQL isolada confirmou dois créditos de R$ 10,01 e R$ 20,02 no mesmo título. A receita do mês passou de R$ 300,00 para R$ 269,97, e a margem de R$ 129,98 para R$ 99,95. Créditos registrados em dezembro ajustaram corretamente o vencimento de novembro. A empresa vazia continuou com receita zero. As capturas acima documentam a fixture original, sem créditos; os seus valores permanecem válidos nesse cenário.
+
+A suíte completa passou com 1.888 testes; os 20 testes específicos incluem créditos múltiplos e rejeição de créditos inválidos ou superiores ao título.

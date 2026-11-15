@@ -8,6 +8,7 @@ import { GET } from "@/app/api/financeiro/resultado/route"
 const ctx = { idEmpresa: 10, idUsuario: 1 }
 const periodo = { de: "2026-11-01", ate: "2026-11-30" }
 beforeEach(() => {
+  db.contas_receber.findMany.mockResolvedValue([])
   db.usuario_empresa.findFirst.mockResolvedValue({
     nivel_acesso: "EMPRESA",
     usuarios: { nivel_acesso: "ADMIN" },
@@ -28,6 +29,60 @@ beforeEach(() => {
     { id: 3, nome: "Aluguel" },
   ])
 })
+it("desconta créditos de cancelamento parcial na receita da categoria", async () => {
+  db.contas_receber.findMany.mockResolvedValue([
+    {
+      id_categoria: 1,
+      valor_final: new Prisma.Decimal("100.10"),
+      pedido_credito_receber: [
+        { valor: new Prisma.Decimal("10.01") },
+        { valor: new Prisma.Decimal("20.02") },
+      ],
+    },
+  ])
+  expect(await consultarResultado(periodo, ctx)).toMatchObject({
+    receita: "70.07",
+    custo: "30.03",
+    despesa: "20.02",
+    margem: "20.02",
+    percentual: "28.6",
+    grupos: expect.arrayContaining([
+      { tipo: "Receita", categoria: "Vendas", valor: "70.07" },
+    ]),
+  })
+  expect(db.contas_receber.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: {
+        id_empresa: 10,
+        situacao: { not: "CANCELADO" },
+        data_vencimento: {
+          gte: new Date(periodo.de),
+          lte: new Date(periodo.ate),
+        },
+        pedido_credito_receber: { some: { id_empresa: 10 } },
+      },
+      select: expect.objectContaining({
+        pedido_credito_receber: {
+          where: { id_empresa: 10 },
+          select: { valor: true },
+        },
+      }),
+    }),
+  )
+})
+it.each(["100.11", "-1.00", "0", "NaN"])(
+  "rejeita crédito inconsistente: %s",
+  async (valor) => {
+    db.contas_receber.findMany.mockResolvedValue([
+      {
+        id_categoria: 1,
+        valor_final: new Prisma.Decimal("100.10"),
+        pedido_credito_receber: [{ valor: new Prisma.Decimal(valor) }],
+      },
+    ])
+    await expect(consultarResultado(periodo, ctx)).rejects.toThrow()
+  },
+)
 it("apura categorias e margem com precisão decimal", async () => {
   expect(await consultarResultado(periodo, ctx)).toMatchObject({
     receita: "100.10",
