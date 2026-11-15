@@ -45,6 +45,7 @@ Base: `/api/ordem_producao`.
 | POST | `/{id}/concluir` | Conclui última etapa/ordem em produção |
 | GET | `/{id}/itens` | Itens paginados |
 | POST | `/{id}/itens` | Inclui item, ficha de consumo previsto e snapshot de fluxo |
+| POST | `/{id}/completar` | Completa OP vazia com cabeçalho, item, ficha e fluxo na mesma transação |
 | PATCH | `/{id}/itens/{itemId}` | Quantidade/tamanho de item em planejamento |
 | DELETE | `/{id}/itens/{itemId}` | Remove somente item do planejamento sem histórico operacional |
 | PUT | `/{id}/itens/{itemId}/producao` | Registra produção efetiva na última etapa em execução |
@@ -161,3 +162,9 @@ npm run typecheck
 ```
 
 Para persistência, consumo, conclusão, transferência, entrega e financeiro use o cenário HTTP em `tests/operacoes-integradas.integration.test.mjs`, com banco local isolado preparado conforme [operações integradas](../../../docs/operacoes-integradas.md). Os runners antigos que não preparam consumo real/local de destino precisam dessas pré-condições; não se fabricam apontamentos para concluir.
+
+## Conclusão do planejamento vazio
+
+A abertura pela interface usa POST /api/ordem_producao/{id}/completar com o contrato de item e id_local_estoque opcional. A chamada exige criação e edição de OP. Dentro da transação serializada, o serviço bloqueia a empresa e a ordem, verifica que ela continua PLANEJADA e sem itens, atualiza a meta pela quantidade do item e o local informado e grava item, consumo, fluxo e auditoria. Uma ordem já preenchida retorna 409 antes de qualquer alteração. Falhas posteriores revertem todo o comando.
+
+A inclusão de item também exige id_variacao quando existir qualquer variação do produto na empresa, inclusive inativa. A consulta de opções de reservas informa possui_grade independentemente da lista de variações ativas, para bloquear a abertura pela tela quando todas estiverem inativas.

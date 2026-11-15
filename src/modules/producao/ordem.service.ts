@@ -467,6 +467,7 @@ export function addItem(
   ctx: Contexto,
   id: number,
   input: z.output<typeof ordemItemSchema>,
+  completar?: { id_local_estoque?: number },
 ) {
   return repo.write(ctx, async (tx) => {
     const before = await required(ctx, id, tx)
@@ -474,8 +475,29 @@ export function addItem(
       conflict("Itens somente podem ser incluídos durante o planejamento.")
     if ((await repo.operationalCounts(ctx, id, tx)).some(Boolean))
       conflict("Há efeitos operacionais que impedem a inclusão de itens.")
+    if (completar && before._count.ordem_producao_item > 0)
+      conflict(
+        "Esta ordem já foi completada. Recarregue para consultar o item salvo.",
+      )
     if (before._count.ordem_producao_item >= 200)
       conflict("Limite de 200 itens por ordem.")
+    if (
+      !input.id_variacao &&
+      (await tx.produto_variacoes.count({
+        where: { id_empresa: ctx.idEmpresa, id_produto: input.id_produto },
+      }))
+    )
+      conflict("Este produto possui grade. Selecione uma variação ativa.")
+    if (completar) {
+      const cabecalho = {
+        quantidade_planejada: input.quantidade,
+        ...(completar.id_local_estoque !== undefined
+          ? { id_local_estoque: completar.id_local_estoque }
+          : {}),
+      }
+      await relationships(ctx, { ...before, ...cabecalho }, tx)
+      await repo.update(ctx, id, cabecalho, tx)
+    }
     const ficha = await produtoComFicha(tx, ctx, input.id_produto)
     const fluxo = await fluxos.fluxoProduto(tx, ctx, input.id_produto)
     validarFluxo(fluxo)

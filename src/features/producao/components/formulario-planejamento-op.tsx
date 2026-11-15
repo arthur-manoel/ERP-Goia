@@ -25,6 +25,7 @@ type OpcaoProduto = {
   id: number
   nome: string
   unidade: string
+  possui_grade: boolean
   produto_variacoes: {
     id: number
     cores: { nome: string } | null
@@ -124,7 +125,8 @@ export function FormularioPlanejamentoOP({
     if (
       !produto ||
       !quantidade.success ||
-      (produto.produto_variacoes.length > 0 && !variacao)
+      ((produto.possui_grade || produto.produto_variacoes.length > 0) &&
+        !variacao)
     ) {
       setErro(
         "Selecione o produto, a variação quando houver grade e informe uma quantidade positiva com até três casas decimais.",
@@ -147,29 +149,9 @@ export function FormularioPlanejamentoOP({
         id = corpo.data.id
         setRascunho(id)
         onRascunho(id)
-      } else {
-        const resposta = await requisitar(
-          `/api/ordem_producao/${id}/itens?limit=1`,
-          { headers: { "X-Empresa-Id": String(empresa?.id) } },
-        )
-        if (!resposta.ok) throw new Error(await mensagemErro(resposta))
-        const corpo = (await resposta.json()) as { data: { rows: unknown[] } }
-        if (corpo.data.rows.length > 0) {
-          onSalvo(id)
-          return
-        }
-        await enviar(
-          `/api/ordem_producao/${id}`,
-          {
-            quantidade_planejada: quantidade.data,
-            ...(inicial
-              ? { id_local_estoque: Number(campos.get("local")) }
-              : {}),
-          },
-          "PATCH",
-        )
       }
-      await enviar(`/api/ordem_producao/${id}/itens`, {
+      await enviar(`/api/ordem_producao/${id}/completar`, {
+        ...(inicial ? { id_local_estoque: Number(campos.get("local")) } : {}),
         id_produto: produto.id,
         ...(variacao ? { id_variacao: Number(variacao) } : {}),
         quantidade: quantidade.data,
@@ -276,6 +258,12 @@ export function FormularioPlanejamentoOP({
                 }))}
               />
             </Field>
+            {produto?.possui_grade && !produto.produto_variacoes.length && (
+              <p role="alert" className="text-sm text-destructive">
+                Este produto possui grade, mas está sem variações ativas.
+                Reative uma variação antes de abrir a ordem.
+              </p>
+            )}
             {!!produto?.produto_variacoes.length && (
               <Field>
                 <FieldLabel htmlFor="nova-op-variacao">Variação</FieldLabel>
@@ -330,7 +318,13 @@ export function FormularioPlanejamentoOP({
             >
               Fechar
             </Button>
-            <Button type="submit" disabled={ocupado}>
+            <Button
+              type="submit"
+              disabled={
+                ocupado ||
+                !!(produto?.possui_grade && !produto.produto_variacoes.length)
+              }
+            >
               {ocupado ? "Salvando…" : "Salvar ordem"}
             </Button>
           </DialogFooter>

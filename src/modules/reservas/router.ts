@@ -135,6 +135,13 @@ export async function operacoesHandler(
                   id: true,
                   nome: true,
                   unidade: true,
+                  _count: {
+                    select: {
+                      produto_variacoes: {
+                        where: { id_empresa: ctx.idEmpresa },
+                      },
+                    },
+                  },
                   produto_variacoes: {
                     where: { id_empresa: ctx.idEmpresa, status: "ATIVO" },
                     select: {
@@ -160,7 +167,15 @@ export async function operacoesHandler(
                 orderBy: { id: "asc" },
               }),
             ])
-            return textoJson({ produtos, locais, setores, limiteProdutos: 50 })
+            return textoJson({
+              produtos: produtos.map(({ _count, ...produto }) => ({
+                ...produto,
+                possui_grade: _count.produto_variacoes > 0,
+              })),
+              locais,
+              setores,
+              limiteProdutos: 50,
+            })
           }
           if (op === "pedido") {
             if (new URL(request.url).search)

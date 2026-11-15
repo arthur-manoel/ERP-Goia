@@ -1,3 +1,4 @@
+import { POST as completar } from "../../../src/app/api/ordem_producao/[id]/completar/route"
 import { beforeEach, expect, it, vi } from "vitest"
 import { Prisma } from "../../../src/generated/prisma/client"
 import * as collection from "../../../src/app/api/ordem_producao/route"
@@ -881,4 +882,36 @@ it("rate limit usa identidade autenticada mesmo mudando caixa do Bearer e IP", a
   )
   expect(responses.filter((r) => r.status === 200)).toHaveLength(120)
   expect(responses.filter((r) => r.status === 429)).toHaveLength(5)
+})
+
+it("completar recusa ordem que já tem item antes de alterar o cabeçalho ou consumo", async () => {
+  row._count = { ...counters, ordem_producao_item: 1 }
+  const response = await completar(
+    await req("POST", {
+      id_produto: 20,
+      quantidade: "3.000",
+      id_local_estoque: 5,
+    }),
+    context(),
+  )
+  expect(response.status).toBe(409)
+  expect(db.ordem_producao.update).not.toHaveBeenCalled()
+  expect(db.ordem_producao_item.create).not.toHaveBeenCalled()
+  expect(db.ordem_producao_consumo_planejado.createMany).not.toHaveBeenCalled()
+})
+it("produto com grade exclusivamente inativa exige uma variação mesmo na inclusão direta", async () => {
+  db.produto_variacoes.count.mockResolvedValue(1)
+  const response = await addItem(
+    await req("POST", {
+      id_produto: 20,
+      quantidade: "3.000",
+    }),
+    context(),
+  )
+  expect(response.status).toBe(409)
+  expect(db.produto_variacoes.count).toHaveBeenCalledWith({
+    where: { id_empresa: 10, id_produto: 20 },
+  })
+  expect(db.ordem_producao_item.create).not.toHaveBeenCalled()
+  expect(db.ordem_producao_fluxo_setor.createMany).not.toHaveBeenCalled()
 })

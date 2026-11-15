@@ -82,6 +82,7 @@ type Produto = {
   id: number
   nome: string
   unidade: string
+  possui_grade: boolean
   produto_variacoes: Variacao[]
   estoque: {
     id_local_estoque: number

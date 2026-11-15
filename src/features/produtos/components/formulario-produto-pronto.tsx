@@ -106,12 +106,13 @@ export function FormularioProdutoPronto({
 
   async function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
-    if (salvando || !categorias) return
+    if (salvando) return
     setErro("")
     const editaveis = {
       nome: campos.nome,
       descricao: campos.descricao.trim() || null,
-      ...(!produto || campos.idCategoria !== String(produto.id_categoria ?? "")
+      ...((!produto && !!campos.idCategoria) ||
+      (!!produto && campos.idCategoria !== String(produto.id_categoria ?? ""))
         ? {
             id_categoria: campos.idCategoria
               ? Number(campos.idCategoria)
@@ -322,10 +323,7 @@ export function FormularioProdutoPronto({
             >
               Cancelar
             </Button>
-            <Button
-              type="submit"
-              disabled={salvando || !campos.idTipoProduto || !categorias}
-            >
+            <Button type="submit" disabled={salvando || !campos.idTipoProduto}>
               {salvando
                 ? "Salvando..."
                 : produto

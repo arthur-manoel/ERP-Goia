@@ -178,6 +178,9 @@ export const ordemItemSchema = z
     tamanho: z.string().trim().min(1).max(30).default("UNICO"),
   })
   .strict()
+export const completarOrdemSchema = ordemItemSchema.extend({
+  id_local_estoque: idSchema.optional(),
+})
 export const patchItemSchema = ordemItemSchema
   .pick({ quantidade: true, tamanho: true })
   .partial()
