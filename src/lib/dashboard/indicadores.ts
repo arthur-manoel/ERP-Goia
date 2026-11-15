@@ -1,18 +1,10 @@
 import "server-only"
-import { cache } from "react"
 import { IndicadorNaoIntegradoError, SemPermissaoError } from "./erros"
-import { usarDadosMock } from "./fonte"
 import {
   consultarOrdensProducaoAbertas,
   consultarPedidosAEntregar,
   consultarSaldoDoMes,
 } from "./indicadores-reais"
-import {
-  mockOrdensProducaoAbertas,
-  mockPedidosAEntregar,
-  mockSaldoDoMes,
-} from "./indicadores-mock"
-import { podeVerSaldoDoMes } from "./permissoes"
 import type {
   ComparativoContagem,
   ComparativoMonetario,
@@ -21,20 +13,6 @@ import type {
   ResultadoIndicador,
   SaldoDoMes,
 } from "./tipos"
-
-/*
- * Ponto único de acesso aos indicadores da Dashboard (só servidor).
- *
- * - Escolhe entre dado real e mock (fonte.ts).
- * - Valida/normaliza o que veio da fonte: o objeto devolvido é RECONSTRUÍDO só com
- *   os campos esperados, então campos extras do banco nunca chegam à tela.
- * - Recusa dados incoerentes (ex.: soma por status diferente do total).
- * - Converte falhas em ResultadoIndicador, sem vazar detalhes técnicos.
- *
- * Os indicadores reais ainda não têm consulta integrada. Quando forem
- * implementados, o contexto deve vir do JWT e da empresa autorizada na
- * requisição, seguindo os autorizadores dos módulos de API.
- */
 
 const MAX_PONTOS_EVOLUCAO = 31
 
@@ -98,14 +76,13 @@ async function carregar<T>(
 }
 
 // ---------- indicadores ----------
-// Cada um usa cache() do React: na mesma requisição, o card e o resumo de atenção
-// compartilham UMA consulta em vez de repetir.
+// A API autoriza a empresa antes da consulta. O provedor compartilha o resultado
+// entre os cards e o resumo de atenção.
 
-export const obterOrdensProducaoAbertas = cache(() => {
+export function obterOrdensProducaoAbertas(idEmpresa: number) {
   return carregar("ordens-producao-abertas", async () => {
-    const bruto: OrdensProducaoAbertas = usarDadosMock()
-      ? await mockOrdensProducaoAbertas()
-      : await consultarOrdensProducaoAbertas()
+    const bruto: OrdensProducaoAbertas =
+      await consultarOrdensProducaoAbertas(idEmpresa)
 
     const total = contagemValida(bruto.total, "total")
     const atrasadas = opcional(bruto.atrasadas, (v) =>
@@ -135,13 +112,11 @@ export const obterOrdensProducaoAbertas = cache(() => {
     }
     return dados
   })
-})
+}
 
-export const obterPedidosAEntregar = cache(() => {
+export function obterPedidosAEntregar(idEmpresa: number) {
   return carregar("pedidos-a-entregar", async () => {
-    const bruto: PedidosAEntregar = usarDadosMock()
-      ? await mockPedidosAEntregar()
-      : await consultarPedidosAEntregar()
+    const bruto: PedidosAEntregar = await consultarPedidosAEntregar(idEmpresa)
 
     const total = contagemValida(bruto.total, "total")
     const atrasados = contagemValida(bruto.atrasados, "atrasados")
@@ -180,16 +155,11 @@ export const obterPedidosAEntregar = cache(() => {
     }
     return dados
   })
-})
+}
 
-export const obterSaldoDoMes = cache(() => {
+export function obterSaldoDoMes(idEmpresa: number) {
   return carregar("saldo-do-mes", async () => {
-    // A checagem de permissão vive aqui, no servidor, antes de tocar nos dados.
-    if (!(await podeVerSaldoDoMes())) throw new SemPermissaoError()
-
-    const bruto: SaldoDoMes = usarDadosMock()
-      ? await mockSaldoDoMes()
-      : await consultarSaldoDoMes()
+    const bruto: SaldoDoMes = await consultarSaldoDoMes(idEmpresa)
 
     const dados: SaldoDoMes = {
       valor: decimalValido(bruto.valor, "valor"),
@@ -204,4 +174,4 @@ export const obterSaldoDoMes = cache(() => {
     }
     return dados
   })
-})
+}

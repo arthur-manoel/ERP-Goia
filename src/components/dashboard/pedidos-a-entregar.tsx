@@ -1,5 +1,8 @@
+"use client"
+
 import { PackageCheck } from "lucide-react"
-import { obterPedidosAEntregar } from "@/lib/dashboard/indicadores"
+import { useIndicador } from "./provedor-indicadores"
+import { IndicadorCardSkeleton } from "./indicador-card"
 import { formatarMoeda, formatarQuantidade } from "@/lib/formatacao"
 import {
   IndicadorAlerta,
@@ -24,8 +27,9 @@ const base = {
   link: { href: "/vendas", rotulo: "Ver pedidos" },
 }
 
-export async function PedidosAEntregar({ className }: { className?: string }) {
-  const resultado = await obterPedidosAEntregar()
+export function PedidosAEntregar({ className }: { className?: string }) {
+  const resultado = useIndicador("pedidos")
+  if (!resultado) return <IndicadorCardSkeleton className={className} />
   if (resultado.estado !== "ok") {
     return (
       <IndicadorIndisponivel
