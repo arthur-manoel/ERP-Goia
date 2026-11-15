@@ -67,6 +67,8 @@ Em `/vendas/pedidos`, o cadastro consulta a API por número/cliente e status, cr
 
 As telas `/vendas/pedidos`, `/producao/ordens`, `/estoque/reservas`, `/financeiro` e `/financeiro/contas-receber` executam as ações operacionais nos registros reais via JWT e empresa ativa. Reservas distinguem saldo físico, reservado e disponível por variação/local, com pendências explícitas para planejamento. Consumo real e entrada na fábrica usam o serviço oficial; envio e recebimento de transferência antecedem a disponibilidade na loja. Entregas consomem as reservas e baixam uma única vez; o fechamento gera as parcelas e a tela financeira registra recebimentos parciais/totais.
 
+O relatório `/financeiro/resultado` consulta títulos e despesas reais da empresa ativa, com receita, custos de compras, despesas e margem por categoria/período. Veja o [critério de apuração e limites do relatório](src/modules/resultado/README.md).
+
 Cadastro e edição estrutural de pedidos e OPs usam os contratos das APIs existentes. Regras, limites, scripts DB-first e reprodução local dos três cards na mesma entrega: [operações integradas](docs/operacoes-integradas.md). A aplicação do DDL compartilhado/produção depende do responsável antes da implantação; a publicação da PR não altera o banco.
 
 ### Interface de clientes
