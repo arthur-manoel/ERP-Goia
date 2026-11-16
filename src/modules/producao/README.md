@@ -165,6 +165,26 @@ Para persistência, consumo, conclusão, transferência, entrega e financeiro us
 
 ## Conclusão do planejamento vazio
 
-A abertura pela interface usa POST /api/ordem_producao/{id}/completar com o contrato de item e id_local_estoque opcional. A chamada exige criação e edição de OP. Dentro da transação serializada, o serviço bloqueia a empresa e a ordem, verifica que ela continua PLANEJADA e sem itens, atualiza a meta pela quantidade do item e o local informado e grava item, consumo, fluxo e auditoria. Uma ordem já preenchida retorna 409 antes de qualquer alteração. Falhas posteriores revertem todo o comando.
+A retomada de uma OP vazia existente pela interface usa POST /api/ordem_producao/{id}/completar com o contrato de item e id_local_estoque opcional. A chamada exige criação e edição de OP. Dentro da transação serializada, o serviço bloqueia a empresa e a ordem, verifica que ela continua PLANEJADA e sem itens, atualiza a meta pela quantidade do item e o local informado e grava item, consumo, fluxo e auditoria. Uma ordem já preenchida retorna 409 antes de qualquer alteração. Falhas posteriores revertem todo o comando.
 
 A inclusão de item também exige id_variacao quando existir qualquer variação do produto na empresa, inclusive inativa. A consulta de opções de reservas informa possui_grade independentemente da lista de variações ativas, para bloquear a abertura pela tela quando todas estiverem inativas.
+
+## Abertura atômica pela interface
+
+POST /api/ordem_producao aceita o campo opcional item com o contrato de inclusão de item. Quando enviado, a meta quantidade_planejada deve corresponder a item.quantidade. O cabeçalho, o item, o fluxo, o consumo e a auditoria são gravados na mesma transação, exigindo somente ORDENS_PRODUCAO.pode_criar. Falha em qualquer etapa reverte toda a abertura.
+
+Exemplo de corpo.
+
+```json
+{
+  "numero": "OP-2026-001",
+  "quantidade_planejada": "3.000",
+  "id_local_estoque": 3,
+  "item": {
+    "id_produto": 12,
+    "quantidade": "3.000"
+  }
+}
+```
+
+A interface envia uma única chamada na abertura. Para retomar uma OP vazia já existente, usa /{id}/completar, que continua exigindo criação e edição. O POST sem item preserva o contrato anterior de criação de cabeçalho para integrações existentes.

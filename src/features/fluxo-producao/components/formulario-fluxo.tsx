@@ -69,7 +69,7 @@ export function FormularioFluxo({
     .map((setor) => ({ value: setor.id, label: setor.name }))
 
   function adicionarEtapa() {
-    if (!setorParaAdicionar) return
+    if (!setorParaAdicionar || fields.length >= 100) return
     append({ sectorId: setorParaAdicionar })
     setSetorParaAdicionar("")
     form.clearErrors("steps")
@@ -235,7 +235,7 @@ export function FormularioFluxo({
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!setorParaAdicionar}
+                  disabled={!setorParaAdicionar || fields.length >= 100}
                   onClick={adicionarEtapa}
                 >
                   <Plus /> Adicionar etapa

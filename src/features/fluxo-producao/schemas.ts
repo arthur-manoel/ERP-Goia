@@ -1,5 +1,4 @@
 import { z } from "zod"
-import { texto } from "@/features/erp/validacao"
 
 /**
  * Fluxo de Produção = sequência de setores existentes pela qual uma peça
@@ -11,7 +10,11 @@ export const etapaFluxoSchema = z.object({
 })
 
 export const fluxoProducaoSchema = z.object({
-  name: texto("Nome", 2),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Informe o nome.")
+    .max(100, "Use até 100 caracteres."),
   description: z
     .string()
     .trim()
@@ -22,6 +25,7 @@ export const fluxoProducaoSchema = z.object({
   steps: z
     .array(etapaFluxoSchema)
     .min(1, "Adicione ao menos um setor ao fluxo.")
+    .max(100, "Use até 100 setores no fluxo.")
     .refine(
       (steps) =>
         new Set(steps.map((step) => step.sectorId)).size === steps.length,

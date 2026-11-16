@@ -13,6 +13,7 @@ type Registro = {
   nome: string
   descricao: string | null
   ativo: boolean
+  tipo?: string
 }
 type RegistroFluxo = Registro & { setores: { id: number; ordem: number }[] }
 type Dados = { sectors: Setor[]; productionFlows: FluxoProducao[] }
@@ -22,6 +23,7 @@ async function listar<T>(
   requisitar: Api,
   colecao: "setores" | "fluxos",
   signal: AbortSignal,
+  idEmpresa: number,
 ) {
   const rota = colecao === "setores" ? "/api/setores" : "/api/fluxos-producao"
   const registros: T[] = []
@@ -29,6 +31,7 @@ async function listar<T>(
   for (let pagina = 1; pagina <= totalPaginas; pagina++) {
     const resposta = await requisitar(`${rota}?pagina=${pagina}&limite=100`, {
       signal,
+      headers: { "X-Empresa-Id": String(idEmpresa) },
     })
     if (!resposta.ok) throw new Error(await mensagemErro(resposta))
     const corpo = (await resposta.json()) as Record<typeof colecao, T[]> & {
@@ -65,8 +68,10 @@ export function useConfiguracaoProducao(incluirFluxos: boolean) {
     const controle = new AbortController()
     const { signal } = controle
     void Promise.all([
-      listar<Registro>(requisitar, "setores", signal),
-      incluirFluxos ? listar<RegistroFluxo>(requisitar, "fluxos", signal) : [],
+      listar<Registro>(requisitar, "setores", signal, idEmpresa),
+      incluirFluxos
+        ? listar<RegistroFluxo>(requisitar, "fluxos", signal, idEmpresa)
+        : [],
     ])
       .then(([setores, fluxos]) => {
         if (signal.aborted) return
@@ -77,7 +82,7 @@ export function useConfiguracaoProducao(incluirFluxos: boolean) {
           data: {
             sectors: setores.map((setor) => ({
               ...apresentar(setor),
-              type: "Outro",
+              type: setor.tipo ?? "Outro",
             })),
             productionFlows: fluxos.map((fluxo) => ({
               ...apresentar(fluxo),
@@ -112,9 +117,13 @@ export function useConfiguracaoProducao(incluirFluxos: boolean) {
   }
 
   async function salvar(rota: string, dados: object, id?: string) {
+    if (!idEmpresa) throw new Error("Selecione uma empresa ativa.")
     const resposta = await requisitar(id ? `${rota}/${id}` : rota, {
       method: id ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Empresa-Id": String(idEmpresa),
+      },
       body: JSON.stringify(dados),
     })
     if (!resposta.ok) throw new Error(await mensagemErro(resposta))
@@ -126,17 +135,32 @@ export function useConfiguracaoProducao(incluirFluxos: boolean) {
     data: atual?.data,
     error: atual?.error ?? (idEmpresa ? "" : "Selecione uma empresa ativa."),
     reload,
-    salvarFluxo: (valores: Omit<FluxoProducao, "id">, id?: string) =>
-      salvar(
-        "/api/fluxos-producao",
-        {
-          nome: valores.name,
-          descricao: valores.description || null,
-          ativo: valores.status === "Ativo",
-          setores: valores.steps.map(({ sectorId }) => Number(sectorId)),
-        },
-        id,
-      ),
+    async salvarFluxo(valores: Omit<FluxoProducao, "id">, id?: string) {
+      const dados = {
+        nome: valores.name,
+        descricao: valores.description || null,
+        ativo: valores.status === "Ativo",
+        setores: valores.steps.map(({ sectorId }) => Number(sectorId)),
+      }
+      if (!id) return salvar("/api/fluxos-producao", dados)
+      const anterior = atual?.data?.productionFlows.find(
+        (fluxo) => fluxo.id === id,
+      )
+      if (!anterior) throw new Error("Recarregue o fluxo antes de editar.")
+      const alteracoes = {
+        ...(valores.name !== anterior.name ? { nome: dados.nome } : {}),
+        ...(valores.description !== anterior.description
+          ? { descricao: dados.descricao }
+          : {}),
+        ...(valores.status !== anterior.status ? { ativo: dados.ativo } : {}),
+        ...(valores.steps.map((etapa) => etapa.sectorId).join(",") !==
+        anterior.steps.map((etapa) => etapa.sectorId).join(",")
+          ? { setores: dados.setores }
+          : {}),
+      }
+      if (Object.keys(alteracoes).length)
+        await salvar("/api/fluxos-producao", alteracoes, id)
+    },
     alterarStatusFluxo: (id: string, ativo: boolean) =>
       salvar("/api/fluxos-producao", { ativo }, id),
   }

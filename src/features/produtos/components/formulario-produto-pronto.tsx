@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -69,6 +69,7 @@ export function FormularioProdutoPronto({
   const [campos, setCampos] = useState(() => camposIniciais(produto))
   const [erro, setErro] = useState("")
   const [salvando, setSalvando] = useState(false)
+  const trava = useRef(false)
 
   const [categorias, setCategorias] = useState<OpcaoCatalogo[]>()
   const [erroCategorias, setErroCategorias] = useState("")
@@ -106,7 +107,7 @@ export function FormularioProdutoPronto({
 
   async function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
-    if (salvando) return
+    if (trava.current) return
     setErro("")
     const editaveis = {
       nome: campos.nome,
@@ -127,13 +128,26 @@ export function FormularioProdutoPronto({
       permite_venda: Number(campos.permiteVenda),
     }
     const payload = produto
-      ? editaveis
+      ? Object.fromEntries(
+          Object.entries(editaveis).filter(([campo, valor]) => {
+            const anterior = produto[campo as keyof Produto]
+            return (
+              valor !==
+              (typeof anterior === "boolean" ? Number(anterior) : anterior)
+            )
+          }),
+        )
       : {
           ...editaveis,
           id_empresa: idEmpresa,
           codigo: campos.codigo,
           status: "ATIVO",
         }
+    if (produto && Object.keys(payload).length === 0) {
+      toast.info("Nenhuma alteração para salvar.")
+      aoFechar()
+      return
+    }
     const resultado = produto
       ? updateProdutoSchema.safeParse(payload)
       : createProdutoSchema.safeParse(payload)
@@ -142,6 +156,7 @@ export function FormularioProdutoPronto({
       return
     }
 
+    trava.current = true
     setSalvando(true)
     try {
       const resposta = await requisitar(
@@ -164,6 +179,7 @@ export function FormularioProdutoPronto({
         causa instanceof Error ? causa.message : "Falha ao salvar produto.",
       )
     } finally {
+      trava.current = false
       setSalvando(false)
     }
   }

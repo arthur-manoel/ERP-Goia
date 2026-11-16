@@ -1,3 +1,4 @@
+import { gravarCatalogo } from "../catalogos/auditoria"
 import {
   Prisma,
   type fornecedores as Fornecedor,
@@ -13,7 +14,9 @@ import type {
 
 export type { Fornecedor }
 export async function create(data: CreateFornecedorData): Promise<Fornecedor> {
-  return prisma.fornecedores.create({ data })
+  return await gravarCatalogo("fornecedores", null, undefined, (tx) =>
+    tx.fornecedores.create({ data }),
+  )
 }
 export async function findAll(
   filters: FornecedorFilters,
@@ -78,10 +81,12 @@ export async function patch(
   companies: number[],
 ): Promise<Fornecedor | null> {
   try {
-    return await prisma.fornecedores.update({
-      where: { id, id_empresa: { in: companies } },
-      data,
-    })
+    return await gravarCatalogo("fornecedores", id, undefined, (tx) =>
+      tx.fornecedores.update({
+        where: { id, id_empresa: { in: companies } },
+        data,
+      }),
+    )
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&

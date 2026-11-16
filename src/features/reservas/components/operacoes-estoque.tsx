@@ -82,6 +82,7 @@ type Produto = {
   id: number
   nome: string
   unidade: string
+  permite_producao: boolean
   possui_grade: boolean
   produto_variacoes: Variacao[]
   estoque: {
@@ -934,10 +935,6 @@ function DocumentoOperacional({
           produtos={opcoes.produtos}
           locais={opcoes.locais}
           onClose={() => setPlanejamento(null)}
-          onRascunho={(id) => {
-            setId(String(id))
-            aoAtualizar()
-          }}
           onSalvo={(id) => {
             setId(String(id))
             setPlanejamento(null)

@@ -25,6 +25,7 @@ type OpcaoProduto = {
   id: number
   nome: string
   unidade: string
+  permite_producao: boolean
   possui_grade: boolean
   produto_variacoes: {
     id: number
@@ -38,20 +39,18 @@ export function FormularioPlanejamentoOP({
   produtos,
   locais,
   onClose,
-  onRascunho,
   onSalvo,
 }: {
   inicial?: { id: number; numero: string; id_local_estoque: number | null }
   produtos: OpcaoProduto[]
   locais: { id: number; nome: string }[]
   onClose: () => void
-  onRascunho: (id: number) => void
   onSalvo: (id: number) => void
 }) {
   const { requisitar, empresa } = useAutenticacao()
   const [produto, setProduto] = useState<OpcaoProduto>()
   const [variacao, setVariacao] = useState("")
-  const [rascunho, setRascunho] = useState<number | undefined>(inicial?.id)
+  const rascunho = inicial?.id
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState("")
   const trava = useRef(false)
@@ -97,10 +96,11 @@ export function FormularioPlanejamentoOP({
       ? consulta.produtos
       : []
     : produtos
+  const fabricaveis = resultados.filter((opcao) => opcao.permite_producao)
   const opcoesProduto =
-    produto && !resultados.some(({ id }) => id === produto.id)
-      ? [...resultados, produto]
-      : resultados
+    produto && !fabricaveis.some(({ id }) => id === produto.id)
+      ? [...fabricaveis, produto]
+      : fabricaveis
 
   async function enviar(url: string, dados: object, method = "POST") {
     const resposta = await requisitar(url, {
@@ -137,24 +137,27 @@ export function FormularioPlanejamentoOP({
     setOcupado(true)
     setErro("")
     try {
-      let id = rascunho
+      const item = {
+        id_produto: produto.id,
+        ...(variacao ? { id_variacao: Number(variacao) } : {}),
+        quantidade: quantidade.data,
+      }
+      const id = rascunho
       if (!id) {
         const resposta = await enviar("/api/ordem_producao", {
           numero: String(campos.get("numero")).trim(),
           id_local_estoque: Number(campos.get("local")),
           quantidade_planejada: quantidade.data,
           data_previsao: campos.get("previsao") || null,
+          item,
         })
         const corpo = (await resposta.json()) as { data: { id: number } }
-        id = corpo.data.id
-        setRascunho(id)
-        onRascunho(id)
+        onSalvo(corpo.data.id)
+        return
       }
       await enviar(`/api/ordem_producao/${id}/completar`, {
         ...(inicial ? { id_local_estoque: Number(campos.get("local")) } : {}),
-        id_produto: produto.id,
-        ...(variacao ? { id_variacao: Number(variacao) } : {}),
-        quantidade: quantidade.data,
+        ...item,
       })
       onSalvo(id)
     } catch (error) {
