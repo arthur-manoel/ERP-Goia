@@ -1,4 +1,4 @@
-import { GitBranch, Pencil, Trash2 } from "lucide-react"
+import { GitBranch, Grid2X2, Pencil, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,12 +16,14 @@ export function TabelaProdutosProntos({
   tipos,
   onEditar,
   onFluxo,
+  onGrade,
   onInativar,
 }: {
   produtos: Produto[]
   tipos: TipoProduto[]
   onEditar: (produto: Produto) => void
   onFluxo: (produto: Produto) => void
+  onGrade: (produto: Produto) => void
   onInativar: (produto: Produto) => void
 }) {
   const nomesTipos = new Map(tipos.map((tipo) => [tipo.id, tipo.nome]))
@@ -72,6 +74,14 @@ export function TabelaProdutosProntos({
               </TableCell>
               <TableCell>
                 <div className="flex gap-1">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Grade de ${produto.nome}`}
+                    onClick={() => onGrade(produto)}
+                  >
+                    <Grid2X2 className="size-4" />
+                  </Button>
                   <Button
                     size="icon"
                     variant="ghost"

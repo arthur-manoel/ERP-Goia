@@ -135,12 +135,24 @@ export async function operacoesHandler(
                   id: true,
                   nome: true,
                   unidade: true,
+                  permite_producao: true,
+                  _count: {
+                    select: {
+                      produto_variacoes: {
+                        where: { id_empresa: ctx.idEmpresa },
+                      },
+                    },
+                  },
                   produto_variacoes: {
                     where: { id_empresa: ctx.idEmpresa, status: "ATIVO" },
                     select: {
                       id: true,
-                      cores: { select: { nome: true } },
-                      tamanhos: { select: { nome: true } },
+                      cores: {
+                        select: { nome: true, status: true, id_empresa: true },
+                      },
+                      tamanhos: {
+                        select: { nome: true, status: true, id_empresa: true },
+                      },
                     },
                   },
                   estoque: {
@@ -160,7 +172,26 @@ export async function operacoesHandler(
                 orderBy: { id: "asc" },
               }),
             ])
-            return textoJson({ produtos, locais, setores, limiteProdutos: 50 })
+            return textoJson({
+              produtos: produtos.map(
+                ({ _count, produto_variacoes, ...produto }) => ({
+                  produto_variacoes: produto_variacoes
+                    .filter((variacao) =>
+                      variacaoAtivaNaEmpresa(variacao, ctx.idEmpresa),
+                    )
+                    .map(({ id, cores, tamanhos }) => ({
+                      id,
+                      cores: cores ? { nome: cores.nome } : null,
+                      tamanhos: tamanhos ? { nome: tamanhos.nome } : null,
+                    })),
+                  ...produto,
+                  possui_grade: _count.produto_variacoes > 0,
+                }),
+              ),
+              locais,
+              setores,
+              limiteProdutos: 50,
+            })
           }
           if (op === "pedido") {
             if (new URL(request.url).search)
