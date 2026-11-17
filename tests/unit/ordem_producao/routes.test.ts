@@ -2,9 +2,11 @@ import { POST as completar } from "../../../src/app/api/ordem_producao/[id]/comp
 import { beforeEach, expect, it, vi } from "vitest"
 import { Prisma } from "../../../src/generated/prisma/client"
 import * as collection from "../../../src/app/api/ordem_producao/route"
+import { GET as listarCard } from "../../../src/app/api/ordens-producao/route"
 import * as route from "../../../src/app/api/ordem_producao/[id]/route"
 import { POST as liberar } from "../../../src/app/api/ordem_producao/[id]/liberar/route"
 import { POST as iniciar } from "../../../src/app/api/ordem_producao/[id]/iniciar/route"
+import { POST as iniciarEtapa } from "../../../src/app/api/ordens-producao/[id]/etapas/iniciar/route"
 import { POST as pausar } from "../../../src/app/api/ordem_producao/[id]/pausar/route"
 import { POST as retomar } from "../../../src/app/api/ordem_producao/[id]/retomar/route"
 import { POST as concluir } from "../../../src/app/api/ordem_producao/[id]/concluir/route"
@@ -307,6 +309,33 @@ it("aplica filtros, paginação e escopo diretamente no banco", async () => {
     }),
   )
 })
+it("lista pela URL do card com paginação e isolamento por empresa", async () => {
+  db.ordem_producao.findMany.mockResolvedValue([base])
+  db.ordem_producao.count.mockResolvedValue(26)
+  const response = await listarCard(
+    await request("/api/ordens-producao?page=2&limit=25&busca=OP"),
+  )
+  expect(response.status).toBe(200)
+  expect(response.headers.get("Cache-Control")).toContain("no-store")
+  expect((await response.json()).data).toMatchObject({
+    page: 2,
+    limit: 25,
+    count: 26,
+    totalPages: 2,
+  })
+  expect(db.ordem_producao.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      skip: 25,
+      take: 25,
+      where: {
+        AND: expect.arrayContaining([
+          { id_empresa: 10 },
+          { numero: { contains: "OP" } },
+        ]),
+      },
+    }),
+  )
+})
 it("deriva empresa e usuário do token e aplica defaults", async () => {
   const response = await collection.POST(
     await req("POST", { numero: " OP-1 " }),
@@ -434,6 +463,41 @@ it("início, pausa e retomada preservam a data original e impedem duplicação",
   expect((await retomar(await req("POST"), context())).status).toBe(200)
   expect(row.data_inicio).toEqual(date)
 })
+it.each(
+  ["ordem", "etapa"].flatMap((caminho) =>
+    ["12:30:00", "21:00:00", "23:30:00", "23:59:59.999"].map((hora) => ({
+      caminho,
+      inicio: `2026-11-14T${hora}-03:00`,
+    })),
+  ),
+)(
+  "inicia $caminho às $inicio sem alterar a previsão do mesmo dia",
+  async ({ caminho, inicio }) => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(inicio))
+    try {
+      production()
+      row.id_local_estoque = 9
+      db.locais_estoque.findFirst.mockResolvedValue({ id: 9 })
+      db.produto_variacoes.findMany.mockResolvedValue([])
+      row.status = "LIBERADA"
+      row.data_inicio = null
+      row.data_previsao = new Date("2026-11-14T00:00:00.000Z")
+      stages[0].status = "PENDENTE"
+      const resposta =
+        caminho === "etapa"
+          ? await iniciarEtapa(await req("POST", { etapaId: 9 }), context())
+          : await iniciar(await req("POST"), context())
+      expect(resposta.status).toBe(200)
+      expect(row.status).toBe("EM_PRODUCAO")
+      expect(row.data_inicio).toEqual(new Date(inicio))
+      expect(row.data_previsao).toEqual(new Date("2026-11-14T00:00:00.000Z"))
+      expect(stages[0].status).toBe("EM_PRODUCAO")
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)
 it.each(["liberar", "iniciar"] as const)(
   "impede %s com OP sem local de entrada",
   async (acao) => {
@@ -448,6 +512,28 @@ it.each(["liberar", "iniciar"] as const)(
     expect((await resposta.json()).error).toContain("local de entrada")
   },
 )
+it("bloqueia previsão vencida apenas após meia-noite em São Paulo", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] })
+  vi.setSystemTime(new Date("2026-11-15T00:00:00-03:00"))
+  try {
+    production()
+    row.id_local_estoque = 9
+    db.locais_estoque.findFirst.mockResolvedValue({ id: 9 })
+    db.produto_variacoes.findMany.mockResolvedValue([])
+    row.status = "LIBERADA"
+    row.data_inicio = null
+    row.data_previsao = new Date("2026-11-14T00:00:00.000Z")
+    stages[0].status = "PENDENTE"
+    expect(
+      (await iniciarEtapa(await req("POST", { etapaId: 9 }), context())).status,
+    ).toBe(400)
+    expect(row.data_inicio).toBeNull()
+    expect(stages[0].status).toBe("PENDENTE")
+    expect(db.ordem_producao.updateMany).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
+})
 it.each([
   "reserva_estoque",
   "consumo_producao",

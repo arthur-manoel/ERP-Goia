@@ -29,6 +29,21 @@ Erros: `{ "success": false, "error": "mensagem" }`, com 400/401/403/404/409/429/
 
 Base: `/api/ordem_producao`.
 
+A tela `/producao/ordens` lista pela URL `GET /api/ordens-producao`, que
+compartilha o handler, os filtros, a paginação e o envelope de resposta da
+listagem abaixo. Abertura e complementação usam `FormularioPlanejamentoOP`
+da develop: destino obrigatório, OP e item criados na mesma transação, e
+complementação de ordens planejadas antigas sem item. `CadastroOpApi` é
+exclusivo de edição por PATCH do contrato legado, com estado esperado, e só
+aparece quando a ordem selecionada já possui item. `revisaoCadastro` recarrega
+a lista e o detalhe após salvar. Operações de etapas, consumo
+e conclusão continuam integradas ao estoque pela API operacional.
+
+A edição envia somente campos alterados: mudar observação ou previsão não
+recalcula insumos. Previsão inalterada preserva o horário persistido; formulário
+sem alterações não gera escrita. A busca de produtos mantém o formulário e a
+seleção atual enquanto carrega as novas opções.
+
 | Método | Caminho | Operação |
 | --- | --- | --- |
 | GET | `/` | Listagem paginada de cabeçalhos e contadores de vínculos |
@@ -154,6 +169,12 @@ Filtros: `id_empresa` (conferência do contexto), `id_pedido_cliente`, `id_local
 `ordenar_por`: id, numero, prioridade, data_inicio, data_previsao, data_conclusao; `ordem`: asc/desc. Ordenação padrão id desc, com ID como desempate quando necessário.
 
 ## Validação
+
+A previsão preserva a data civil codificada em UTC pela API; o início efetivo
+usa o dia no fuso `America/Sao_Paulo`. Assim, uma previsão para hoje permite
+iniciar a OP ou a etapa até 23h59 em São Paulo, mesmo após a virada UTC.
+Previsão de dia anterior continua inválida; o horário
+real de início é preservado e datas de início futuras continuam bloqueadas.
 
 ```sh
 npm test -- tests/unit/ordem_producao tests/unit/api/rate-limit.test.ts

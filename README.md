@@ -313,6 +313,10 @@ O alias `@/*` aponta para `src/*`.
 | `npm run db:validate` | Valida `prisma/schema.prisma` |
 | `npm run db:studio` | Prisma Studio |
 
+O build usa `next build --webpack`, opção suportada pelo Next.js instalado,
+para contornar a falha do processo auxiliar do Turbopack observada no Windows.
+O mesmo comando é usado localmente e no CI.
+
 ---
 
 O build de produção usa `next build --webpack`, opção suportada pelo Next.js 16.3, para evitar a falha de inicialização do processo de CSS do Turbopack observada no Windows. O comando `npm run build` é o mesmo usado localmente e no CI; o desenvolvimento com `npm run dev` continua usando Turbopack.

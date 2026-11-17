@@ -1,4 +1,5 @@
 import "server-only"
+import { previsaoAnteriorAoDiaDeInicio } from "./producao.datas"
 import { liberarReservasOP } from "@/modules/reservas/reservas.service"
 import { conferir } from "@/modules/reservas/operacoes"
 import { variacaoEntradaProducao } from "@/modules/reservas/fluxo.service"
@@ -66,11 +67,7 @@ async function required(ctx: Contexto, id: number, tx?: Transaction) {
 }
 
 function dates(data: Pick<repo.Header, "data_inicio" | "data_previsao">) {
-  if (
-    data.data_inicio &&
-    data.data_previsao &&
-    data.data_previsao < data.data_inicio
-  )
+  if (previsaoAnteriorAoDiaDeInicio(data.data_previsao, data.data_inicio))
     throw new ProducaoError(400, "A previsão não pode ser anterior ao início.")
 }
 async function unique(
