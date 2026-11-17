@@ -145,6 +145,7 @@ async function criarNaTransacao(
   contexto: Contexto,
   dados: CriarVinculoInput,
 ) {
+  await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${contexto.idEmpresa} FOR UPDATE`
   const [local, setor, produto] = await Promise.all([
     tx.locais_estoque.findFirst({
       where: { id: dados.idLocalEstoque, id_empresa: contexto.idEmpresa },

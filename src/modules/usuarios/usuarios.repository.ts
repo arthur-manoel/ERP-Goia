@@ -10,6 +10,7 @@ import type {
   VincularUsuarioInput,
 } from "./usuarios.schema"
 import { resolveUserRole } from "../auth/auth.role"
+import { userInclude } from "../auth/auth.prisma-adapter"
 
 export class UsuarioError extends Error {
   constructor(
@@ -542,6 +543,7 @@ export async function validarPerfil(tx: Transaction, idUsuario: number) {
         },
       },
     },
+    include: userInclude,
   })
   if (!usuario || usuario.status !== "ATIVO") return null
   const perfil = resolveUserRole(usuario)

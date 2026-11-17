@@ -11,12 +11,14 @@ const mocks = vi.hoisted(() => ({
   editarItem: vi.fn(),
   removerItem: vi.fn(),
   consultarOpcoes: vi.fn(),
+  consultarSituacao: vi.fn(),
 }))
 vi.mock("../../../src/modules/pedidos/pedidos.authorization", () => ({
   autorizar: mocks.auth,
 }))
 vi.mock("../../../src/modules/pedidos/pedidos.service", () => mocks)
 vi.mock("../../../src/modules/pedidos/pedidos.opcoes", () => mocks)
+vi.mock("../../../src/modules/pedidos/pedidos.situacao", () => mocks)
 const ctx = { params: Promise.resolve({ id: "10", idItem: "20" }) }
 const body = {
   idCliente: 1,
@@ -232,4 +234,44 @@ it("erro de domínio padronizado; erro inesperado sem detalhe sensível", async 
   expect(r.status).toBe(500)
   expect(await r.json()).toEqual({ error: "Erro interno." })
   expect(spy).toHaveBeenCalledWith("Falha interna na API de pedidos.")
+})
+
+it("situação exige leitura, valida filtros e preserva cache privado", async () => {
+  mocks.consultarSituacao.mockResolvedValue({
+    dados: [],
+    paginacao: { pagina: 1 },
+  })
+  const r = await routes.situacaoHandler(
+    request("GET", undefined, {}, "?status=CONFIRMADO&busca=camisa"),
+  )
+  expect(r.status).toBe(200)
+  expect(r.headers.get("Cache-Control")).toBe("private, no-store")
+  expect(mocks.auth).toHaveBeenCalledWith(expect.any(Request), "ler")
+  expect(mocks.consultarSituacao).toHaveBeenCalledWith(
+    { idUsuario: 1, idEmpresa: 10 },
+    expect.objectContaining({
+      status: "CONFIRMADO",
+      busca: "camisa",
+      pagina: 1,
+      limite: 25,
+    }),
+  )
+  for (const query of [
+    "?status=INVALIDO",
+    "?id_empresa=20",
+    "?pagina=0",
+    "?status=PRONTO&status=CANCELADO",
+  ]) {
+    expect(
+      (await routes.situacaoHandler(request("GET", undefined, {}, query)))
+        .status,
+    ).toBe(400)
+  }
+})
+it("situação não consulta dados quando a autorização recusa acesso", async () => {
+  mocks.auth.mockResolvedValue(
+    Response.json({ error: "Acesso negado." }, { status: 403 }),
+  )
+  expect((await routes.situacaoHandler(request())).status).toBe(403)
+  expect(mocks.consultarSituacao).not.toHaveBeenCalled()
 })

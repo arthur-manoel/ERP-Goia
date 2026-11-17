@@ -1,3 +1,4 @@
+import { gravarCatalogo } from "../catalogos/auditoria"
 import {
   Prisma,
   type categorias as Categoria,
@@ -28,7 +29,9 @@ export function create(
   data: Prisma.categoriasUncheckedCreateInput,
   database: Database,
 ): Promise<Categoria> {
-  return database.categorias.create({ data })
+  return gravarCatalogo("categorias", null, database, (tx) =>
+    tx.categorias.create({ data }),
+  )
 }
 export async function findAll(
   filters: CategoriaFilters,
@@ -103,10 +106,12 @@ export function update(
   companies: number[],
   database: Database,
 ): Promise<Categoria> {
-  return database.categorias.update({
-    where: { id, id_empresa: { in: companies } },
-    data,
-  })
+  return gravarCatalogo("categorias", id, database, (tx) =>
+    tx.categorias.update({
+      where: { id, id_empresa: { in: companies } },
+      data,
+    }),
+  )
 }
 export function patch(
   id: number,

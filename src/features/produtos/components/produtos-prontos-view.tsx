@@ -34,6 +34,7 @@ import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import type { Produto, RespostaPaginada, TipoProduto } from "../tipos"
 import { DialogoFluxoProduto } from "./dialogo-fluxo-produto"
 import { FormularioProdutoPronto } from "./formulario-produto-pronto"
+import { DialogoGradeProduto } from "./dialogo-grade-produto"
 import { TabelaProdutosProntos } from "./tabela-produtos-prontos"
 
 const limitePorPagina = 10
@@ -64,6 +65,7 @@ export function ProdutosProntosView() {
     number | null
   >(null)
   const [dialogo, setDialogo] = useState<"novo" | Produto | null>(null)
+  const [produtoDaGrade, setProdutoDaGrade] = useState<Produto | null>(null)
   const [produtoDoFluxo, setProdutoDoFluxo] = useState<Produto | null>(null)
   const [produtoParaInativar, setProdutoParaInativar] =
     useState<Produto | null>(null)
@@ -280,6 +282,7 @@ export function ProdutosProntosView() {
           onValueChange={(valor) => {
             setPagina(1)
             setDialogo(null)
+            setProdutoDaGrade(null)
             setProdutoDoFluxo(null)
             setProdutoParaInativar(null)
             selecionarEmpresa(Number(valor))
@@ -302,6 +305,7 @@ export function ProdutosProntosView() {
           onValueChange={(valor) => {
             setPagina(1)
             setDialogo(null)
+            setProdutoDaGrade(null)
             setProdutoDoFluxo(null)
             setProdutoParaInativar(null)
             selecionarEmpresa(Number(valor))
@@ -425,6 +429,7 @@ export function ProdutosProntosView() {
               tipos={tipos}
               onEditar={(produto) => void abrirEdicao(produto)}
               onFluxo={setProdutoDoFluxo}
+              onGrade={setProdutoDaGrade}
               onInativar={setProdutoParaInativar}
             />
             <nav
@@ -479,6 +484,14 @@ export function ProdutosProntosView() {
           }
           aoFechar={() => setDialogo(null)}
           aoSalvar={recarregar}
+        />
+      )}
+      {produtoDaGrade && empresaCarregada === empresa.id && (
+        <DialogoGradeProduto
+          key={`${empresa.id}:${produtoDaGrade.id}`}
+          idEmpresa={empresa.id}
+          produto={produtoDaGrade}
+          aoFechar={() => setProdutoDaGrade(null)}
         />
       )}
       {produtoDoFluxo && empresaCarregada === empresa.id && (

@@ -37,6 +37,7 @@ import {
   TableCell,
 } from "@/components/ui/table"
 import { formatarMoeda } from "@/lib/formatacao"
+import { DisponibilidadeItem } from "./disponibilidade-item"
 import {
   lerPedido,
   itemPedidoInputSchema,
@@ -912,6 +913,12 @@ function Itens({
                 />
               </Field>
             </div>
+            <DisponibilidadeItem
+              produto={i.idProduto}
+              variacao={i.idVariacao}
+              quantidade={Number(i.quantidade)}
+              exigeVariacao={produto?.temGrade}
+            />
             {!unico && (
               <Button
                 type="button"

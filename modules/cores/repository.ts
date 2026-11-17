@@ -1,3 +1,4 @@
+import { gravarCatalogo } from "../catalogos/auditoria"
 import { Prisma, type cores as Cor } from "../../src/generated/prisma/client"
 import { prisma } from "../../src/lib/prisma"
 import type {
@@ -9,7 +10,9 @@ import type {
 
 export type { Cor }
 export async function create(data: CreateCorData): Promise<Cor> {
-  return prisma.cores.create({ data })
+  return await gravarCatalogo("cores", null, undefined, (tx) =>
+    tx.cores.create({ data }),
+  )
 }
 export async function findAll(
   filters: CorFilters,
@@ -54,10 +57,12 @@ export async function update(
   companies: number[],
 ): Promise<Cor | null> {
   try {
-    return await prisma.cores.update({
-      where: { ...scope(companies), id },
-      data,
-    })
+    return await gravarCatalogo("cores", id, undefined, (tx) =>
+      tx.cores.update({
+        where: { ...scope(companies), id },
+        data,
+      }),
+    )
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&

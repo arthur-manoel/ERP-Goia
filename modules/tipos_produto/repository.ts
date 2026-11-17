@@ -1,3 +1,4 @@
+import { gravarCatalogo } from "../catalogos/auditoria"
 import {
   Prisma,
   type tipos_produto as TipoProduto,
@@ -16,7 +17,9 @@ export type { TipoProduto }
 export async function create(
   data: CreateTipoProdutoData,
 ): Promise<TipoProduto> {
-  return prisma.tipos_produto.create({ data })
+  return await gravarCatalogo("tipos_produto", null, undefined, (tx) =>
+    tx.tipos_produto.create({ data }),
+  )
 }
 
 export async function findAll(
@@ -60,7 +63,9 @@ export async function patch(
   data: UpdateTipoProdutoData,
 ): Promise<TipoProduto | null> {
   try {
-    return await prisma.tipos_produto.update({ where: { id }, data })
+    return await gravarCatalogo("tipos_produto", id, undefined, (tx) =>
+      tx.tipos_produto.update({ where: { id }, data }),
+    )
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -81,10 +86,9 @@ export async function update(
 /** Mantém o registro e todos os vínculos históricos no banco. */
 export async function inactivate(id: number): Promise<boolean> {
   try {
-    await prisma.tipos_produto.update({
-      where: { id },
-      data: { status: "INATIVO" },
-    })
+    await gravarCatalogo("tipos_produto", id, undefined, (tx) =>
+      tx.tipos_produto.update({ where: { id }, data: { status: "INATIVO" } }),
+    )
     return true
   } catch (error) {
     if (

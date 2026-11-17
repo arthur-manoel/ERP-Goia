@@ -9,16 +9,7 @@ import {
   type Path,
 } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import {
-  AlertTriangle,
-  Check,
-  ClipboardList,
-  Package,
-  Plus,
-  Trash2,
-  Truck,
-  X,
-} from "lucide-react"
+import { ClipboardList, Package, Plus, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,7 +38,7 @@ import {
 } from "@/features/erp/components/seletor-pesquisavel"
 import { hoje, rotuloData } from "@/features/erp/datas"
 import { formatarMoeda, formatarQuantidade } from "@/lib/formatacao"
-import { consultarDisponibilidade } from "../disponibilidade"
+import { DisponibilidadeItem } from "./disponibilidade-item"
 import { pedidoSchema, totalPedido, type Pedido } from "../schemas"
 
 type Valores = Omit<Pedido, "id">
@@ -104,12 +95,6 @@ export function FormularioPedido({
   )
   const total = totalPedido({ items: itensCalculaveis })
   const pecas = itensCalculaveis.reduce((soma, item) => soma + item.quantity, 0)
-  const verificacoes = itensAtuais.map((item) =>
-    consultarDisponibilidade(data, item, valores.dueDate ?? "", initial.id),
-  )
-  const pendencias = verificacoes.filter(
-    (item) => item?.situacao === "insuficiente",
-  ).length
 
   async function salvar(valores: Valores) {
     let invalido = false
@@ -347,7 +332,6 @@ export function FormularioPedido({
                     const tamanho = variacao?.size ?? tamanhos[item.id] ?? ""
                     const erro =
                       form.formState.errors.items?.[index]?.variationId
-                    const disponibilidade = verificacoes[index]
                     const subtotal =
                       atual &&
                       Number.isFinite(atual.quantity) &&
@@ -500,49 +484,12 @@ export function FormularioPedido({
                             className="min-w-0 space-y-1 text-xs"
                             role="status"
                           >
-                            {disponibilidade ? (
-                              <>
-                                <Badge
-                                  variant={
-                                    disponibilidade.situacao === "insuficiente"
-                                      ? "destructive"
-                                      : "secondary"
-                                  }
-                                >
-                                  {disponibilidade.situacao === "estoque" ? (
-                                    <Check />
-                                  ) : disponibilidade.situacao ===
-                                    "producao" ? (
-                                    <Truck />
-                                  ) : (
-                                    <AlertTriangle />
-                                  )}
-                                  {disponibilidade.situacao === "estoque"
-                                    ? "Disponível em estoque"
-                                    : disponibilidade.situacao === "producao"
-                                      ? "Produção cobre o prazo"
-                                      : "Sem cobertura no prazo"}
-                                </Badge>
-                                <p className="text-muted-foreground">
-                                  Estoque livre:{" "}
-                                  {quantidade(disponibilidade.estoque)} ·
-                                  Produção no prazo:{" "}
-                                  {quantidade(disponibilidade.producao)}
-                                </p>
-                                {disponibilidade.faltante > 0 && (
-                                  <p className="text-destructive">
-                                    Faltam{" "}
-                                    {quantidade(disponibilidade.faltante)}{" "}
-                                    unidade(s) para atender este item.
-                                  </p>
-                                )}
-                              </>
-                            ) : (
-                              <p className="text-muted-foreground">
-                                Complete o produto, a variação, a quantidade e a
-                                entrega para consultar.
-                              </p>
-                            )}
+                            <DisponibilidadeItem
+                              produto={atual?.productId ?? ""}
+                              variacao={atual?.variationId}
+                              quantidade={atual?.quantity ?? 0}
+                              exigeVariacao={!!produto?.variations?.length}
+                            />
                           </div>
                           <div className="text-right">
                             <p className="text-xs text-muted-foreground">
@@ -618,22 +565,9 @@ export function FormularioPedido({
                     </p>
                   </CardContent>
                 </Card>
-                {pendencias > 0 && (
-                  <Alert variant="destructive">
-                    <AlertTriangle />
-                    <AlertTitle>Revise o prazo de entrega</AlertTitle>
-                    <AlertDescription>
-                      {pendencias} item(ns) sem estoque ou produção suficiente
-                      até a entrega. Ajuste a quantidade, o prazo ou planeje a
-                      produção. Você ainda pode salvar o pedido.
-                    </AlertDescription>
-                  </Alert>
-                )}
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Disponibilidade estimada após descontar outros pedidos
-                  abertos. Somente ordens planejadas ou em produção com
-                  conclusão até a entrega são consideradas. Salvar não reserva
-                  estoque.
+                  Disponibilidade consultada no estoque real da empresa ativa.
+                  Salvar não reserva estoque.
                 </p>
               </aside>
             </fieldset>
