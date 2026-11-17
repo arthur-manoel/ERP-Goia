@@ -350,6 +350,10 @@ export function consultarKardex(ctx: Contexto, f: Consulta) {
         resumo: await resumir(tx, ctx.idEmpresa, f),
       }
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      // O resumo comprova toda a cadeia da posição no mesmo snapshot da página.
+      timeout: 15_000,
+    },
   )
 }

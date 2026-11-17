@@ -488,13 +488,14 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
         const volume = await posicao(outra, "Posição de volume")
         const filtroVolume = { idProduto, ...volume, ...janela, limite: 100 }
         const { idLocalEstoque, idSetor } = volume
+        const meioDia = Date.parse(hoje + "T15:00:00Z") / 1000
         await prisma.$executeRaw`
         INSERT INTO movimentacao_estoque
           (id_empresa, id_produto, id_local_estoque, id_setor, id_usuario, tipo, quantidade,
             origem_tipo, origem_id, data_movimentacao)
         SELECT ${outra}, ${idProduto}, ${idLocalEstoque}, ${idSetor}, ${usuarios[5]},
           'AJUSTE_ENTRADA', 1, 'KARDEX_VOLUME_FIXTURE', seq,
-          TIMESTAMPADD(SECOND, -seq, CURRENT_TIMESTAMP)
+          FROM_UNIXTIME(${meioDia} - seq)
         FROM seq_1_to_100101`
         await prisma.$executeRaw`
         INSERT INTO kardex (id_empresa, id_produto, id_local_estoque, id_setor,
@@ -593,6 +594,20 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
         assert.equal(recorte.paginacao.totalPaginas, 1)
         assert.equal(recorte.paginacao.totalPaginasReais, 1)
         assert.equal(recorte.dados[0].origem.id, 100101)
+
+        const recorteDia = await ler(
+          {
+            ...filtroVolume,
+            dataInicio: dia(-1),
+            dataFim: dia(-1),
+          },
+          optsOutra,
+        )
+        assert.equal(recorteDia.paginacao.totalRegistros, 56901)
+        assert.equal(
+          recorteDia.paginacao.totalPaginas,
+          recorteDia.paginacao.totalPaginasReais,
+        )
       },
     )
   } finally {

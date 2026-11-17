@@ -36,8 +36,11 @@ volte à primeira página com os mesmos filtros.
 arredondada para cima. Use `totalPaginas` para navegar até a última
 página acessível com os mesmos filtros e tamanho. Uma consulta vazia
 informa zero nos dois totais. Se `totalPaginasReais` superar
-`totalPaginas`, reduza o intervalo de datas ou filtre por produto e
-local para consultar os demais lançamentos em recortes menores.
+`totalPaginas`, divida o intervalo de datas ou filtre por produto e
+local. Cada recorte precisa caber no limite para ser percorrido por
+inteiro. Se um mesmo dia ainda exceder o limite, use filtros adicionais,
+como setor, direção ou tipo. Se os filtros disponíveis mantiverem o
+volume acima do teto, o recorte permanece parcialmente acessível.
 
 Filtro, ordenação, resumo e data ISO usam o instante armazenado no
 `TIMESTAMP`, mesmo quando o fuso da sessão do banco difere de UTC.
