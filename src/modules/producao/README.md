@@ -159,9 +159,11 @@ strings. Uma página sem resultados retorna `rows: []`.
 
 `GET /api/ordens-producao/opcoes?busca=` exige criação em
 `ORDENS_PRODUCAO`. Retorna até 50 produtos vinculados à empresa, habilitados
-para produção e estoque e com fluxo ativo, suas variações ativas e os locais
-ativos da empresa. O fluxo vem do cadastro do produto. Na abertura a ficha
-técnica vigente, o destino e a grade são revalidados no servidor.
+para produção e estoque e com fluxo ativo, as variações com dimensões ativas
+ou opcionais e os locais ativos da empresa. `temGrade` indica se o produto
+exige variação, inclusive quando nenhuma está disponível. A consulta usa a
+cota de leitura (120 por minuto) e a abertura usa a cota de escrita (30 por
+minuto). Na abertura, o servidor revalida a ficha vigente, o destino e a grade.
 
 O formulário usa `POST /api/ordens-producao` com `idProduto`,
 `quantidade`, `idLocal` e, para produtos com grade, `idVariacao`. Os
@@ -171,11 +173,15 @@ consumo planejado e snapshot na mesma transação. A edição usa
 `Idempotency-Key` e devolvem a mesma confirmação em uma repetição da
 operação original. A primeira abertura retorna 201 e a repetição retorna
 200. A chave pertence à empresa, ao usuário e ao conteúdo da operação.
+Valores decimais equivalentes, como `3` e `3.000`, preservam o planejamento.
 
 Para avançar, a tela envia situação e setor esperados e mantém a mesma chave
 ao recuperar uma tentativa inconclusiva. Ordens com snapshot
 iniciam e concluem etapas com o ID da etapa. Concluir a última etapa encerra a
-ordem. Ordens legadas sem snapshot usam `/encerrar`. Reservas, consumo real,
+ordem. Ordens legadas sem snapshot usam `/encerrar`. Tanto `/etapas/concluir`
+quanto `/encerrar` aceitam `Idempotency-Key`. Repita a chave e o corpo originais
+para consultar a confirmação gravada depois de uma falha de comunicação.
+Reservas, consumo real,
 quantidade efetiva e entrada de acabado mantêm as regras operacionais e as
 permissões de estoque existentes.
 

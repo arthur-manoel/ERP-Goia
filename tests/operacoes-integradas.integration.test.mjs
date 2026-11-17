@@ -508,12 +508,26 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           "Falha da conclusão não confirma etapa/OP nem entrada parcial",
         )
       }
-      await post(
-        `${rotaOrdens}/${op.id}/etapas/concluir`,
-        { etapaId: etapas[i].id },
-        randomUUID(),
+      const rotaConcluir = `${rotaOrdens}/${op.id}/etapas/concluir`
+      const confirmacao = { etapaId: etapas[i].id }
+      const chaveConclusao = randomUUID()
+      const concluida = await post(
+        rotaConcluir,
+        confirmacao,
+        chaveConclusao,
         200,
       )
+      if (i === etapas.length - 1) {
+        const depoisDaConclusao = await snapshot()
+        assert.equal(concluida.ordem.status, "CONCLUIDA")
+        assert.deepEqual(
+          await post(rotaConcluir, confirmacao, chaveConclusao, 200),
+          concluida,
+        )
+        await post(rotaConcluir, { etapaId: etapas[0].id }, chaveConclusao, 409)
+        await post(rotaConcluir, confirmacao, randomUUID(), 409)
+        assert.equal(await snapshot(), depoisDaConclusao)
+      }
     }
     assert.equal(
       (await prisma.ordem_producao.findUniqueOrThrow({ where: { id: op.id } }))
@@ -1485,7 +1499,136 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         }
       },
     )
-    assert.ok(ficha.id)
+    await t.test(
+      "OP preserva itens e planejamento com decimais equivalentes",
+      async () => {
+        const id = cabecalhoNumerico.id
+        const rota = `/api/ordem_producao/${id}/itens`
+        const primeira = await post(rota, {
+          id_produto: produto,
+          id_variacao: m.id,
+          quantidade: "3",
+        })
+        await post(rota, {
+          id_produto: produto,
+          id_variacao: g.id,
+          quantidade: "2",
+        })
+        await prisma.ordem_producao.update({
+          where: { id },
+          data: { quantidade_planejada: "3" },
+        })
+        const planejamento = () =>
+          prisma.ordem_producao_item.findMany({
+            where: { id_ordem_producao: id },
+            orderBy: { id: "asc" },
+            include: { ordem_producao_consumo_planejado: true },
+          })
+        const anterior = await planejamento()
+        await prisma.ficha_tecnica_item.updateMany({
+          where: { id_ficha_tecnica: ficha.id },
+          data: { quantidade: "5" },
+        })
+        const alterarOrdem = (quantidade) =>
+          a.chamar(`${rotaOrdens}/${id}`, "PATCH", {
+            statusEsperado: "PLANEJADA",
+            quantidade,
+            observacao: "Ajuste sem alterar a composição",
+          })
+        const editarItem = (quantidade) =>
+          a.chamar(`${rota}/${primeira.id}`, "PATCH", {
+            quantidade,
+          })
+        assert.equal((await alterarOrdem("3.000")).status, 200)
+        assert.equal((await editarItem("3.000")).status, 200)
+        assert.deepEqual(await planejamento(), anterior)
+        assert.equal((await alterarOrdem("3.001")).status, 409)
+        assert.equal((await editarItem("3.001")).status, 200)
+        const atual = await planejamento()
+        assert.equal(
+          atual[0].ordem_producao_consumo_planejado[0].quantidade_necessaria.toFixed(
+            3,
+          ),
+          "15.005",
+        )
+        assert.deepEqual(atual[1], anterior[1])
+      },
+    )
+
+    await t.test(
+      "Opções de OP usam cota de leitura e exibem somente grades válidas",
+      async () => {
+        const cor = await prisma.cores.create({
+          data: { id_empresa: empresa, nome: "Inativa", status: "INATIVA" },
+        })
+        const corAtiva = await prisma.cores.create({
+          data: { id_empresa: empresa, nome: "Ativa" },
+        })
+        const tamanho = await prisma.tamanhos.create({
+          data: { id_empresa: empresa, nome: "Inativo", status: "INATIVO" },
+        })
+        const variante = (dados) =>
+          prisma.produto_variacoes.create({
+            data: { id_empresa: empresa, id_produto: produto, ...dados },
+          })
+        const invalidaCor = await variante({ id_cor: cor.id })
+        const invalidaTamanho = await variante({
+          id_tamanho: tamanho.id,
+          id_cor: corAtiva.id,
+        })
+        const somenteCor = await variante({ id_cor: corAtiva.id })
+        const contexto = { usuario: 5, empresa }
+        const buscar = () =>
+          a.chamar(`${rotaOrdens}/opcoes`, "GET", undefined, contexto)
+        const opcoes = await buscar()
+        const disponiveis = opcoes.body.data.produtos
+          .find((p) => p.id === produto)
+          .produto_variacoes.map((v) => v.id)
+        assert.ok(
+          disponiveis.includes(m.id) && disponiveis.includes(somenteCor.id),
+        )
+        assert.ok(
+          !disponiveis.includes(invalidaCor.id) &&
+            !disponiveis.includes(invalidaTamanho.id),
+        )
+        const abrir = (dados) =>
+          a.chamar(rotaOrdens, "POST", dados, {
+            ...contexto,
+            chave: randomUUID(),
+          })
+        assert.equal(
+          (await abrir({ ...abertura, idVariacao: invalidaCor.id })).status,
+          400,
+        )
+        assert.equal(
+          (await abrir({ ...abertura, idVariacao: invalidaTamanho.id })).status,
+          400,
+        )
+        let consultas = 1
+        while (consultas <= 120) {
+          const consulta = await buscar()
+          if (consulta.status === 429) break
+          assert.equal(consulta.status, 200)
+          consultas++
+        }
+        assert.ok(
+          consultas > 30 && consultas <= 120,
+          `Buscas antes do limite: ${consultas}`,
+        )
+        const ordemValida = await abrir({
+          ...abertura,
+          idVariacao: somenteCor.id,
+        })
+        assert.equal(ordemValida.status, 201, JSON.stringify(ordemValida.body))
+        let esgotou = false
+        for (let i = 0; i < 30 && !esgotou; i++) {
+          const resposta = await abrir(abertura)
+          esgotou = resposta.status === 429
+          if (!esgotou) assert.equal(resposta.status, 201)
+        }
+        assert.ok(esgotou, "A cota de escrita continua sendo aplicada.")
+      },
+    )
   } finally {
     const scope = { in: empresas }
     await prisma.operacao_erp.deleteMany({ where: { id_empresa: scope } })

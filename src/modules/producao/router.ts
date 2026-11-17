@@ -1,6 +1,9 @@
 import "server-only"
 import { ConflitoTransitorio, HttpError } from "@/lib/api/errors"
-import { executar as executarIdempotente } from "@/modules/reservas/operacoes"
+import {
+  conferir,
+  executar as executarIdempotente,
+} from "@/modules/reservas/operacoes"
 import { chaveRecebimento } from "@/modules/recebimentos/recebimentos.schema"
 import type { z } from "zod"
 import { autorizar } from "./producao.authorization"
@@ -23,7 +26,8 @@ import {
   abrirOrdemNaTransacao,
   alterarOrdemNaTransacao,
   avancarOrdemNaTransacao,
-  encerrarOrdem,
+  encerrarOrdemNaTransacao,
+  executarEtapaNaTransacao,
 } from "./producao.service"
 
 import { etapaSchema } from "../fluxos/fluxos.schema"
@@ -43,9 +47,12 @@ async function confirmarEscrita<T>(
   tipo:
     | "ABERTURA_ORDEM_PRODUCAO"
     | "EDICAO_ORDEM_PRODUCAO"
-    | "AVANCO_ORDEM_PRODUCAO",
+    | "AVANCO_ORDEM_PRODUCAO"
+    | "ENCERRAMENTO_ORDEM_PRODUCAO"
+    | "CONCLUSAO_ETAPA_ORDEM_PRODUCAO",
   input: object,
   operacao: (tx: Transaction) => Promise<T>,
+  validar?: (tx: Transaction) => Promise<void>,
 ) {
   const abrir = tipo === "ABERTURA_ORDEM_PRODUCAO"
   const header = request.headers.get("Idempotency-Key")
@@ -65,6 +72,7 @@ async function confirmarEscrita<T>(
     JSON.parse(JSON.stringify(input)),
     [["ORDENS_PRODUCAO", abrir ? "criar" : "editar"]],
     async (tx) => JSON.parse(JSON.stringify(await operacao(tx))),
+    { validar },
   )
   return Response.json(resultado.dados, {
     status: abrir && resultado.criado ? 201 : 200,
@@ -140,17 +148,43 @@ async function executar(
         (tx) => avancarOrdemNaTransacao(tx, ctx, id, input),
       )
     }
+    if (operacao === "encerrar") {
+      const input = validar(encerrarSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "ENCERRAMENTO_ORDEM_PRODUCAO",
+        { id, ...input },
+        (tx) => encerrarOrdemNaTransacao(tx, ctx, id, input),
+        (tx) => conferir(tx, ctx, [["ESTOQUE", "editar"]]),
+      )
+    }
+    if (operacao === "concluirEtapa") {
+      const { etapaId } = validar(etapaSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "CONCLUSAO_ETAPA_ORDEM_PRODUCAO",
+        { id, etapaId },
+        (tx) => executarEtapaNaTransacao(tx, ctx, id, etapaId, false),
+        async (tx) => {
+          const ultima = await tx.ordem_producao_fluxo_setor.findFirst({
+            where: {
+              id_ordem_producao: id,
+              ordem_producao: { id_empresa: ctx.idEmpresa },
+            },
+            orderBy: { ordem: "desc" },
+            select: { id: true },
+          })
+          if (ultima?.id === etapaId)
+            await conferir(tx, ctx, [["ESTOQUE", "editar"]])
+        },
+      )
+    }
     const result =
       operacao === "consultar"
         ? await consultarOrdem(ctx, id)
-        : operacao === "iniciarEtapa" || operacao === "concluirEtapa"
-          ? await executarEtapa(
-              ctx,
-              id,
-              validar(etapaSchema).etapaId,
-              operacao === "iniciarEtapa",
-            )
-          : await encerrarOrdem(ctx, id, validar(encerrarSchema))
+        : await executarEtapa(ctx, id, validar(etapaSchema).etapaId, true)
     return Response.json(result, {
       status: 200,
       headers: { "Cache-Control": "no-store" },

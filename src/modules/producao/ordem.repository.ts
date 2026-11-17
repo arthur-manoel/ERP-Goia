@@ -227,7 +227,34 @@ export async function opcoesAbertura(ctx: Contexto, busca: string) {
               nome: true,
               unidade: true,
               produto_variacoes: {
-                where: { id_empresa, status: "ATIVO" },
+                where: {
+                  id_empresa,
+                  status: "ATIVO",
+                  AND: [
+                    {
+                      OR: [
+                        { id_cor: null },
+                        {
+                          cores: {
+                            status: "ATIVA",
+                            OR: [{ id_empresa }, { id_empresa: null }],
+                          },
+                        },
+                      ],
+                    },
+                    {
+                      OR: [
+                        { id_tamanho: null },
+                        {
+                          tamanhos: {
+                            status: "ATIVO",
+                            id_empresa,
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
                 orderBy: { id: "asc" },
                 select: {
                   id: true,
@@ -235,12 +262,17 @@ export async function opcoesAbertura(ctx: Contexto, busca: string) {
                   tamanhos: { select: { nome: true } },
                 },
               },
+              _count: {
+                select: { produto_variacoes: { where: { id_empresa } } },
+              },
               estoque: {
                 where: { id_empresa },
                 select: { id_local_estoque: true, id_setor: true },
               },
             },
           },
+          id_cor: true,
+          id_tamanho: true,
           produto_fluxo: {
             select: {
               fluxos_producao: {
@@ -266,19 +298,26 @@ export async function opcoesAbertura(ctx: Contexto, busca: string) {
     { isolationLevel: "RepeatableRead" },
   )
   return {
-    produtos: produtos.flatMap(({ produtos, produto_fluxo }) => {
-      const fluxo = produto_fluxo?.fluxos_producao
-      const etapaFinal = fluxo?.fluxo_producao_setor[0]
-      return fluxo && etapaFinal
-        ? [
-            {
-              ...produtos,
-              fluxo: fluxo.nome,
-              idSetorFinal: etapaFinal.id_setor,
-            },
-          ]
-        : []
-    }),
+    produtos: produtos.flatMap(
+      ({ produtos, produto_fluxo, id_cor, id_tamanho }) => {
+        const { _count, ...produto } = produtos
+        const fluxo = produto_fluxo?.fluxos_producao
+        const etapaFinal = fluxo?.fluxo_producao_setor[0]
+        return fluxo && etapaFinal
+          ? [
+              {
+                ...produto,
+                temGrade:
+                  _count.produto_variacoes > 0 ||
+                  id_cor !== null ||
+                  id_tamanho !== null,
+                fluxo: fluxo.nome,
+                idSetorFinal: etapaFinal.id_setor,
+              },
+            ]
+          : []
+      },
+    ),
     locais,
   }
 }

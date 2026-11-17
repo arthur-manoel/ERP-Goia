@@ -23,6 +23,7 @@ import {
 import * as fluxos from "../fluxos/fluxos.repository"
 import { validarFluxo } from "../fluxos/fluxos.service"
 import { consumoConclusaoComprovado } from "@/modules/reservas/fluxo.service"
+import { variacaoAtivaNaEmpresa } from "@/modules/estoque/estoque.grade"
 import { entradasProducaoComprovadas } from "./producao.efeitos"
 import {
   ready,
@@ -182,13 +183,16 @@ export async function abrirOrdemNaTransacao(
           id_produto: input.idProduto,
           status: "ATIVO",
         },
-        include: { tamanhos: true },
+        include: { cores: true, tamanhos: true },
       })
     : null
-  if (input.idVariacao && !variacao)
+  if (
+    input.idVariacao &&
+    (!variacao || !variacaoAtivaNaEmpresa(variacao, ctx.idEmpresa))
+  )
     throw new ProducaoError(
       400,
-      "Variação inválida para este produto e empresa.",
+      "A variação selecionada está indisponível para este produto na empresa.",
     )
   const ordem = await tx.ordem_producao.create({
     data: {
@@ -268,9 +272,18 @@ export async function alterarOrdemNaTransacao(
       409,
       "O produto de uma ordem com snapshot não pode ser substituído. Crie outra ordem.",
     )
+  const quantidadeAlterada =
+    input.quantidade !== undefined &&
+    !(
+      ordem.ordem_producao_item.length === 1
+        ? ordem.ordem_producao_item[0].quantidade
+        : ordem.quantidade_planejada
+    ).eq(input.quantidade)
+      ? input.quantidade
+      : undefined
   const alteraComposicao =
     input.idProduto !== undefined ||
-    input.quantidade !== undefined ||
+    quantidadeAlterada !== undefined ||
     input.tamanho !== undefined
   // Só PLANEJADA admite mudança estrutural ou recálculo, inclusive antes de EM_PRODUCAO.
   if (
@@ -282,12 +295,18 @@ export async function alterarOrdemNaTransacao(
       "Fora de PLANEJADA, somente observação e previsão podem ser alteradas.",
     )
   validarPrevisao(input.dataPrevisao, ordem.data_inicio)
-  await atualizarEstado(tx, ctx, ordem, {
-    observacao: input.observacao,
-    data_previsao: input.dataPrevisao,
-    prioridade: input.prioridade,
-    quantidade_planejada: input.quantidade,
-  })
+  if (
+    quantidadeAlterada !== undefined ||
+    input.observacao !== undefined ||
+    input.dataPrevisao !== undefined ||
+    input.prioridade !== undefined
+  )
+    await atualizarEstado(tx, ctx, ordem, {
+      observacao: input.observacao,
+      data_previsao: input.dataPrevisao,
+      prioridade: input.prioridade,
+      quantidade_planejada: quantidadeAlterada,
+    })
   if (alteraComposicao) {
     if (ordem.ordem_producao_item.length !== 1)
       throw new ProducaoError(
@@ -296,9 +315,9 @@ export async function alterarOrdemNaTransacao(
       )
     const item = ordem.ordem_producao_item[0]
     const idProduto = input.idProduto ?? item.id_produto
-    const quantidade = input.quantidade ?? item.quantidade.toString()
+    const quantidade = quantidadeAlterada ?? item.quantidade.toString()
     // Observação/previsão não recalculam o planejamento existente.
-    if (input.idProduto !== undefined || input.quantidade !== undefined) {
+    if (input.idProduto !== undefined || quantidadeAlterada !== undefined) {
       const ficha = await produtoComFicha(tx, ctx, idProduto)
       await gravarInsumos(
         tx,

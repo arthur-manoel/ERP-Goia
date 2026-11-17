@@ -7,6 +7,7 @@ import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
+import { paraEscala } from "@/modules/compras/compras.regras"
 
 type Consulta = (url: string, init?: RequestInit) => Promise<Response>
 type Enviar = (url: string, body: unknown, metodo?: string) => Promise<void>
@@ -47,6 +48,7 @@ export type ResumoOrdem = Pick<
 type Opcao = { id: number; nome: string }
 type Produto = Opcao & {
   fluxo: string
+  temGrade: boolean
   idSetorFinal: number
   estoque: { id_local_estoque: number; id_setor: number }[]
   produto_variacoes: {
@@ -188,10 +190,18 @@ function AbrirOrdem({
     ),
   )
   const variacoes = produto?.produto_variacoes ?? []
+  const gradeIndisponivel = !!produto?.temGrade && variacoes.length === 0
 
   function salvar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (bloqueado || !produto || !local || (variacoes.length > 0 && !variacao))
+    if (
+      bloqueado ||
+      !produto ||
+      !local ||
+      gradeIndisponivel ||
+      (variacoes.length > 0 &&
+        !variacoes.some((v) => String(v.id) === variacao))
+    )
       return
     const fd = new FormData(event.currentTarget)
     const previsao = String(fd.get("previsao") ?? "")
@@ -266,6 +276,9 @@ function AbrirOrdem({
           <p>Nenhum produto com fluxo ativo encontrado.</p>
         )}
         {produto && <p>Fluxo cadastrado: {produto.fluxo}</p>}
+        {gradeIndisponivel && (
+          <p>Este produto não possui uma variação disponível para produção.</p>
+        )}
         {!!variacoes.length && (
           <Field>
             <FieldLabel htmlFor="op-variacao">Variação</FieldLabel>
@@ -312,7 +325,11 @@ function AbrirOrdem({
         <CamposOrdem prefixo="op-abrir" />
         <Button
           type="submit"
-          disabled={!produto || !locais.some((l) => String(l.id) === local)}
+          disabled={
+            !produto ||
+            gradeIndisponivel ||
+            !locais.some((l) => String(l.id) === local)
+          }
         >
           Criar ordem
         </Button>
@@ -338,6 +355,9 @@ function EditarOrdem({
     const observacao = String(fd.get("observacao") ?? "").trim() || null
     const previsao = String(fd.get("previsao") ?? "")
     const quantidade = fd.get("quantidade")?.toString().replace(",", ".")
+    const mudouQuantidade =
+      quantidade &&
+      paraEscala(quantidade, 3) !== paraEscala(ordem.quantidade_planejada, 3)
     const prioridade = fd.get("prioridade")
     const alteracoes = {
       ...(observacao !== (ordem.observacao?.trim() || null)
@@ -346,9 +366,7 @@ function EditarOrdem({
       ...(previsao !== (ordem.data_previsao?.slice(0, 10) ?? "")
         ? { dataPrevisao: previsao ? `${previsao}T23:59:59Z` : null }
         : {}),
-      ...(quantidade && quantidade !== ordem.quantidade_planejada
-        ? { quantidade }
-        : {}),
+      ...(mudouQuantidade ? { quantidade } : {}),
       ...(prioridade && prioridade !== ordem.prioridade ? { prioridade } : {}),
     }
     if (Object.keys(alteracoes).length === 0) {

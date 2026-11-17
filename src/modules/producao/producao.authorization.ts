@@ -16,6 +16,7 @@ export async function autorizar(
   request: Request,
   acao: "ler" | "criar" | "editar" | "excluir",
   recurso: RecursoPermissao = "ORDENS_PRODUCAO",
+  cota: "read" | "write" = acao === "ler" ? "read" : "write",
 ): Promise<Contexto | Response> {
   const auth = await requireRole(request, ["ADMINISTRACAO", "PRODUCAO"])
   if (auth.error) return auth.error
@@ -27,8 +28,8 @@ export async function autorizar(
   enforceRateLimit(
     request,
     {
-      scope: acao === "ler" ? "producao:read" : "producao:write",
-      limit: acao === "ler" ? 120 : 30,
+      scope: `producao:${cota}`,
+      limit: cota === "read" ? 120 : 30,
       windowMs: 60_000,
     },
     String(idUsuario),

@@ -816,7 +816,10 @@ export function editItem(
       throw new ProducaoError(404, "Item não encontrado nesta ordem.")
     if (before.quantidade_produzida.gt(0))
       conflict("O item possui produção registrada; utilize ajuste ou estorno.")
-    if (input?.quantidade !== undefined) {
+    if (
+      input?.quantidade !== undefined &&
+      !before.quantidade.eq(input.quantidade)
+    ) {
       const ficha = await produtoComFicha(tx, ctx, before.id_produto)
       await repo.deletePlan(ctx, id, itemId, tx)
       await repo.createPlan(

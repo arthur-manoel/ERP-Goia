@@ -60,6 +60,8 @@ async function execute(
           : ["cancel", "removeItem"].includes(operation)
             ? "excluir"
             : "editar",
+      "ORDENS_PRODUCAO",
+      operation === "opcoesAbertura" ? "read" : undefined,
     )
     if (ctx instanceof Response)
       return errorResponse(
