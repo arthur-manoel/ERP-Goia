@@ -299,12 +299,12 @@ export async function ambienteRecebiveis() {
     assert.equal(
       response.headers.get("Cache-Control"),
       rota.startsWith("/api/clientes/") ||
-        /^\/api\/compras\/compras(?:$|\/\d+\/receber$)/.test(rota) ||
         /^\/api\/ordens-producao\/\d+$/.test(rota) ||
         (method === "PATCH" && /^\/api\/contas_receber\/\d+$/.test(rota)) ||
         /^\/api\/estoque\/(entradas|saidas|ajustes|saldo)(?:\?|$)/.test(rota) ||
         (rota.startsWith("/api/ordem_producao") &&
-          !/\/(consumos|operacao)(?:\?|$)/.test(rota))
+          !/\/(consumos|operacao)(?:\?|$)/.test(rota)) ||
+        /^\/api\/compras\/compras(?:$|\/\d+\/receber$)/.test(rota)
         ? "no-store"
         : "private, no-store",
     )

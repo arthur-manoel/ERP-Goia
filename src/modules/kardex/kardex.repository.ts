@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { NotFoundError, ValidationError } from "@/lib/api/errors"
 import { conferir } from "@/modules/reservas/operacoes"
 import type { Contexto } from "@/modules/movimentacoes-estoque/movimentacoes-estoque.authorization"
-import { direcoes, type Consulta } from "./kardex.schema"
+import { calcularPaginacao, direcoes, type Consulta } from "./kardex.schema"
 
 type Tx = Prisma.TransactionClient
 type Decimal = Prisma.Decimal
@@ -346,12 +346,7 @@ export function consultarKardex(ctx: Contexto, f: Consulta) {
         idEmpresa: ctx.idEmpresa,
         periodo: f.periodo,
         dados: linhas.map(apresentar),
-        paginacao: {
-          pagina: f.pagina,
-          limite: f.limite,
-          totalRegistros,
-          totalPaginas: Math.ceil(totalRegistros / f.limite),
-        },
+        paginacao: calcularPaginacao(f.pagina, f.limite, totalRegistros),
         resumo: await resumir(tx, ctx.idEmpresa, f),
       }
     },

@@ -93,6 +93,13 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
         const antes = await snapshot()
         const vazio = await ler({ ...filtro, ...janela })
         assert.deepEqual(vazio.dados, [])
+        assert.deepEqual(vazio.paginacao, {
+          pagina: 1,
+          limite: 25,
+          totalRegistros: 0,
+          totalPaginas: 0,
+          totalPaginasReais: 0,
+        })
         assert.equal(vazio.resumo.motivo, "SEM_LANCAMENTOS")
         assert.equal(await snapshot(), antes)
         const data = new Date(dia(-2) + "T03:00:00Z")
@@ -476,7 +483,7 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
     )
 
     await t.test(
-      "EXPLAIN e página de 100 registros em histórico de 20 mil",
+      "EXPLAIN e navegação nas duas fronteiras em histórico de 100.101 registros",
       async () => {
         const volume = await posicao(outra, "Posição de volume")
         const filtroVolume = { idProduto, ...volume, ...janela, limite: 100 }
@@ -488,12 +495,12 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
         SELECT ${outra}, ${idProduto}, ${idLocalEstoque}, ${idSetor}, ${usuarios[5]},
           'AJUSTE_ENTRADA', 1, 'KARDEX_VOLUME_FIXTURE', seq,
           TIMESTAMPADD(SECOND, -seq, CURRENT_TIMESTAMP)
-        FROM seq_1_to_20000`
+        FROM seq_1_to_100101`
         await prisma.$executeRaw`
         INSERT INTO kardex (id_empresa, id_produto, id_local_estoque, id_setor,
           id_movimentacao, tipo_movimentacao, quantidade, saldo_anterior, saldo_atual, data_movimentacao)
         SELECT id_empresa, id_produto, id_local_estoque, id_setor, id, 'ENTRADA', 1,
-          20000 - origem_id, 20001 - origem_id, data_movimentacao
+          100101 - origem_id, 100102 - origem_id, data_movimentacao
         FROM movimentacao_estoque WHERE id_empresa = ${outra}
           AND id_local_estoque = ${idLocalEstoque} AND origem_tipo = 'KARDEX_VOLUME_FIXTURE'`
         await prisma.estoque.create({
@@ -502,7 +509,7 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
             id_produto: idProduto,
             id_local_estoque: idLocalEstoque,
             id_setor: idSetor,
-            quantidade: "20000",
+            quantidade: "100101",
           },
         })
         const { Prisma } = await import("../src/generated/prisma/client.ts")
@@ -535,12 +542,57 @@ test("Kardex por HTTP real e MariaDB isolado", async (t) => {
         const inicio = performance.now()
         const r = await ler(filtroVolume, optsOutra)
         console.log(
-          "Kardex 20.000 registros, página 100, tempo HTTP em ms",
+          "Kardex 100.101 registros, limite 100, tempo HTTP em ms",
           Math.round(performance.now() - inicio),
         )
-        assert.equal(r.paginacao.totalRegistros, 20000)
+        assert.deepEqual(r.paginacao, {
+          pagina: 1,
+          limite: 100,
+          totalRegistros: 100101,
+          totalPaginas: 1001,
+          totalPaginasReais: 1002,
+        })
         assert.equal(r.dados.length, 100)
-        assert.equal(r.resumo.saldos.fechamento, "20000.000")
+        assert.equal(r.resumo.saldos.fechamento, "100101.000")
+        const ultima = await ler(
+          { ...filtroVolume, pagina: r.paginacao.totalPaginas },
+          optsOutra,
+        )
+        assert.equal(ultima.paginacao.totalPaginas, 1001)
+        assert.equal(ultima.dados.length, 100)
+        assert.equal(ultima.dados[0].origem.id, 100001)
+        assert.equal(ultima.dados.at(-1).origem.id, 100100)
+        assert.equal(
+          (await listar({ ...filtroVolume, pagina: 1002 }, optsOutra)).status,
+          400,
+        )
+
+        const filtroDez = { idLocalEstoque, ...janela, limite: 10 }
+        const tamanhoDez = await ler(filtroDez, optsOutra)
+        assert.equal(tamanhoDez.paginacao.totalPaginas, 10000)
+        assert.equal(tamanhoDez.paginacao.totalPaginasReais, 10011)
+        const ultimaDez = await ler(
+          { ...filtroDez, pagina: tamanhoDez.paginacao.totalPaginas },
+          optsOutra,
+        )
+        assert.equal(ultimaDez.dados[0].origem.id, 99991)
+        assert.equal(
+          (await listar({ ...filtroDez, pagina: 10001 }, optsOutra)).status,
+          400,
+        )
+
+        const recorte = await ler(
+          {
+            ...filtroVolume,
+            origemTipo: "KARDEX_VOLUME_FIXTURE",
+            origemId: 100101,
+          },
+          optsOutra,
+        )
+        assert.equal(recorte.paginacao.totalRegistros, 1)
+        assert.equal(recorte.paginacao.totalPaginas, 1)
+        assert.equal(recorte.paginacao.totalPaginasReais, 1)
+        assert.equal(recorte.dados[0].origem.id, 100101)
       },
     )
   } finally {

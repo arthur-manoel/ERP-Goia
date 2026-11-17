@@ -24,11 +24,20 @@ Tipos atuais incluem `ENTRADA_NF`, `SAIDA_VENDA`, `ENTRADA_PRODUCAO`,
 data gravada em `kardex.data_movimentacao` e o início exclusivo do dia seguinte
 à data final. O resultado vem do mais novo para o mais antigo, com desempate
 por ID do lançamento em ordem decrescente. Uma página além do fim retorna
-`dados: []` e conserva a contagem. Uma leitura `RepeatableRead` mantém
+`dados: []` e conserva a contagem se a página estiver dentro do limite
+operacional. Uma leitura `RepeatableRead` mantém
 página, contagem e resumo no mesmo snapshot. Escritas entre requisições
 podem deslocar resultados de páginas diferentes. Para atualizar a navegação,
 volte à primeira página com os mesmos filtros.
 [Leitura consistente no InnoDB](https://dev.mysql.com/doc/refman/8.4/en/innodb-consistent-read.html)
+
+`totalRegistros` conta todos os lançamentos que atendem aos filtros.
+`totalPaginasReais` é essa contagem dividida pelo tamanho da página e
+arredondada para cima. Use `totalPaginas` para navegar até a última
+página acessível com os mesmos filtros e tamanho. Uma consulta vazia
+informa zero nos dois totais. Se `totalPaginasReais` superar
+`totalPaginas`, reduza o intervalo de datas ou filtre por produto e
+local para consultar os demais lançamentos em recortes menores.
 
 Filtro, ordenação, resumo e data ISO usam o instante armazenado no
 `TIMESTAMP`, mesmo quando o fuso da sessão do banco difere de UTC.
@@ -134,7 +143,7 @@ Com posição incompleta, a consulta geral pode devolver, por exemplo:
   "idEmpresa": 2,
   "periodo": { "dataInicio": "2026-10-01", "dataFim": "2026-10-31" },
   "dados": [],
-  "paginacao": { "pagina": 1, "limite": 25, "totalRegistros": 0, "totalPaginas": 0 },
+  "paginacao": { "pagina": 1, "limite": 25, "totalRegistros": 0, "totalPaginas": 0, "totalPaginasReais": 0 },
   "resumo": { "situacao": "SEM_ESCOPO", "motivo": "INFORME_PRODUTO_E_LOCAL", "saldos": null }
 }
 ```
@@ -167,6 +176,6 @@ node --test tests/operacoes-integradas.integration.test.mjs
 node --test tests/cancelamentos.integration.test.mjs
 ```
 
-O teste de volume usa o gerador `seq_1_to_20000` do MariaDB. O endpoint usa
+O teste de volume usa o gerador `seq_1_to_100101` do MariaDB. O endpoint usa
 SQL parametrizado e funções de janela compatíveis com MariaDB e MySQL 8.
 O card usa as tabelas e índices vigentes.

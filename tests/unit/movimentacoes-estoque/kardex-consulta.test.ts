@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { validarConsulta } from "@/modules/kardex/kardex.schema"
+import {
+  calcularPaginacao,
+  validarConsulta,
+} from "@/modules/kardex/kardex.schema"
 
 describe("consulta Kardex", () => {
   it("usa os últimos trinta dias civis de São Paulo", () => {
@@ -21,6 +24,47 @@ describe("consulta Kardex", () => {
     expect(consulta.inicio.toISOString()).toBe("2018-11-04T03:00:00.000Z")
     expect(consulta.fim.toISOString()).toBe("2018-11-05T02:00:00.000Z")
   })
+
+  it.each([
+    { limite: 100, ultima: 1001 },
+    { limite: 10, ultima: 10000 },
+    { limite: 33, ultima: 3031 },
+  ])(
+    "anuncia e aceita a mesma última página com limite $limite",
+    ({ limite, ultima }) => {
+      const totalRegistros = 500_000
+      const paginacao = calcularPaginacao(1, limite, totalRegistros)
+      expect(paginacao).toEqual({
+        pagina: 1,
+        limite,
+        totalRegistros,
+        totalPaginas: ultima,
+        totalPaginasReais: Math.ceil(totalRegistros / limite),
+      })
+      expect(
+        validarConsulta({ pagina: String(ultima), limite: String(limite) })
+          .pagina,
+      ).toBe(ultima)
+      expect(() =>
+        validarConsulta({ pagina: String(ultima + 1), limite: String(limite) }),
+      ).toThrow()
+    },
+  )
+
+  it.each([
+    [0, 0],
+    [101, 2],
+    [100_100, 1001],
+  ])(
+    "preserva a contagem de %i registros dentro da fronteira",
+    (registros, paginas) => {
+      expect(calcularPaginacao(1, 100, registros)).toMatchObject({
+        totalRegistros: registros,
+        totalPaginas: paginas,
+        totalPaginasReais: paginas,
+      })
+    },
+  )
 
   it.each([
     { dataInicio: "2026-11-12" },

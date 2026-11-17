@@ -26,6 +26,28 @@ const utc = (dia: string) => Date.parse(dia + "T00:00:00Z")
 const somarDias = (dia: string, quantidade: number) =>
   new Date(utc(dia) + quantidade * diaMs).toISOString().slice(0, 10)
 
+const paginaMaxima = 10_000
+const deslocamentoMaximo = 100_000
+
+function ultimaPaginaPermitida(limite: number) {
+  return Math.min(paginaMaxima, Math.floor(deslocamentoMaximo / limite) + 1)
+}
+
+export function calcularPaginacao(
+  pagina: number,
+  limite: number,
+  totalRegistros: number,
+) {
+  const totalPaginasReais = Math.ceil(totalRegistros / limite)
+  return {
+    pagina,
+    limite,
+    totalRegistros,
+    totalPaginas: Math.min(totalPaginasReais, ultimaPaginaPermitida(limite)),
+    totalPaginasReais,
+  }
+}
+
 const esquema = z
   .strictObject({
     dataInicio: data.optional(),
@@ -43,7 +65,7 @@ const esquema = z
       .regex(/^[A-Z][A-Z0-9_]{0,49}$/)
       .optional(),
     origemId: inteiro().optional(),
-    pagina: inteiro(10000).default(1),
+    pagina: inteiro().default(1),
     limite: inteiro(100).default(25),
   })
   .superRefine((v, ctx) => {
@@ -76,7 +98,7 @@ const esquema = z
         path: ["tipo"],
         message: "Tipo e direção incompatíveis.",
       })
-    if ((v.pagina - 1) * v.limite > 100000)
+    if (v.pagina > ultimaPaginaPermitida(v.limite))
       ctx.addIssue({
         code: "custom",
         path: ["pagina"],
