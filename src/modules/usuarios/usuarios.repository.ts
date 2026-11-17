@@ -527,22 +527,6 @@ export async function revogarSessoes(tx: Transaction, idUsuario: number) {
 export async function validarPerfil(tx: Transaction, idUsuario: number) {
   const usuario = await tx.usuarios.findUnique({
     where: { id: idUsuario },
-    include: {
-      usuario_empresa: {
-        include: {
-          empresas: { select: { status: true } },
-          cargos: { select: { nome: true, status: true } },
-          setores: {
-            select: {
-              nome: true,
-              tipo: true,
-              status: true,
-              permissoes_setor: { select: { recurso: true } },
-            },
-          },
-        },
-      },
-    },
     include: userInclude,
   })
   if (!usuario || usuario.status !== "ATIVO") return null
