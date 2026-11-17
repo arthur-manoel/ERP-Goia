@@ -587,9 +587,10 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       "Consumo, apontamento final e conclusão confirmados com uma saída, uma entrada e dois Kardex.",
     )
     const concluida = await snapshot()
-    assert.equal(
-      (await a.chamar(`/api/ordem_producao/${op.id}/concluir`, "POST", {}))
-        .status,
+    await postOutro(
+      `/api/ordem_producao/${op.id}/concluir`,
+      {},
+      randomUUID(),
       409,
     )
     assert.equal(await snapshot(), concluida)
