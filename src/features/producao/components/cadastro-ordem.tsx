@@ -137,7 +137,7 @@ function AbrirOrdem({
     dados?: Opcoes
     erro?: string
   }>()
-  const [produtoEscolhido, setProduto] = useState<Produto>()
+  const [produto, setProduto] = useState<Produto>()
   const [variacao, setVariacao] = useState("")
   const [local, setLocal] = useState("")
 
@@ -154,8 +154,15 @@ function AbrirOrdem({
         const body = await res.json()
         if (!res.ok)
           throw new Error(body.error ?? "Não foi possível carregar as opções.")
-        if (!controller.signal.aborted)
-          setResposta({ busca, revisao, dados: body.data })
+        if (!controller.signal.aborted) {
+          const dados = body.data as Opcoes
+          setProduto(
+            (selecionado) =>
+              dados.produtos.find((p) => p.id === selecionado?.id) ??
+              selecionado,
+          )
+          setResposta({ busca, revisao, dados })
+        }
       } catch (error) {
         if (!controller.signal.aborted)
           setResposta({
@@ -179,8 +186,6 @@ function AbrirOrdem({
       ? resposta
       : undefined
   const resultados = atual?.dados?.produtos ?? []
-  const produto =
-    resultados.find((p) => p.id === produtoEscolhido?.id) ?? produtoEscolhido
   const produtos =
     produto && !resultados.some((p) => p.id === produto.id)
       ? [produto, ...resultados]
