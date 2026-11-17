@@ -1,3 +1,4 @@
+import { POST as completar } from "../../../src/app/api/ordem_producao/[id]/completar/route"
 import { beforeEach, expect, it, vi } from "vitest"
 import { Prisma } from "../../../src/generated/prisma/client"
 import * as collection from "../../../src/app/api/ordem_producao/route"
@@ -229,6 +230,7 @@ beforeEach(() => {
     model.count.mockResolvedValue(0)
   db.produto_empresa.findFirst.mockResolvedValue({ id: 1 })
   db.produto_empresa.count.mockResolvedValue(1)
+  db.produto_variacoes.findMany.mockResolvedValue([])
   db.ficha_tecnica.findFirst.mockResolvedValue({
     ficha_tecnica_item: [{ id_produto_componente: 22, quantidade: decimal(1) }],
   })
@@ -967,4 +969,145 @@ it("rate limit usa identidade autenticada mesmo mudando caixa do Bearer e IP", a
   )
   expect(responses.filter((r) => r.status === 200)).toHaveLength(120)
   expect(responses.filter((r) => r.status === 429)).toHaveLength(5)
+})
+
+it("completar recusa ordem que já tem item antes de alterar o cabeçalho ou consumo", async () => {
+  row._count = { ...counters, ordem_producao_item: 1 }
+  const response = await completar(
+    await req("POST", {
+      id_produto: 20,
+      quantidade: "3.000",
+      id_local_estoque: 5,
+    }),
+    context(),
+  )
+  expect(response.status).toBe(409)
+  expect(db.ordem_producao.update).not.toHaveBeenCalled()
+  expect(db.ordem_producao_item.create).not.toHaveBeenCalled()
+  expect(db.ordem_producao_consumo_planejado.createMany).not.toHaveBeenCalled()
+})
+it("produto com grade exclusivamente inativa exige uma variação mesmo na inclusão direta", async () => {
+  db.produto_variacoes.count.mockResolvedValue(1)
+  const response = await addItem(
+    await req("POST", {
+      id_produto: 20,
+      quantidade: "3.000",
+    }),
+    context(),
+  )
+  expect(response.status).toBe(409)
+  expect(db.produto_variacoes.count).toHaveBeenCalledWith({
+    where: { id_empresa: 10, id_produto: 20 },
+  })
+  expect(db.ordem_producao_item.create).not.toHaveBeenCalled()
+  expect(db.ordem_producao_fluxo_setor.createMany).not.toHaveBeenCalled()
+})
+
+it("cria cabeçalho e item com permissão de criação e sem edição em uma transação", async () => {
+  db.usuario_empresa.findMany.mockResolvedValue([
+    membership(false, {
+      pode_ler: true,
+      pode_criar: true,
+      pode_editar: false,
+      pode_excluir: false,
+    }),
+  ])
+  vi.spyOn(flowRepository, "fluxoProduto").mockResolvedValue({
+    id: 1,
+    nome: "Fluxo",
+    descricao: null,
+    status: "ATIVO",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    setores: [
+      {
+        id: 3,
+        nome: "Corte",
+        descricao: null,
+        status: "ATIVO",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ordem: 1,
+      },
+    ],
+  })
+  db.ordem_producao_item.create.mockResolvedValue(item)
+  const response = await collection.POST(
+    await req("POST", {
+      numero: "OP-NOVA",
+      quantidade_planejada: "3.125",
+      item: { id_produto: 20, quantidade: "3.125" },
+    }),
+  )
+  expect(response.status).toBe(201)
+  expect(db.ordem_producao.create).toHaveBeenCalledOnce()
+  expect(db.ordem_producao_item.create).toHaveBeenCalledOnce()
+  expect(db.ordem_producao_consumo_planejado.createMany).toHaveBeenCalledOnce()
+  expect(db.$transaction).toHaveBeenCalledOnce()
+})
+
+it.each([
+  "cor inativa",
+  "tamanho inativo",
+  "dimensão de outra empresa",
+  "grade ambígua",
+])("abertura atômica recusa %s antes de calcular consumo", async (cenario) => {
+  vi.spyOn(flowRepository, "fluxoProduto").mockResolvedValue({
+    id: 1,
+    nome: "Fluxo",
+    descricao: null,
+    status: "ATIVO",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    setores: [
+      {
+        id: 3,
+        nome: "Corte",
+        descricao: null,
+        status: "ATIVO",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ordem: 1,
+      },
+    ],
+  })
+  const variante = {
+    id: 40,
+    id_empresa: 10,
+    id_produto: 20,
+    id_cor: cenario === "tamanho inativo" ? null : 30,
+    id_tamanho: cenario === "tamanho inativo" ? 31 : null,
+    status: "ATIVO",
+    cores:
+      cenario === "tamanho inativo"
+        ? null
+        : {
+            id_empresa: cenario === "dimensão de outra empresa" ? 99 : 10,
+            status: cenario === "cor inativa" ? "INATIVA" : "ATIVA",
+          },
+    tamanhos:
+      cenario === "tamanho inativo"
+        ? { id_empresa: 10, status: "INATIVO", nome: "M" }
+        : null,
+  }
+  db.produto_variacoes.findFirst.mockResolvedValue(variante)
+  db.produto_variacoes.findMany.mockResolvedValue(
+    cenario === "grade ambígua"
+      ? [variante, { ...variante, id: 41 }]
+      : [variante],
+  )
+  db.ordem_producao_item.create.mockResolvedValue({
+    ...item,
+    id_cor: variante.id_cor,
+    id_tamanho: variante.id_tamanho,
+  })
+  const response = await collection.POST(
+    await req("POST", {
+      numero: "OP-GRADE",
+      quantidade_planejada: "3",
+      item: { id_produto: 20, id_variacao: 40, quantidade: "3" },
+    }),
+  )
+  expect(response.status).toBe(409)
+  expect(db.ordem_producao_consumo_planejado.createMany).not.toHaveBeenCalled()
 })

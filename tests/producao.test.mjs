@@ -95,6 +95,7 @@ function setup(overrides = {}) {
     },
     async $queryRaw(query) {
       const sql = (query.strings ?? query).join("?")
+      if (sql.includes("FROM sequencias_automaticas")) return [{ ultimo: "0" }]
       if (sql.includes("FROM produto_fluxo")) return [{ id_fluxo: 3 }]
       if (sql.includes("FROM fluxo_producao_setor"))
         return [
@@ -534,7 +535,7 @@ test("abertura persiste ficha, sequência e auditoria na transação; HTTP 201",
   const { load, tx, calls, ordem } = setup()
   tx.setores.count = async () => 2
   tx.sequencias_automaticas = {
-    async upsert(args) {
+    async update(args) {
       calls.push(["sequencia", args])
       return { ultimo_numero: 42n }
     },
@@ -631,7 +632,7 @@ test("abertura exige fluxo (422) e rejeita setores enviados manualmente", async 
 
 test("snapshot copia nomes e sequência e é gravado na transação de abertura", async () => {
   const { service, tx, calls, ordem } = setup()
-  tx.sequencias_automaticas = { upsert: async () => ({ ultimo_numero: 1n }) }
+  tx.sequencias_automaticas = { update: async () => ({ ultimo_numero: 1n }) }
   tx.ordem_producao.create = async () => ordem
   await service.abrirOrdem(ctx, {
     idProduto: 30,

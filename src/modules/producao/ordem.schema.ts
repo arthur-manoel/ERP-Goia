@@ -66,7 +66,7 @@ const complete = {
   data_previsao: fields.data_previsao.default(null),
   observacao: fields.observacao.default(null),
 }
-export const createOrdemSchema = z
+const createOrdemBaseSchema = z
   .object({ ...complete, id_empresa: idSchema.optional() })
   .strict()
 export const updateOrdemSchema = z
@@ -178,6 +178,22 @@ export const ordemItemSchema = z
     tamanho: z.string().trim().min(1).max(30).default("UNICO"),
   })
   .strict()
+export const createOrdemSchema = createOrdemBaseSchema
+  .extend({
+    item: ordemItemSchema.optional(),
+  })
+  .refine(
+    (dados) =>
+      !dados.item ||
+      Number(dados.quantidade_planejada) === Number(dados.item.quantidade),
+    {
+      message: "A quantidade planejada deve corresponder à quantidade do item.",
+      path: ["quantidade_planejada"],
+    },
+  )
+export const completarOrdemSchema = ordemItemSchema.extend({
+  id_local_estoque: idSchema.optional(),
+})
 export const patchItemSchema = ordemItemSchema
   .pick({ quantidade: true, tamanho: true })
   .partial()

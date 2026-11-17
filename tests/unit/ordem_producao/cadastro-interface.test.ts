@@ -3,10 +3,7 @@ import {
   montarCadastroOp,
   type OrdemParaEdicao,
 } from "../../../src/features/producao/cadastro-op"
-import {
-  alterarSchema,
-  abrirSchema,
-} from "../../../src/modules/producao/producao.schema"
+import { alterarSchema } from "../../../src/modules/producao/producao.schema"
 
 const ordem: OrdemParaEdicao = {
   id: 1,
@@ -86,19 +83,4 @@ it("não envia campos estruturais fora do planejamento ou em ordem com vários i
       ],
     }),
   ).toEqual({ statusEsperado: "PLANEJADA" })
-})
-it("abertura mantém o contrato da API com número e responsável definidos no servidor", () => {
-  const body = montarCadastroOp(
-    formulario({ produto: "7", observacao: "" }),
-    null,
-  )
-  expect(body).toEqual({
-    idProduto: 7,
-    quantidade: "2",
-    tamanho: "UNICO",
-    prioridade: "NORMAL",
-    observacao: null,
-    dataPrevisao: "2026-11-20T00:00:00.000Z",
-  })
-  expect(abrirSchema.safeParse(body).success).toBe(true)
 })

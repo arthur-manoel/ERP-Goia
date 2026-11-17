@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 import * as cores from "../../../src/app/api/cores/route"
 import * as core from "../../../src/app/api/cores/[id]/route"
 import * as tamanhos from "../../../src/app/api/tamanhos/route"
@@ -212,4 +212,8 @@ it("produto criado já possui vínculo atômico com a empresa autorizada", async
     ).status,
   ).toBe(403)
   expect(db.produtos.create).not.toHaveBeenCalled()
+})
+
+beforeEach(() => {
+  db.produto_empresa.findMany.mockResolvedValue([{ id_empresa: 10 }])
 })

@@ -50,6 +50,8 @@ import {
   zero,
 } from "../quantidades"
 
+import { FormularioPlanejamentoOP } from "@/features/producao/components/formulario-planejamento-op"
+
 type Origem = "PEDIDO" | "PRODUCAO" | "RESERVAS"
 type Variacao = {
   id: number
@@ -81,6 +83,8 @@ type Produto = {
   id: number
   nome: string
   unidade: string
+  permite_producao: boolean
+  possui_grade: boolean
   produto_variacoes: Variacao[]
   estoque: {
     id_local_estoque: number
@@ -515,6 +519,7 @@ function Conteudo({
               requisitar={requisitar}
               revisao={revisao}
               revisaoEntrega={revisaoEntrega}
+              aoAtualizar={() => setRevisao((r) => r + 1)}
               opcoes={opcoes}
               bloqueado={bloqueado}
               enviar={enviar}
@@ -842,6 +847,7 @@ function DocumentoOperacional({
   requisitar,
   revisao,
   revisaoEntrega,
+  aoAtualizar,
   opcoes,
   bloqueado,
   enviar,
@@ -850,6 +856,7 @@ function DocumentoOperacional({
   requisitar: Api
   revisao: number
   revisaoEntrega: number
+  aoAtualizar: () => void
   opcoes: Opcoes
   bloqueado: boolean
   enviar: Enviar
@@ -858,6 +865,7 @@ function DocumentoOperacional({
   const [pagina, setPagina] = useState(1)
   const [escolhido, setId] = useState("")
   const [revisaoCadastro, setRevisaoCadastro] = useState(0)
+  const [planejamento, setPlanejamento] = useState<"novo" | Ordem | null>(null)
   const urlInicial = useSyncExternalStore(
     useCallback((fn) => {
       window.addEventListener("popstate", fn)
@@ -907,23 +915,52 @@ function DocumentoOperacional({
       }
     >
       {origem === "PRODUCAO" && (
-        <CadastroOpApi
-          key={`cadastro:${revisaoCadastro}`}
-          produtos={opcoes.produtos}
-          bloqueado={bloqueado}
-          aoSalvar={(novoId) => {
-            setId(novoId)
-            setRevisaoCadastro((r) => r + 1)
-          }}
-        />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={bloqueado || !opcoes.locais.length}
+            onClick={() => setPlanejamento("novo")}
+          >
+            Nova ordem
+          </Button>
+          {id &&
+            detalhes.dados &&
+            "ordem_producao_item" in detalhes.dados &&
+            detalhes.dados.ordem_producao_item.length > 0 && (
+              <CadastroOpApi
+                key={`editar:${id}:${revisao}:${revisaoCadastro}`}
+                id={id}
+                bloqueado={bloqueado}
+                aoSalvar={() => setRevisaoCadastro((r) => r + 1)}
+              />
+            )}
+          {!opcoes.locais.length && (
+            <p>Cadastre um local de estoque ativo para abrir a ordem.</p>
+          )}
+          {detalhes.dados?.status === "PLANEJADA" &&
+            "ordem_producao_item" in detalhes.dados &&
+            detalhes.dados.ordem_producao_item.length === 0 && (
+              <Button
+                variant="outline"
+                disabled={bloqueado}
+                onClick={() => setPlanejamento(detalhes.dados as Ordem)}
+              >
+                Completar ordem planejada
+              </Button>
+            )}
+        </div>
       )}
-      {origem === "PRODUCAO" && id && (
-        <CadastroOpApi
-          key={`editar:${id}:${revisao}:${revisaoCadastro}`}
-          id={id}
+      {planejamento && (
+        <FormularioPlanejamentoOP
+          inicial={planejamento === "novo" ? undefined : planejamento}
           produtos={opcoes.produtos}
-          bloqueado={bloqueado}
-          aoSalvar={() => setRevisaoCadastro((r) => r + 1)}
+          locais={opcoes.locais}
+          onClose={() => setPlanejamento(null)}
+          onSalvo={(id) => {
+            setId(String(id))
+            setPlanejamento(null)
+            setRevisaoCadastro((r) => r + 1)
+            aoAtualizar()
+          }}
         />
       )}
       <Field>
@@ -1389,6 +1426,22 @@ function DetalheDocumento({
       )}
       {ordem && (
         <>
+          {ordem.ordem_producao_consumo_planejado.length > 0 && (
+            <section aria-label="Consumo planejado">
+              <h3 className="font-semibold">Consumo planejado</h3>
+              <ul>
+                {ordem.ordem_producao_consumo_planejado.map(
+                  (material, indice) => (
+                    <li key={`${material.id_materia_prima}:${indice}`}>
+                      {material.produtos.nome} ·{" "}
+                      {formatarQuantidade(material.quantidade_necessaria)}{" "}
+                      {material.produtos.unidade}
+                    </li>
+                  ),
+                )}
+              </ul>
+            </section>
+          )}
           {faltaDestino &&
             !["CONCLUIDA", "CANCELADA"].includes(ordem.status) && (
               <form

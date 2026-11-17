@@ -38,7 +38,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useErp } from "@/features/erp/components/provedor"
+import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
+import { useConfiguracaoProducao } from "@/features/fluxo-producao/api"
 import type { FluxoProducao } from "../schemas"
 import { FormularioFluxo } from "./formulario-fluxo"
 import { VisualizadorFluxo } from "./visualizador-fluxo"
@@ -46,7 +47,13 @@ import { VisualizadorFluxo } from "./visualizador-fluxo"
 type FiltroStatus = "Todos" | "Ativo" | "Inativo"
 
 export function TelaFluxosProducao() {
-  const { data, error, reload, save } = useErp()
+  const { empresa } = useAutenticacao()
+  return <Conteudo key={empresa?.id} />
+}
+
+function Conteudo() {
+  const { data, error, reload, salvarFluxo, alterarStatusFluxo } =
+    useConfiguracaoProducao(true)
   const [busca, setBusca] = useState("")
   const [statusFiltro, setStatusFiltro] = useState<FiltroStatus>("Todos")
   const [formulario, setFormulario] = useState<FluxoProducao | "novo" | null>(
@@ -105,7 +112,7 @@ export function TelaFluxosProducao() {
   async function alternarStatus(fluxo: FluxoProducao) {
     const novoStatus = fluxo.status === "Ativo" ? "Inativo" : "Ativo"
     try {
-      await save("productionFlows", { ...fluxo, status: novoStatus }, fluxo.id)
+      await alterarStatusFluxo(fluxo.id, novoStatus === "Ativo")
       toast.success(
         novoStatus === "Ativo"
           ? "Fluxo de produção reativado."
@@ -268,6 +275,7 @@ export function TelaFluxosProducao() {
 
       {formulario && (
         <FormularioFluxo
+          onSave={salvarFluxo}
           key={formulario === "novo" ? "novo" : formulario.id}
           initial={formulario === "novo" ? undefined : formulario}
           setoresDisponiveis={setores}

@@ -2,6 +2,7 @@ import "server-only"
 import { previsaoAnteriorAoDiaDeInicio } from "./producao.datas"
 import { liberarReservasOP } from "@/modules/reservas/reservas.service"
 import { conferir } from "@/modules/reservas/operacoes"
+import { variacaoEntradaProducao } from "@/modules/reservas/fluxo.service"
 import { Prisma } from "@/generated/prisma/client"
 import type { z } from "zod"
 import * as repo from "./ordem.repository"
@@ -101,20 +102,24 @@ export function findById(ctx: Contexto, id: number) {
 export function create(ctx: Contexto, input: OrdemInput) {
   company(ctx, input.id_empresa)
   return repo.write(ctx, async (tx) => {
-    const { id_empresa, ...data } = input
+    const { id_empresa, item, ...data } = input
     company(ctx, id_empresa)
     await relationships(ctx, data, tx)
     dates(data)
     await unique(ctx, data.numero, tx)
     const row = await repo.create(ctx, { ...data, status: "PLANEJADA" }, tx)
     await auditar(tx, ctx, null, row)
+    if (item) {
+      await addItemNaTransacao(ctx, row.id, item, tx)
+      return required(ctx, row.id, tx)
+    }
     return row
   })
 }
 export function update(
   ctx: Contexto,
   id: number,
-  input: Partial<Omit<OrdemInput, "id_empresa">>,
+  input: Partial<Omit<OrdemInput, "id_empresa" | "item">>,
 ) {
   return repo.write(ctx, async (tx) => {
     const before = await required(ctx, id, tx)
@@ -464,81 +469,114 @@ export function addItem(
   ctx: Contexto,
   id: number,
   input: z.output<typeof ordemItemSchema>,
+  completar?: { id_local_estoque?: number },
 ) {
-  return repo.write(ctx, async (tx) => {
-    const before = await required(ctx, id, tx)
-    if (before.status !== "PLANEJADA")
-      conflict("Itens somente podem ser incluídos durante o planejamento.")
-    if ((await repo.operationalCounts(ctx, id, tx)).some(Boolean))
-      conflict("Há efeitos operacionais que impedem a inclusão de itens.")
-    if (before._count.ordem_producao_item >= 200)
-      conflict("Limite de 200 itens por ordem.")
-    const ficha = await produtoComFicha(tx, ctx, input.id_produto)
-    const fluxo = await fluxos.fluxoProduto(tx, ctx, input.id_produto)
-    validarFluxo(fluxo)
-    const snapshot = await fluxos.snapshot(tx, id)
+  return repo.write(ctx, (tx) =>
+    addItemNaTransacao(ctx, id, input, tx, completar),
+  )
+}
+
+async function addItemNaTransacao(
+  ctx: Contexto,
+  id: number,
+  input: z.output<typeof ordemItemSchema>,
+  tx: Transaction,
+  completar?: { id_local_estoque?: number },
+) {
+  const before = await required(ctx, id, tx)
+  if (before.status !== "PLANEJADA")
+    conflict("Itens somente podem ser incluídos durante o planejamento.")
+  if ((await repo.operationalCounts(ctx, id, tx)).some(Boolean))
+    conflict("Há efeitos operacionais que impedem a inclusão de itens.")
+  if (completar && before._count.ordem_producao_item > 0)
+    conflict(
+      "Esta ordem já foi completada. Recarregue para consultar o item salvo.",
+    )
+  if (before._count.ordem_producao_item >= 200)
+    conflict("Limite de 200 itens por ordem.")
+  if (
+    !input.id_variacao &&
+    (await tx.produto_variacoes.count({
+      where: { id_empresa: ctx.idEmpresa, id_produto: input.id_produto },
+    }))
+  )
+    conflict("Este produto possui grade. Selecione uma variação ativa.")
+  if (completar) {
+    const cabecalho = {
+      quantidade_planejada: input.quantidade,
+      ...(completar.id_local_estoque !== undefined
+        ? { id_local_estoque: completar.id_local_estoque }
+        : {}),
+    }
+    await relationships(ctx, { ...before, ...cabecalho }, tx)
+    await repo.update(ctx, id, cabecalho, tx)
+  }
+  const ficha = await produtoComFicha(tx, ctx, input.id_produto)
+  const fluxo = await fluxos.fluxoProduto(tx, ctx, input.id_produto)
+  validarFluxo(fluxo)
+  const snapshot = await fluxos.snapshot(tx, id)
+  if (
+    snapshot &&
+    (snapshot.fluxoId !== fluxo.id ||
+      snapshot.setores.map((s) => s.id).join() !==
+        fluxo.setores.map((s) => s.id).join())
+  )
+    conflict(
+      "Os itens devem utilizar o mesmo fluxo preservado no snapshot da ordem.",
+    )
+  if (!snapshot) {
     if (
-      snapshot &&
-      (snapshot.fluxoId !== fluxo.id ||
-        snapshot.setores.map((s) => s.id).join() !==
-          fluxo.setores.map((s) => s.id).join())
+      before._count.ordem_producao_fluxo_setor ||
+      before._count.ordem_producao_item
     )
       conflict(
-        "Os itens devem utilizar o mesmo fluxo preservado no snapshot da ordem.",
+        "Esta ordem possui estrutura legada. Utilize o módulo de itens existente.",
       )
-    if (!snapshot) {
-      if (
-        before._count.ordem_producao_fluxo_setor ||
-        before._count.ordem_producao_item
-      )
-        conflict(
-          "Esta ordem possui estrutura legada. Utilize o módulo de itens existente.",
-        )
-      await repo.createStages(ctx, id, fluxo.setores, tx)
-      await fluxos.gravarSnapshot(tx, id, fluxo)
-    }
-    const { id_variacao, ...dadosItem } = input
-    const variacao = id_variacao
-      ? await tx.produto_variacoes.findFirst({
-          where: {
-            id: id_variacao,
-            id_empresa: ctx.idEmpresa,
-            id_produto: input.id_produto,
-            status: "ATIVO",
-          },
-          include: { tamanhos: true },
-        })
-      : null
-    if (id_variacao && !variacao)
-      conflict("Variação inválida para este produto e empresa.")
-    const item = await repo.createItem(
-      ctx,
-      id,
-      {
-        ...dadosItem,
-        ...(variacao
-          ? {
-              id_cor: variacao.id_cor,
-              id_tamanho: variacao.id_tamanho,
-              tamanho: variacao.tamanhos
-                ? Array.from(variacao.tamanhos.nome).slice(0, 30).join("")
-                : input.tamanho,
-            }
-          : {}),
-      },
-      tx,
-    )
-    await repo.createPlan(
-      ctx,
-      id,
-      item.id,
-      calcularInsumos(input.quantidade, ficha.ficha_tecnica_item),
-      tx,
-    )
-    const after = { ...(await required(ctx, id, tx)), itemIncluido: item }
-    await auditar(tx, ctx, before, after)
-    return item
-  })
+    await repo.createStages(ctx, id, fluxo.setores, tx)
+    await fluxos.gravarSnapshot(tx, id, fluxo)
+  }
+  const { id_variacao, ...dadosItem } = input
+  const variacao = id_variacao
+    ? await tx.produto_variacoes.findFirst({
+        where: {
+          id: id_variacao,
+          id_empresa: ctx.idEmpresa,
+          id_produto: input.id_produto,
+          status: "ATIVO",
+        },
+        include: { tamanhos: true },
+      })
+    : null
+  if (id_variacao && !variacao)
+    conflict("Variação inválida para este produto e empresa.")
+  const item = await repo.createItem(
+    ctx,
+    id,
+    {
+      ...dadosItem,
+      ...(variacao
+        ? {
+            id_cor: variacao.id_cor,
+            id_tamanho: variacao.id_tamanho,
+            tamanho: variacao.tamanhos
+              ? Array.from(variacao.tamanhos.nome).slice(0, 30).join("")
+              : input.tamanho,
+          }
+        : {}),
+    },
+    tx,
+  )
+  await variacaoEntradaProducao(tx, ctx, item)
+  await repo.createPlan(
+    ctx,
+    id,
+    item.id,
+    calcularInsumos(input.quantidade, ficha.ficha_tecnica_item),
+    tx,
+  )
+  const after = { ...(await required(ctx, id, tx)), itemIncluido: item }
+  await auditar(tx, ctx, before, after)
+  return item
 }
 // Total acumulado + valor esperado: repetição do mesmo comando não duplica produção.
 export function recordProduction(

@@ -11,12 +11,10 @@ import { montarCadastroOp, type OrdemParaEdicao } from "../cadastro-op"
 
 export function CadastroOpApi({
   id,
-  produtos,
   bloqueado,
   aoSalvar,
 }: {
-  id?: string
-  produtos: { id: number; nome: string }[]
+  id: string
   bloqueado: boolean
   aoSalvar: (id: string) => void
 }) {
@@ -26,10 +24,6 @@ export function CadastroOpApi({
   const [ordem, setOrdem] = useState<OrdemParaEdicao | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState("")
-  const [produtoSelecionado, setProdutoSelecionado] = useState<{
-    id: number
-    nome: string
-  } | null>(null)
   const trava = useRef(false)
   async function abrir() {
     if (trava.current) return
@@ -37,15 +31,15 @@ export function CadastroOpApi({
     setOcupado(true)
     setErro("")
     try {
-      if (id) {
-        const response = await requisitar(`/api/ordens-producao/${id}`, {
-          cache: "no-store",
-        })
-        const body = await response.json()
-        if (!response.ok)
-          throw new Error(body.error ?? "Não foi possível consultar a OP.")
-        setOrdem(body.ordem)
-      }
+      const response = await requisitar(`/api/ordens-producao/${id}`, {
+        cache: "no-store",
+      })
+      const body = await response.json()
+      if (!response.ok)
+        throw new Error(body.error ?? "Não foi possível consultar a OP.")
+      if (!body.ordem.ordem_producao_item.length)
+        throw new Error("Complete a ordem planejada antes de editar.")
+      setOrdem(body.ordem)
       setAberto(true)
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha na consulta.")
@@ -56,7 +50,7 @@ export function CadastroOpApi({
   }
   async function salvar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (trava.current || bloqueado || terminal) return
+    if (trava.current || bloqueado || terminal || !ordem) return
     const body = montarCadastroOp(new FormData(event.currentTarget), ordem)
     if (ordem && Object.keys(body).length === 1) {
       setAberto(false)
@@ -66,14 +60,11 @@ export function CadastroOpApi({
     setOcupado(true)
     setErro("")
     try {
-      const response = await requisitar(
-        `/api/ordens-producao${id ? `/${id}` : ""}`,
-        {
-          method: id ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-      )
+      const response = await requisitar(`/api/ordens-producao/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
       const result = await response.json()
       if (!response.ok)
         throw new Error(result.error ?? "Não foi possível salvar a OP.")
@@ -88,10 +79,6 @@ export function CadastroOpApi({
   }
   const terminal =
     ordem?.status === "CONCLUIDA" || ordem?.status === "CANCELADA"
-  const produtosDisponiveis =
-    produtoSelecionado && !produtos.some((p) => p.id === produtoSelecionado.id)
-      ? [produtoSelecionado, ...produtos]
-      : produtos
   return (
     <div className="space-y-3">
       <Button
@@ -99,14 +86,12 @@ export function CadastroOpApi({
         disabled={bloqueado || ocupado || aberto}
         onClick={() => void abrir()}
       >
-        {ocupado ? "Carregando…" : id ? "Editar OP" : "Abrir ordem de produção"}
+        {ocupado ? "Carregando…" : "Editar OP"}
       </Button>
       {erro && <p role="alert">{erro}</p>}
       {aberto && (
         <form onSubmit={salvar} className="space-y-3 rounded-md border p-4">
-          <h3 className="font-semibold">
-            {id ? "Editar ordem de produção" : "Abrir ordem de produção"}
-          </h3>
+          <h3 className="font-semibold">Editar ordem de produção</h3>
           {terminal && (
             <p>Ordens concluídas ou canceladas não podem ser editadas.</p>
           )}
@@ -114,71 +99,43 @@ export function CadastroOpApi({
             disabled={ocupado || bloqueado || terminal}
             className="grid gap-3 sm:grid-cols-2"
           >
-            {!id && (
-              <Field>
-                <FieldLabel htmlFor={`${prefixo}-produto`}>Produto</FieldLabel>
-                <NativeSelect
-                  id={`${prefixo}-produto`}
-                  name="produto"
-                  required
-                  value={produtoSelecionado?.id ?? ""}
-                  onChange={(event) =>
-                    setProdutoSelecionado(
-                      produtosDisponiveis.find(
-                        (p) => p.id === Number(event.target.value),
-                      ) ?? null,
-                    )
-                  }
-                >
-                  <NativeSelectOption value="" disabled>
-                    Selecione o produto
-                  </NativeSelectOption>
-                  {produtosDisponiveis.map((p) => (
-                    <NativeSelectOption key={p.id} value={p.id}>
-                      {p.nome}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              </Field>
-            )}
-            {(!ordem ||
-              (ordem.status === "PLANEJADA" &&
-                ordem.ordem_producao_item.length === 1)) && (
-              <>
-                <Field>
-                  <FieldLabel htmlFor={`${prefixo}-quantidade`}>
-                    Quantidade planejada
-                  </FieldLabel>
-                  <Input
-                    id={`${prefixo}-quantidade`}
-                    name="quantidade"
-                    type="number"
-                    min="0.001"
-                    max="999999999999.999"
-                    step="0.001"
-                    required
-                    defaultValue={
-                      ordem?.ordem_producao_item[0]?.quantidade ?? ""
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor={`${prefixo}-tamanho`}>
-                    Tamanho
-                  </FieldLabel>
-                  <Input
-                    id={`${prefixo}-tamanho`}
-                    name="tamanho"
-                    required
-                    maxLength={30}
-                    defaultValue={
-                      ordem?.ordem_producao_item[0]?.tamanho ?? "UNICO"
-                    }
-                  />
-                </Field>
-              </>
-            )}
-            {(!ordem || ordem.status === "PLANEJADA") && (
+            {ordem?.status === "PLANEJADA" &&
+              ordem.ordem_producao_item.length === 1 && (
+                <>
+                  <Field>
+                    <FieldLabel htmlFor={`${prefixo}-quantidade`}>
+                      Quantidade planejada
+                    </FieldLabel>
+                    <Input
+                      id={`${prefixo}-quantidade`}
+                      name="quantidade"
+                      type="number"
+                      min="0.001"
+                      max="999999999999.999"
+                      step="0.001"
+                      required
+                      defaultValue={
+                        ordem?.ordem_producao_item[0]?.quantidade ?? ""
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`${prefixo}-tamanho`}>
+                      Tamanho
+                    </FieldLabel>
+                    <Input
+                      id={`${prefixo}-tamanho`}
+                      name="tamanho"
+                      required
+                      maxLength={30}
+                      defaultValue={
+                        ordem?.ordem_producao_item[0]?.tamanho ?? "UNICO"
+                      }
+                    />
+                  </Field>
+                </>
+              )}
+            {ordem?.status === "PLANEJADA" && (
               <Field>
                 <FieldLabel htmlFor={`${prefixo}-prioridade`}>
                   Prioridade

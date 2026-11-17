@@ -1,5 +1,8 @@
 import { assertCompany } from "../catalogos/access"
-import { withCompanyWriteLock } from "../catalogos/transactions"
+import {
+  withCompanyWriteLock,
+  bloquearProdutoCatalogo,
+} from "../catalogos/transactions"
 import { assertProductCategory } from "../categorias/relations"
 import { disputaPersistencia } from "../../src/lib/prisma-concorrencia"
 import { Prisma } from "../../src/generated/prisma/client"
@@ -112,7 +115,7 @@ export async function updateProduto(
   ) {
     return write(() =>
       withCompanyWriteLock(companies, async (database) => {
-        await database.$queryRaw`SELECT id FROM produtos WHERE id=${id} FOR UPDATE`
+        await bloquearProdutoCatalogo(database, id)
         const current = await repository.findWritableWithCompanies(
           id,
           companies,
