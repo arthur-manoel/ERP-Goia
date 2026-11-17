@@ -18,7 +18,14 @@ import { useAutenticacao } from "../provedor-autenticacao"
 
 export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
   const [aberto, setAberto] = useState(false)
-  const { estado, usuario: conta, empresa, sair, saindo } = useAutenticacao()
+  const {
+    estado,
+    usuario: conta,
+    empresa,
+    sair,
+    saindo,
+    erroSaida,
+  } = useAutenticacao()
   const usuarioAtual =
     estado === "autenticado" && conta
       ? {
@@ -91,6 +98,9 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
                 </div>
               ))}
             </dl>
+            {erroSaida && (
+              <p role="alert">Saída sem confirmação. Tente sair novamente.</p>
+            )}
             <Button
               variant="outline"
               disabled={saindo}

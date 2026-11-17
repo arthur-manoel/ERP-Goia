@@ -211,7 +211,7 @@ export async function refresh(token?: string, accessToken?: string) {
 export async function logout(
   token?: string,
   accessToken?: string,
-): Promise<void> {
+): Promise<"preservar-cookie" | void> {
   const claims = accessToken ? readAccessToken(accessToken, true) : null
   if (accessToken !== undefined && !claims)
     throw new HttpError(401, "Não foi possível identificar a sessão.")
@@ -224,8 +224,13 @@ export async function logout(
     cookieSession &&
     (cookieSession.sessao_id !== claims.sid ||
       cookieSession.id_usuario !== Number(claims.id))
-  )
+  ) {
+    const ativo = await repository.withUserTokens(Number(claims.id), (tokens) =>
+      tokens.findActiveRefresh(Number(claims.id), claims.sid),
+    )
+    if (!ativo) return "preservar-cookie"
     throw new HttpError(409, "A sessão do navegador mudou.")
+  }
 
   if (cookieSession) {
     if (cookieSession.sessao_id) {

@@ -33,6 +33,7 @@ type Contexto = {
   entrar: (email: string, password: string) => Promise<void>
   sair: () => Promise<void>
   saindo: boolean
+  erroSaida: boolean
   chaveEmpresa: number
   conferirEmpresa: (chave: number) => void
   requisitar: (url: string, init?: RequestInit) => Promise<Response>
@@ -89,6 +90,7 @@ export function ProvedorAutenticacao({
   const [empresa, setEmpresa] = useState<EmpresaSessao | null>(null)
   const [erroAcesso, setErroAcesso] = useState<string | null>(null)
   const [saindo, setSaindo] = useState(false)
+  const [erroSaida, setErroSaida] = useState(false)
   const [chaveEmpresa, setChaveEmpresa] = useState(0)
   const token = useRef<string | null>(null)
   const tokenRecebido = useRef<string | null>(null)
@@ -123,6 +125,7 @@ export function ProvedorAutenticacao({
     usuarioAtual.current = null
     empresaAtual.current = null
     logoutSolicitado.current = null
+    setErroSaida(false)
     setChaveEmpresa(++versaoEmpresa.current)
     setUsuario(null)
     setEmpresas([])
@@ -374,6 +377,7 @@ export function ProvedorAutenticacao({
     const versao = versaoSessao.current
     const ultimoLogin = ultimaMudanca.current
     setSaindo(true)
+    setErroSaida(false)
     logoutSolicitado.current = versao
     consulta.current?.abort()
     const resultado = comBloqueioSessao(async () => {
@@ -383,6 +387,7 @@ export function ProvedorAutenticacao({
       const response = await fetch("/api/auth/logout", {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(15000),
       })
       if (!response.ok) throw new Error(await mensagemErro(response))
       const confirmacao = await response.json().catch(() => null)
@@ -390,12 +395,17 @@ export function ProvedorAutenticacao({
         throw new Error("Não foi possível confirmar o encerramento da sessão.")
       if (versaoSessao.current === versao) limpar()
       if (sid) canalSessao.current?.postMessage(`logout:${sid}`)
-    }).finally(() => {
-      if (logoutPendente.current === resultado) {
-        logoutPendente.current = null
-        setSaindo(false)
-      }
     })
+      .catch((erro: unknown) => {
+        if (versaoSessao.current === versao) setErroSaida(true)
+        throw erro
+      })
+      .finally(() => {
+        if (logoutPendente.current === resultado) {
+          logoutPendente.current = null
+          setSaindo(false)
+        }
+      })
     logoutPendente.current = resultado
     return resultado
   }, [limpar])
@@ -470,6 +480,7 @@ export function ProvedorAutenticacao({
         entrar,
         sair,
         saindo,
+        erroSaida,
         chaveEmpresa,
         conferirEmpresa,
         requisitar,

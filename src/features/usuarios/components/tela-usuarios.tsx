@@ -198,7 +198,7 @@ function UsuariosDaEmpresa({
   const vinculo = usuarioModal?.usuario_empresa[0]
   async function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
-    if (!modal || salvando || !pronto) return
+    if (!modal || salvando || (!pronto && modal.tipo !== "minha-senha")) return
     const form = new FormData(evento.currentTarget)
     setSalvando(true)
     try {
@@ -307,7 +307,7 @@ function UsuariosDaEmpresa({
   }
 
   function abrir(modalNovo: Modal) {
-    if (modalNovo && !pronto) return
+    if (modalNovo && !pronto && modalNovo.tipo !== "minha-senha") return
     if (modalNovo?.tipo === "permissoes")
       setPermissoes(permissoesDoUsuario(modalNovo.usuario))
     setModal(modalNovo)
@@ -397,7 +397,6 @@ function UsuariosDaEmpresa({
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              disabled={!pronto}
               onClick={() => abrir({ tipo: "minha-senha" })}
             >
               <KeyRound /> Minha senha

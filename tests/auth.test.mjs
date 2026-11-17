@@ -413,6 +413,11 @@ test("rotas: sessão divergente e falha de revogação preservam o cookie", asyn
   assert.ok(await service.verifyAccessToken(anterior.accessToken))
   assert.ok(await service.verifyAccessToken(atual.accessToken))
 
+  await service.logout(anterior.refreshToken, anterior.accessToken)
+  assert.equal((await logoutHandler(request(anterior.accessToken))).status, 200)
+  assert.equal(jar.get("refresh_token"), atual.refreshToken)
+  assert.ok(await service.verifyAccessToken(atual.accessToken))
+
   prisma.refresh_tokens.updateMany = async () => {
     throw new Error("gravação indisponível")
   }

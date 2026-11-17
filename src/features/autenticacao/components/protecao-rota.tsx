@@ -18,6 +18,7 @@ export function ProtecaoRota({ children }: { children: React.ReactNode }) {
     recarregarAcesso,
     sair,
     saindo,
+    erroSaida,
   } = useAutenticacao()
   useEffect(() => {
     if (estado === "anonimo")
@@ -51,14 +52,20 @@ export function ProtecaoRota({ children }: { children: React.ReactNode }) {
             className="text-sm text-muted-foreground"
             role={estado === "erro" ? "alert" : "status"}
           >
-            {erroAcesso ??
-              (empresas.length
-                ? "Escolha a empresa em que deseja trabalhar para continuar."
-                : "Sua conta não possui vínculos ativos com empresas ativas. Solicite ao responsável a conferência do seu vínculo.")}
+            {erroSaida
+              ? "Saída sem confirmação. Tente sair novamente."
+              : (erroAcesso ??
+                (empresas.length
+                  ? "Escolha a empresa em que deseja trabalhar para continuar."
+                  : "Sua conta não possui vínculos ativos com empresas ativas. Solicite ao responsável a conferência do seu vínculo."))}
           </p>
           {estado !== "erro" && <SeletorEmpresa />}
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => void recarregarAcesso()}>
+            <Button
+              variant="outline"
+              disabled={saindo || erroSaida}
+              onClick={() => void recarregarAcesso()}
+            >
               Tentar novamente
             </Button>
             <Button
