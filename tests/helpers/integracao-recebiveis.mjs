@@ -309,6 +309,10 @@ export async function ambienteRecebiveis() {
         ? "no-store"
         : "private, no-store",
     )
+    if (op.descartarResposta) {
+      await response.body?.cancel()
+      return { status: response.status }
+    }
     return {
       status: response.status,
       body: await response.json(),

@@ -137,7 +137,7 @@ function AbrirOrdem({
     dados?: Opcoes
     erro?: string
   }>()
-  const [produto, setProduto] = useState<Produto>()
+  const [produtoEscolhido, setProduto] = useState<Produto>()
   const [variacao, setVariacao] = useState("")
   const [local, setLocal] = useState("")
 
@@ -179,6 +179,8 @@ function AbrirOrdem({
       ? resposta
       : undefined
   const resultados = atual?.dados?.produtos ?? []
+  const produto =
+    resultados.find((p) => p.id === produtoEscolhido?.id) ?? produtoEscolhido
   const produtos =
     produto && !resultados.some((p) => p.id === produto.id)
       ? [produto, ...resultados]

@@ -182,17 +182,19 @@ export const listResumoSchema = listagemBase
 export const opcoesAberturaSchema = z.strictObject({
   busca: z.string().trim().max(100).default(""),
 })
+const tamanhoItemSchema = z.string().trim().min(1).max(30)
 export const ordemItemSchema = z
   .object({
     id_produto: idSchema,
     id_variacao: idSchema.optional(),
     quantidade: decimalSchema.refine((v) => Number(v) > 0),
-    tamanho: z.string().trim().min(1).max(30).default("UNICO"),
+    tamanho: tamanhoItemSchema.default("UNICO"),
   })
   .strict()
 export const patchItemSchema = ordemItemSchema
-  .pick({ quantidade: true, tamanho: true })
+  .pick({ quantidade: true })
   .partial()
+  .extend({ tamanho: tamanhoItemSchema.optional() })
   .strict()
   .refine((v) => Object.keys(v).length > 0, "Informe quantidade ou tamanho.")
 export const apontarSchema = z

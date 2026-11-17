@@ -511,14 +511,23 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       const rotaConcluir = `${rotaOrdens}/${op.id}/etapas/concluir`
       const confirmacao = { etapaId: etapas[i].id }
       const chaveConclusao = randomUUID()
-      const concluida = await post(
-        rotaConcluir,
-        confirmacao,
-        chaveConclusao,
-        200,
-      )
       if (i === etapas.length - 1) {
+        assert.equal(
+          (
+            await a.chamar(rotaConcluir, "POST", confirmacao, {
+              chave: chaveConclusao,
+              descartarResposta: true,
+            })
+          ).status,
+          200,
+        )
         const depoisDaConclusao = await snapshot()
+        const concluida = await post(
+          rotaConcluir,
+          confirmacao,
+          chaveConclusao,
+          200,
+        )
         assert.equal(concluida.ordem.status, "CONCLUIDA")
         assert.deepEqual(
           await post(rotaConcluir, confirmacao, chaveConclusao, 200),
@@ -527,7 +536,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         await post(rotaConcluir, { etapaId: etapas[0].id }, chaveConclusao, 409)
         await post(rotaConcluir, confirmacao, randomUUID(), 409)
         assert.equal(await snapshot(), depoisDaConclusao)
-      }
+      } else await post(rotaConcluir, confirmacao, chaveConclusao, 200)
     }
     assert.equal(
       (await prisma.ordem_producao.findUniqueOrThrow({ where: { id: op.id } }))
@@ -1509,14 +1518,16 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           id_variacao: m.id,
           quantidade: "3",
         })
+        const ajusteCabecalho = await a.chamar(`${rotaOrdens}/${id}`, "PATCH", {
+          statusEsperado: "PLANEJADA",
+          quantidade: "3.000",
+        })
+        assert.equal(ajusteCabecalho.status, 200)
+        assert.equal(ajusteCabecalho.body.ordem.quantidade_planejada, "3")
         await post(rota, {
           id_produto: produto,
           id_variacao: g.id,
           quantidade: "2",
-        })
-        await prisma.ordem_producao.update({
-          where: { id },
-          data: { quantidade_planejada: "3" },
         })
         const planejamento = () =>
           prisma.ordem_producao_item.findMany({

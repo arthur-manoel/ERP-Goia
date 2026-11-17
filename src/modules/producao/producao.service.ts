@@ -272,23 +272,32 @@ export async function alterarOrdemNaTransacao(
       409,
       "O produto de uma ordem com snapshot não pode ser substituído. Crie outra ordem.",
     )
-  const quantidadeAlterada =
+  const quantidadeCabecalho =
     input.quantidade !== undefined &&
-    !(
-      ordem.ordem_producao_item.length === 1
-        ? ordem.ordem_producao_item[0].quantidade
-        : ordem.quantidade_planejada
-    ).eq(input.quantidade)
+    !ordem.quantidade_planejada.eq(input.quantidade)
+      ? input.quantidade
+      : undefined
+  const itemUnico =
+    ordem.ordem_producao_item.length === 1
+      ? ordem.ordem_producao_item[0]
+      : undefined
+  const quantidadeItem =
+    input.quantidade !== undefined &&
+    itemUnico &&
+    !itemUnico.quantidade.eq(input.quantidade)
       ? input.quantidade
       : undefined
   const alteraComposicao =
     input.idProduto !== undefined ||
-    quantidadeAlterada !== undefined ||
+    quantidadeItem !== undefined ||
+    (!itemUnico && quantidadeCabecalho !== undefined) ||
     input.tamanho !== undefined
   // Só PLANEJADA admite mudança estrutural ou recálculo, inclusive antes de EM_PRODUCAO.
   if (
     ordem.status !== "PLANEJADA" &&
-    (alteraComposicao || input.prioridade !== undefined)
+    (alteraComposicao ||
+      quantidadeCabecalho !== undefined ||
+      input.prioridade !== undefined)
   )
     throw new ProducaoError(
       409,
@@ -296,7 +305,7 @@ export async function alterarOrdemNaTransacao(
     )
   validarPrevisao(input.dataPrevisao, ordem.data_inicio)
   if (
-    quantidadeAlterada !== undefined ||
+    quantidadeCabecalho !== undefined ||
     input.observacao !== undefined ||
     input.dataPrevisao !== undefined ||
     input.prioridade !== undefined
@@ -305,19 +314,19 @@ export async function alterarOrdemNaTransacao(
       observacao: input.observacao,
       data_previsao: input.dataPrevisao,
       prioridade: input.prioridade,
-      quantidade_planejada: quantidadeAlterada,
+      quantidade_planejada: quantidadeCabecalho,
     })
   if (alteraComposicao) {
-    if (ordem.ordem_producao_item.length !== 1)
+    if (!itemUnico)
       throw new ProducaoError(
         409,
         "A alteração de composição exige uma ordem com um único item.",
       )
-    const item = ordem.ordem_producao_item[0]
+    const item = itemUnico
     const idProduto = input.idProduto ?? item.id_produto
-    const quantidade = quantidadeAlterada ?? item.quantidade.toString()
+    const quantidade = quantidadeItem ?? item.quantidade.toString()
     // Observação/previsão não recalculam o planejamento existente.
-    if (input.idProduto !== undefined || quantidadeAlterada !== undefined) {
+    if (input.idProduto !== undefined || quantidadeItem !== undefined) {
       const ficha = await produtoComFicha(tx, ctx, idProduto)
       await gravarInsumos(
         tx,
