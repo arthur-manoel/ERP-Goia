@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement, useEffect } from "react"
+import { act, createElement, useEffect, type ReactNode } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { beforeEach, afterEach, expect, it, vi, type Mock } from "vitest"
 import {
@@ -76,7 +76,7 @@ function Modulo() {
     createElement("input", { "aria-label": "Dados da operação" }),
   )
 }
-async function montar(modulo = createElement(Modulo)) {
+async function montar(modulo: ReactNode = createElement(Modulo)) {
   await act(async () => {
     root.render(
       createElement(
