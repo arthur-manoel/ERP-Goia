@@ -76,7 +76,7 @@ export async function criarCenarioEmpresas(prisma) {
       await user("multi", "VENDAS", [2, 3], ["CLIENTES"])
       await user("semVinculos", "ADMINISTRACAO", [])
       await user("semPermissoes", "VENDAS", [0])
-      await user("estoque", "ADMINISTRACAO", [0], ["ESTOQUE"])
+      await user("estoque", "PRODUCAO", [0], ["ESTOQUE"])
       // Vínculo inativo, separado da empresa inativa já presente no perfil de vendas.
       const cargo = await tx.cargos.create({
         data: { id_empresa: empresas[5].id, nome: "VENDAS" },

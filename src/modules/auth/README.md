@@ -55,9 +55,10 @@ resta uma só empresa. A renovação preserva a última
 empresa selecionada em memória se a consulta confirmar que ela continua válida.
 Com armazenamento indisponível, a seleção funciona na página aberta. Após
 uma recarga completa, a empresa única é selecionada automaticamente e, se
-houver várias empresas, a interface pede uma nova escolha. Logout limpa o
-contexto imediatamente, cancela a
-consulta e remove a preferência do usuário. Respostas atrasadas são descartadas
+houver várias empresas, a interface pede uma nova escolha. O logout cancela a
+consulta e pausa as operações pendentes. Após a confirmação do servidor,
+limpa o contexto e remove a preferência do usuário. Sem confirmação, a
+interface mantém disponível a repetição da saída. Respostas atrasadas são descartadas
 por cancelamento e geração/identidade da sessão, inclusive após outro login.
 O canal de sessão, quando disponível, informa às outras abas sobre login e logout.
 

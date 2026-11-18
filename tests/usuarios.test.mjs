@@ -27,7 +27,13 @@ function setup() {
   let memberships = [admin]
   const auth = { user: { id: 5, role: "ADMINISTRACAO" } }
   const cargo = { id: 2, nome: "Produção", status: "ATIVO" }
-  const setor = { id: 3, nome: "Corte", tipo: "Produção", status: "ATIVO" }
+  const setor = {
+    id: 3,
+    nome: "Corte",
+    tipo: "Produção",
+    status: "ATIVO",
+    permissoes_setor: [{ recurso: "ORDENS_PRODUCAO" }],
+  }
   const tx = {
     usuario_empresa: {
       findFirst: async ({ where }) => {
@@ -70,7 +76,7 @@ function setup() {
             ...m,
             empresas: { status: "ATIVA" },
             cargos: cargo,
-            setores: setor,
+            setores: m.id_setor === setor.id ? setor : null,
           })),
         }
       },
