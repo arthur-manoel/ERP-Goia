@@ -29,6 +29,18 @@ Erros: `{ "success": false, "error": "mensagem" }`, com 400/401/403/404/409/429/
 
 Base: `/api/ordem_producao`.
 
+`GET /api/ordens-producao` compartilha o handler, os filtros, a paginação e
+o envelope de resposta da listagem abaixo. A tela usa o resumo em
+`GET /api/ordens-producao/resumo` e mantém o formulário de planejamento
+para criar ou completar ordens planejadas antigas sem item, com destino,
+item e fluxo gravados na mesma transação. A edição por PATCH usa o estado
+esperado e a lista e os detalhes são recarregados após salvar.
+
+A edição envia somente campos alterados: mudar observação ou previsão não
+recalcula insumos. Previsão inalterada preserva o horário persistido; formulário
+sem alterações não gera escrita. A busca de produtos mantém o formulário e a
+seleção atual enquanto carrega as novas opções.
+
 | Método | Caminho | Operação |
 | --- | --- | --- |
 | GET | `/` | Listagem paginada de cabeçalhos e contadores de vínculos |
@@ -45,6 +57,7 @@ Base: `/api/ordem_producao`.
 | POST | `/{id}/concluir` | Conclui última etapa/ordem em produção |
 | GET | `/{id}/itens` | Itens paginados |
 | POST | `/{id}/itens` | Inclui item, ficha de consumo previsto e snapshot de fluxo |
+| POST | `/{id}/completar` | Completa OP vazia com cabeçalho, item, ficha e fluxo na mesma transação |
 | PATCH | `/{id}/itens/{itemId}` | Quantidade/tamanho de item em planejamento |
 | DELETE | `/{id}/itens/{itemId}` | Remove somente item do planejamento sem histórico operacional |
 | PUT | `/{id}/itens/{itemId}/producao` | Registra produção efetiva na última etapa em execução |
@@ -146,7 +159,7 @@ O modelo ordem_producao não contém `data_cadastro`, `data_atualizacao` nem rel
 
 ## Consulta
 
-A tela `/producao/ordens` consulta `GET /api/ordens-producao`. A rota
+A tela `/producao/ordens` consulta `GET /api/ordens-producao/resumo`. A rota
 usa o envelope paginado abaixo, exige leitura em `ORDENS_PRODUCAO` e
 aceita os filtros de cabeçalho da listagem, incluindo
 `status=AGUARDANDO_MATERIAL` para ordens legadas. A tela usa busca pelo
@@ -193,6 +206,12 @@ Filtros: `id_empresa` (conferência do contexto), `id_pedido_cliente`, `id_local
 
 ## Validação
 
+A previsão preserva a data civil codificada em UTC pela API; o início efetivo
+usa o dia no fuso `America/Sao_Paulo`. Assim, uma previsão para hoje permite
+iniciar a OP ou a etapa até 23h59 em São Paulo, mesmo após a virada UTC.
+Previsão de dia anterior continua inválida; o horário
+real de início é preservado e datas de início futuras continuam bloqueadas.
+
 `tests/operacoes-integradas.integration.test.mjs` exercita a listagem e as
 ações da tela por HTTP com o Next compilado e MariaDB local. Além do
 preparador de [operações integradas](../../../docs/operacoes-integradas.md),
@@ -209,3 +228,29 @@ npm run typecheck
 ```
 
 Para persistência, consumo, conclusão, transferência, entrega e financeiro use o cenário HTTP em `tests/operacoes-integradas.integration.test.mjs`, com banco local isolado preparado conforme [operações integradas](../../../docs/operacoes-integradas.md). Os runners antigos que não preparam consumo real/local de destino precisam dessas pré-condições; não se fabricam apontamentos para concluir.
+
+## Conclusão do planejamento vazio
+
+A retomada de uma OP vazia existente pela interface usa POST /api/ordem_producao/{id}/completar com o contrato de item e id_local_estoque opcional. A chamada exige criação e edição de OP. Dentro da transação serializada, o serviço bloqueia a empresa e a ordem, verifica que ela continua PLANEJADA e sem itens, atualiza a meta pela quantidade do item e o local informado e grava item, consumo, fluxo e auditoria. Uma ordem já preenchida retorna 409 antes de qualquer alteração. Falhas posteriores revertem todo o comando.
+
+A inclusão de item também exige id_variacao quando existir qualquer variação do produto na empresa, inclusive inativa. A consulta de opções de reservas informa possui_grade independentemente da lista de variações ativas, para bloquear a abertura pela tela quando todas estiverem inativas.
+
+## Abertura atômica pela interface
+
+POST /api/ordem_producao aceita o campo opcional item com o contrato de inclusão de item. Quando enviado, a meta quantidade_planejada deve corresponder a item.quantidade. O cabeçalho, o item, o fluxo, o consumo e a auditoria são gravados na mesma transação, exigindo somente ORDENS_PRODUCAO.pode_criar. Falha em qualquer etapa reverte toda a abertura.
+
+Exemplo de corpo.
+
+```json
+{
+  "numero": "OP-2026-001",
+  "quantidade_planejada": "3.000",
+  "id_local_estoque": 3,
+  "item": {
+    "id_produto": 12,
+    "quantidade": "3.000"
+  }
+}
+```
+
+A interface envia uma única chamada na abertura. Para retomar uma OP vazia já existente, usa /{id}/completar, que continua exigindo criação e edição. O POST sem item preserva o contrato anterior de criação de cabeçalho para integrações existentes.

@@ -1,4 +1,5 @@
 import "server-only"
+import { proximoNumero as gerarNumero } from "@/lib/sequencias"
 import { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { serializarJsonTextMysql } from "@/lib/limites-texto"
@@ -14,7 +15,22 @@ export class ProducaoError extends HttpError {
     super(status, message)
   }
 }
-export type Contexto = { idUsuario: number; idEmpresa: number }
+export type PermissoesContexto = {
+  ler: boolean
+  criar: boolean
+  editar: boolean
+  excluir: boolean
+}
+/**
+ * `pode` e `administrador` são calculados por `autorizar` no servidor para o
+ * recurso da rota. Ausentes = nenhuma permissão (falha fechada).
+ */
+export type Contexto = {
+  idUsuario: number
+  idEmpresa: number
+  pode?: PermissoesContexto
+  administrador?: boolean
+}
 export type Transaction = Prisma.TransactionClient
 
 const include = {
@@ -22,7 +38,9 @@ const include = {
   ordem_producao_fluxo_setor: { orderBy: { ordem: "asc" as const } },
   ordem_producao_movimentacao_setor: { orderBy: { id: "asc" as const } },
 } satisfies Prisma.ordem_producaoInclude
-export type Ordem = Prisma.ordem_producaoGetPayload<{ include: typeof include }>
+export type Ordem = Prisma.ordem_producaoGetPayload<{
+  include: typeof include
+}>
 
 export function vinculosAtivos(idUsuario: number) {
   return prisma.usuario_empresa.findMany({
@@ -90,43 +108,7 @@ export async function atualizarEstado(
     throw new ProducaoError(409, "A ordem foi alterada por outra operação.")
 }
 export async function proximoNumero(tx: Transaction, idEmpresa: number) {
-  const where = {
-    id_empresa_entidade: { id_empresa: idEmpresa, entidade: "ordem_producao" },
-  }
-  const sequence = await tx.sequencias_automaticas.upsert({
-    where,
-    create: {
-      id_empresa: idEmpresa,
-      entidade: "ordem_producao",
-      ultimo_numero: BigInt(1),
-    },
-    update: { ultimo_numero: { increment: BigInt(1) } },
-  })
-  let numero = sequence.ultimo_numero
-  const ocupado = (valor: bigint) =>
-    tx.ordem_producao.findUnique({
-      where: {
-        id_empresa_numero: { id_empresa: idEmpresa, numero: valor.toString() },
-      },
-      select: { id: true },
-    })
-  if (!(await ocupado(numero))) return numero.toString()
-
-  // A criação de cabeçalho também aceita números fornecidos pelo usuário.
-  // Pule de uma vez os números comuns já usados por esse caminho.
-  const [row] = await tx.$queryRaw<{ maior: bigint | null }[]>`
-    SELECT MAX(CAST(numero AS UNSIGNED)) AS maior
-    FROM ordem_producao
-    WHERE id_empresa = ${idEmpresa} AND numero REGEXP '^[1-9][0-9]{0,17}$'
-  `
-  const maior = row.maior === null ? BigInt(0) : BigInt(row.maior)
-  numero = (maior > numero ? maior : numero) + BigInt(1)
-  while (await ocupado(numero)) numero++
-  await tx.sequencias_automaticas.update({
-    where,
-    data: { ultimo_numero: numero },
-  })
-  return numero.toString()
+  return gerarNumero(tx, "ordem_producao", { idEmpresa })
 }
 export async function auditar(
   tx: Transaction,

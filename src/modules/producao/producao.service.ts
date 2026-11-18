@@ -1,4 +1,5 @@
 import "server-only"
+import { previsaoAnteriorAoDiaDeInicio } from "./producao.datas"
 import { Prisma } from "@/generated/prisma/client"
 import type {
   AbrirInput,
@@ -145,7 +146,7 @@ function validarPrevisao(
   previsao: Date | null | undefined,
   inicio: Date | null,
 ) {
-  if (previsao && inicio && previsao < inicio)
+  if (previsaoAnteriorAoDiaDeInicio(previsao, inicio))
     throw new ProducaoError(
       400,
       "A previsão não pode ser anterior ao início da produção.",

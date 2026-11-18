@@ -27,6 +27,7 @@ type Operation =
   | "items"
   | "stages"
   | "addItem"
+  | "complete"
   | "editItem"
   | "removeItem"
   | "production"
@@ -70,6 +71,10 @@ async function execute(
           ctx.status === 401 ? "Não autenticado." : "Acesso negado.",
         ),
       )
+    if (operation === "complete") {
+      const permissaoCriar = await autorizar(request, "criar")
+      if (permissaoCriar instanceof Response) return permissaoCriar
+    }
     return respond(
       async () => {
         if (operation === "listResumo") {
@@ -150,6 +155,13 @@ async function execute(
             id,
             validate(schemas.ordemPaginationSchema, readQuery(request)),
           )
+        if (operation === "complete") {
+          const { id_local_estoque, ...item } = validate(
+            schemas.completarOrdemSchema,
+            await readJson(request),
+          )
+          return service.addItem(ctx, id, item, { id_local_estoque })
+        }
         if (operation === "addItem")
           return service.addItem(
             ctx,
@@ -170,7 +182,7 @@ async function execute(
           )
         return service.action(ctx, id, operation)
       },
-      operation === "create" || operation === "addItem" ? 201 : 200,
+      ["create", "addItem", "complete"].includes(operation) ? 201 : 200,
     )
   } catch (error) {
     return errorResponse(error)
@@ -211,3 +223,6 @@ export const startStageHandler = (request: Request, context: StageContext) =>
   execute(request, "startStage", context)
 export const finishStageHandler = (request: Request, context: StageContext) =>
   execute(request, "finishStage", context)
+
+export const completeHandler = (request: Request, context: RouteContext) =>
+  execute(request, "complete", context)

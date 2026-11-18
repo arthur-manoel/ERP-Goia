@@ -2,6 +2,7 @@
 
 import { lerRespostaOperacao } from "@/features/erp/resposta-operacao"
 import { CadastroPedidos } from "@/features/pedidos/components/cadastro-pedidos"
+import { CadastroOpApi } from "@/features/producao/components/cadastro-op-api"
 
 import Link from "next/link"
 import {
@@ -55,6 +56,8 @@ import {
   zero,
 } from "../quantidades"
 
+import { FormularioPlanejamentoOP } from "@/features/producao/components/formulario-planejamento-op"
+
 type Origem = "PEDIDO" | "PRODUCAO" | "RESERVAS"
 type Variacao = {
   id: number
@@ -86,6 +89,8 @@ type Produto = {
   id: number
   nome: string
   unidade: string
+  permite_producao: boolean
+  possui_grade: boolean
   produto_variacoes: Variacao[]
   estoque: {
     id_local_estoque: number
@@ -190,7 +195,12 @@ async function json<T>(response: Response): Promise<T> {
   const value = await response.json()
   return (value.data ?? value) as T
 }
-function useConsulta<T>(url: string | null, requisitar: Api, revisao: number) {
+function useConsulta<T>(
+  url: string | null,
+  requisitar: Api,
+  revisao: number,
+  manterDados = false,
+) {
   const [estado, setEstado] = useState<{
     url?: string
     dados: T | null
@@ -212,21 +222,21 @@ function useConsulta<T>(url: string | null, requisitar: Api, revisao: number) {
       })
       .catch((e: unknown) => {
         if (!controller.signal.aborted)
-          setEstado({
+          setEstado((anterior) => ({
             url,
-            dados: null,
+            dados: manterDados ? anterior.dados : null,
             erro: e instanceof Error ? e.message : "Falha na consulta.",
             status:
               e instanceof Error && typeof e.cause === "number"
                 ? e.cause
                 : undefined,
             revisao,
-          })
+          }))
       })
     return () => controller.abort()
-  }, [url, requisitar, revisao])
+  }, [url, requisitar, revisao, manterDados])
   return {
-    ...(estado.url === url
+    ...(estado.url === url || (url && manterDados)
       ? estado
       : { dados: null, erro: "", status: undefined }),
     carregando: Boolean(
@@ -380,6 +390,8 @@ function Conteudo({
     `/api/estoque/reservas/opcoes?busca=${encodeURIComponent(buscaProduto)}`,
     requisitar,
     revisao,
+    // A busca de produtos não deve desmontar a OP nem apagar o formulário aberto.
+    true,
   )
   async function enviar(
     url: string,
@@ -523,6 +535,7 @@ function Conteudo({
           requisitar={requisitar}
           revisao={revisao}
           revisaoEntrega={revisaoEntrega}
+          aoAtualizar={() => setRevisao((r) => r + 1)}
           opcoes={opcoes}
           erroOpcoes={erroOpcoes}
           bloqueado={bloqueado}
@@ -552,6 +565,7 @@ function Conteudo({
               requisitar={requisitar}
               revisao={revisao}
               revisaoEntrega={revisaoEntrega}
+              aoAtualizar={() => setRevisao((r) => r + 1)}
               opcoes={opcoes}
               bloqueado={bloqueado}
               enviar={enviar}
@@ -880,6 +894,7 @@ function DocumentoOperacional({
   requisitar,
   revisao,
   revisaoEntrega,
+  aoAtualizar,
   opcoes,
   erroOpcoes,
   bloqueado,
@@ -890,6 +905,7 @@ function DocumentoOperacional({
   requisitar: Api
   revisao: number
   revisaoEntrega: number
+  aoAtualizar: () => void
   opcoes: Opcoes | null
   erroOpcoes?: string
   bloqueado: boolean
@@ -900,6 +916,8 @@ function DocumentoOperacional({
   const [escolhido, setId] = useState(ordemInicial?.toString() ?? "")
   const [status, setStatus] = useState("")
   const [repetirConsulta, setRepetirConsulta] = useState(0)
+  const [revisaoCadastro, setRevisaoCadastro] = useState(0)
+  const [planejamento, setPlanejamento] = useState<"novo" | Ordem | null>(null)
   const urlInicial = useSyncExternalStore(
     useCallback((fn) => {
       window.addEventListener("popstate", fn)
@@ -918,27 +936,27 @@ function DocumentoOperacional({
   const url =
     origem === "PEDIDO"
       ? `/api/pedidos?pagina=${pagina}&limite=25&busca=${encodeURIComponent(busca)}`
-      : `/api/ordens-producao?page=${pagina}&limit=25&busca=${encodeURIComponent(busca)}${status ? `&status=${status}` : ""}`
+      : `/api/ordens-producao/resumo?page=${pagina}&limit=25&busca=${encodeURIComponent(busca)}${status ? `&status=${status}` : ""}`
   const lista = useConsulta<{
     dados?: { idPedido: number; numero: string; status: string }[]
     paginacao?: { totalPaginas: number }
     rows?: ResumoOrdem[]
     totalPages?: number
-  }>(url, requisitar, revisao + repetirConsulta)
+  }>(url, requisitar, revisao + repetirConsulta + revisaoCadastro)
   const cabecalho = useConsulta<{
     ordem: DadosOrdem
     fluxoSnapshot?: { nome: string }
   }>(
     origem === "PRODUCAO" && id ? `/api/ordens-producao/${id}` : null,
     requisitar,
-    revisao,
+    revisao + revisaoCadastro,
   )
   const detalhes = useConsulta<Pedido | Ordem>(
     id && opcoes
       ? `/api/${origem === "PEDIDO" ? "pedidos" : "ordem_producao"}/${id}/operacao`
       : null,
     requisitar,
-    revisao,
+    revisao + revisaoCadastro,
   )
   const rows =
     lista.dados?.rows ??
@@ -956,6 +974,55 @@ function DocumentoOperacional({
           : "Ordens de produção"
       }
     >
+      {origem === "PRODUCAO" && opcoes && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={bloqueado || !opcoes.locais.length}
+            onClick={() => setPlanejamento("novo")}
+          >
+            Nova ordem com número manual
+          </Button>
+          {id &&
+            detalhes.dados &&
+            "ordem_producao_item" in detalhes.dados &&
+            detalhes.dados.ordem_producao_item.length > 0 && (
+              <CadastroOpApi
+                key={`editar:${id}:${revisao}:${revisaoCadastro}`}
+                id={id}
+                bloqueado={bloqueado}
+                aoSalvar={() => setRevisaoCadastro((r) => r + 1)}
+              />
+            )}
+          {!opcoes.locais.length && (
+            <p>Cadastre um local de estoque ativo para abrir a ordem.</p>
+          )}
+          {detalhes.dados?.status === "PLANEJADA" &&
+            "ordem_producao_item" in detalhes.dados &&
+            detalhes.dados.ordem_producao_item.length === 0 && (
+              <Button
+                variant="outline"
+                disabled={bloqueado}
+                onClick={() => setPlanejamento(detalhes.dados as Ordem)}
+              >
+                Completar ordem planejada
+              </Button>
+            )}
+        </div>
+      )}
+      {planejamento && opcoes && (
+        <FormularioPlanejamentoOP
+          inicial={planejamento === "novo" ? undefined : planejamento}
+          produtos={opcoes.produtos}
+          locais={opcoes.locais}
+          onClose={() => setPlanejamento(null)}
+          onSalvo={(id) => {
+            setId(String(id))
+            setPlanejamento(null)
+            setRevisaoCadastro((r) => r + 1)
+            aoAtualizar()
+          }}
+        />
+      )}
       <Field>
         <FieldLabel htmlFor="buscar-documento">
           Buscar número do documento
@@ -1067,16 +1134,17 @@ function DocumentoOperacional({
           <AlertDescription>{cabecalho.erro}</AlertDescription>
         </Alert>
       )}
-      {cabecalho.dados && (erroOpcoes || detalhes.status === 403) && (
-        <AcoesFluxoOrdem
-          ordem={cabecalho.dados.ordem}
-          comSnapshot={Boolean(cabecalho.dados.fluxoSnapshot)}
-          faltaDestino={cabecalho.dados.ordem.id_local_estoque === null}
-          podeConcluir={false}
-          bloqueado={bloqueado || cabecalho.carregando}
-          enviar={enviar}
-        />
-      )}
+      {cabecalho.dados &&
+        ((!opcoes && erroOpcoes) || detalhes.status === 403) && (
+          <AcoesFluxoOrdem
+            ordem={cabecalho.dados.ordem}
+            comSnapshot={Boolean(cabecalho.dados.fluxoSnapshot)}
+            faltaDestino={cabecalho.dados.ordem.id_local_estoque === null}
+            podeConcluir={false}
+            bloqueado={bloqueado || cabecalho.carregando}
+            enviar={enviar}
+          />
+        )}
       {detalhes.erro && (
         <Alert variant="destructive">
           <AlertDescription>{detalhes.erro}</AlertDescription>
@@ -1694,6 +1762,22 @@ function DetalheDocumento({
       )}
       {ordem && (
         <>
+          {ordem.ordem_producao_consumo_planejado.length > 0 && (
+            <section aria-label="Consumo planejado">
+              <h3 className="font-semibold">Consumo planejado</h3>
+              <ul>
+                {ordem.ordem_producao_consumo_planejado.map(
+                  (material, indice) => (
+                    <li key={`${material.id_materia_prima}:${indice}`}>
+                      {material.produtos.nome} ·{" "}
+                      {formatarQuantidade(material.quantidade_necessaria)}{" "}
+                      {material.produtos.unidade}
+                    </li>
+                  ),
+                )}
+              </ul>
+            </section>
+          )}
           {faltaDestino &&
             !["CONCLUIDA", "CANCELADA"].includes(ordem.status) && (
               <form
