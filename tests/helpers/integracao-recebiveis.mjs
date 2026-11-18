@@ -321,7 +321,8 @@ export async function ambienteRecebiveis() {
         (method === "PATCH" && /^\/api\/contas_receber\/\d+$/.test(rota)) ||
         /^\/api\/estoque\/(entradas|saidas|ajustes|saldo)(?:\?|$)/.test(rota) ||
         (rota.startsWith("/api/ordem_producao") &&
-          !/\/(consumos|operacao)(?:\?|$)/.test(rota))
+          !/\/(consumos|operacao)(?:\?|$)/.test(rota)) ||
+        /^\/api\/compras\/compras(?:$|\/\d+\/receber$)/.test(rota)
         ? "no-store"
         : "private, no-store",
     )
