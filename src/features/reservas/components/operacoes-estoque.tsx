@@ -1108,11 +1108,12 @@ function DocumentoOperacional({
       </div>
       {origem === "PRODUCAO" && lista.status !== 401 && (
         <CadastroOrdem
-          key={id}
+          key={`cadastro:${id}`}
           requisitar={requisitar}
           ordem={cabecalho.dados?.ordem ?? null}
           fluxo={cabecalho.dados?.fluxoSnapshot?.nome}
           bloqueado={bloqueado || cabecalho.carregando}
+          revisaoDados={revisao}
           enviar={enviar}
         />
       )}
@@ -1145,7 +1146,7 @@ function DocumentoOperacional({
             requisitar={requisitar}
             revisao={revisao}
             revisaoEntrega={revisaoEntrega}
-            key={id}
+            key={`detalhe:${id}`}
             origem={origem}
             documento={detalhes.dados}
             opcoes={opcoes}

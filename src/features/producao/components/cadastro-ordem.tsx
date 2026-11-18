@@ -71,12 +71,14 @@ export function CadastroOrdem({
   ordem,
   fluxo,
   bloqueado,
+  revisaoDados,
   enviar,
 }: {
   requisitar: Consulta
   ordem: OrdemCadastro | null
   fluxo?: string
   bloqueado: boolean
+  revisaoDados: number
   enviar: Enviar
 }) {
   const [abrir, setAbrir] = useState(false)
@@ -96,6 +98,7 @@ export function CadastroOrdem({
           requisitar={requisitar}
           enviar={enviar}
           bloqueado={bloqueado}
+          revisaoDados={revisaoDados}
         />
       )}
       {ordem && (
@@ -133,13 +136,16 @@ function AbrirOrdem({
   requisitar,
   enviar,
   bloqueado,
+  revisaoDados,
 }: {
   requisitar: Consulta
   enviar: Enviar
   bloqueado: boolean
+  revisaoDados: number
 }) {
   const [busca, setBusca] = useState("")
-  const [revisao, setRevisao] = useState(0)
+  const [repeticao, setRepeticao] = useState(0)
+  const revisao = revisaoDados + repeticao
   const [resposta, setResposta] = useState<{
     busca: string
     revisao: number
@@ -235,7 +241,7 @@ function AbrirOrdem({
       prioridade: fd.get("prioridade"),
       observacao: String(fd.get("observacao") ?? "").trim() || null,
       ...(previsao ? { dataPrevisao: `${previsao}T00:00:00.000Z` } : {}),
-    }).then(() => setRevisao((r) => r + 1))
+    })
   }
 
   return (
@@ -291,7 +297,7 @@ function AbrirOrdem({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setRevisao((r) => r + 1)}
+                onClick={() => setRepeticao((r) => r + 1)}
               >
                 Tentar novamente
               </Button>
