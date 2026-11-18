@@ -71,14 +71,12 @@ export function CadastroOrdem({
   ordem,
   fluxo,
   bloqueado,
-  revisaoDados,
   enviar,
 }: {
   requisitar: Consulta
   ordem: OrdemCadastro | null
   fluxo?: string
   bloqueado: boolean
-  revisaoDados: number
   enviar: Enviar
 }) {
   const [abrir, setAbrir] = useState(false)
@@ -98,7 +96,6 @@ export function CadastroOrdem({
           requisitar={requisitar}
           enviar={enviar}
           bloqueado={bloqueado}
-          revisaoDados={revisaoDados}
         />
       )}
       {ordem && (
@@ -136,23 +133,24 @@ function AbrirOrdem({
   requisitar,
   enviar,
   bloqueado,
-  revisaoDados,
 }: {
   requisitar: Consulta
   enviar: Enviar
   bloqueado: boolean
-  revisaoDados: number
 }) {
   const [busca, setBusca] = useState("")
-  const [repeticao, setRepeticao] = useState(0)
-  const revisao = revisaoDados + repeticao
+  const [revisao, setRevisao] = useState(0)
   const [resposta, setResposta] = useState<{
     busca: string
     revisao: number
     dados?: Opcoes
     erro?: string
   }>()
-  const [produto, setProduto] = useState<Produto>()
+  const [selecao, setSelecao] = useState<{
+    produto: Produto
+    revisao: number
+  }>()
+  const produto = selecao?.produto
   const [local, setLocal] = useState("")
 
   useEffect(() => {
@@ -170,11 +168,13 @@ function AbrirOrdem({
           throw new Error(body.error ?? "Não foi possível carregar as opções.")
         if (!controller.signal.aborted) {
           const dados = body.data as Opcoes
-          setProduto(
-            (selecionado) =>
-              dados.produtos.find((p) => p.id === selecionado?.id) ??
-              selecionado,
-          )
+          setSelecao((anterior) => {
+            const atualizado = dados.produtos.find(
+              (p) => p.id === anterior?.produto.id,
+            )
+            if (atualizado) return { produto: atualizado, revisao }
+            return anterior?.revisao === revisao ? anterior : undefined
+          })
           setResposta({ busca, revisao, dados })
         }
       } catch (error) {
@@ -235,7 +235,7 @@ function AbrirOrdem({
       prioridade: fd.get("prioridade"),
       observacao: String(fd.get("observacao") ?? "").trim() || null,
       ...(previsao ? { dataPrevisao: `${previsao}T00:00:00.000Z` } : {}),
-    })
+    }).then(() => setRevisao((r) => r + 1))
   }
 
   return (
@@ -264,7 +264,12 @@ function AbrirOrdem({
             value={produto?.id ?? ""}
             disabled={!atual?.dados}
             onChange={(e) => {
-              setProduto(produtos.find((p) => p.id === Number(e.target.value)))
+              const escolhido = produtos.find(
+                (p) => p.id === Number(e.target.value),
+              )
+              setSelecao(
+                escolhido ? { produto: escolhido, revisao } : undefined,
+              )
               setLocal("")
             }}
           >
@@ -286,7 +291,7 @@ function AbrirOrdem({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setRepeticao((r) => r + 1)}
+                onClick={() => setRevisao((r) => r + 1)}
               >
                 Tentar novamente
               </Button>
