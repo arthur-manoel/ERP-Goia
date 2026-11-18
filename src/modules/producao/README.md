@@ -191,8 +191,8 @@ Valores decimais equivalentes, como `3` e `3.000`, preservam o planejamento.
 Para avançar, a tela envia situação e setor esperados e mantém a mesma chave
 ao recuperar uma tentativa inconclusiva. Ordens com snapshot
 iniciam e concluem etapas com o ID da etapa. Concluir a última etapa encerra a
-ordem. Ordens legadas sem snapshot usam `/encerrar`. Tanto `/etapas/concluir`
-quanto `/encerrar` aceitam `Idempotency-Key`. Repita a chave e o corpo originais
+ordem. Ordens legadas sem snapshot usam `/encerrar`. Início de etapa,
+conclusão e encerramento aceitam `Idempotency-Key`. Repita a chave e o corpo originais
 para consultar a confirmação gravada depois de uma falha de comunicação.
 Reservas, consumo real,
 quantidade efetiva e entrada de acabado mantêm as regras operacionais e as

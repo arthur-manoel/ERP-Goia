@@ -353,6 +353,30 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     assert.equal(resumo.body.data.rows[0].quantidade_planejada, "3")
     assert.equal(resumo.body.data.rows[0].etapaAtual.ordem, 1)
     assert.equal(resumo.body.data.rows[0].itens[0].quantidade_produzida, "0")
+    const outraCor = await prisma.cores.create({
+      data: { id_empresa: empresas[1], nome: "Cor da outra empresa" },
+    })
+    const outroTamanho = await prisma.tamanhos.create({
+      data: { id_empresa: empresas[1], nome: "Tamanho da outra empresa" },
+    })
+    try {
+      await prisma.ordem_producao_item.update({
+        where: { id: itemOP.id },
+        data: { id_cor: outraCor.id, id_tamanho: outroTamanho.id },
+      })
+      const legado = await listar("?page=1&limit=1")
+      assert.equal(legado.status, 200)
+      const dimensoes = legado.body.data.rows[0].itens[0]
+      assert.equal(dimensoes.id_cor, null)
+      assert.equal(dimensoes.id_tamanho, null)
+      assert.equal(dimensoes.cores, null)
+      assert.equal(dimensoes.tamanhos, null)
+    } finally {
+      await prisma.ordem_producao_item.update({
+        where: { id: itemOP.id },
+        data: { id_cor: itemOP.id_cor, id_tamanho: itemOP.id_tamanho },
+      })
+    }
     assert.equal((await listar("?page=0")).status, 400)
     assert.equal((await listar("?status=INEXISTENTE")).status, 400)
     assert.equal((await listar("", { usuario: null })).status, 401)

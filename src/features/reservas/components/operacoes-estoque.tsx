@@ -2,7 +2,6 @@
 
 import { lerRespostaOperacao } from "@/features/erp/resposta-operacao"
 import { CadastroPedidos } from "@/features/pedidos/components/cadastro-pedidos"
-import { CadastroOpApi } from "@/features/producao/components/cadastro-op-api"
 
 import Link from "next/link"
 import {
@@ -40,6 +39,7 @@ import {
   CadastroOrdem,
   type ResumoOrdem,
   type DadosOrdem,
+  type OrdemCadastro,
 } from "@/features/producao/components/cadastro-ordem"
 import { formatarDataHora, formatarQuantidade } from "@/lib/formatacao"
 import {
@@ -944,7 +944,7 @@ function DocumentoOperacional({
     totalPages?: number
   }>(url, requisitar, revisao + repetirConsulta + revisaoCadastro)
   const cabecalho = useConsulta<{
-    ordem: DadosOrdem
+    ordem: OrdemCadastro
     fluxoSnapshot?: { nome: string }
   }>(
     origem === "PRODUCAO" && id ? `/api/ordens-producao/${id}` : null,
@@ -982,17 +982,6 @@ function DocumentoOperacional({
           >
             Nova ordem com número manual
           </Button>
-          {id &&
-            detalhes.dados &&
-            "ordem_producao_item" in detalhes.dados &&
-            detalhes.dados.ordem_producao_item.length > 0 && (
-              <CadastroOpApi
-                key={`editar:${id}:${revisao}:${revisaoCadastro}`}
-                id={id}
-                bloqueado={bloqueado}
-                aoSalvar={() => setRevisaoCadastro((r) => r + 1)}
-              />
-            )}
           {!opcoes.locais.length && (
             <p>Cadastre um local de estoque ativo para abrir a ordem.</p>
           )}
@@ -1117,18 +1106,16 @@ function DocumentoOperacional({
           Próxima
         </Button>
       </div>
-      {origem === "PRODUCAO" &&
-        lista.status !== 401 &&
-        lista.status !== 403 && (
-          <CadastroOrdem
-            key={id}
-            requisitar={requisitar}
-            ordem={cabecalho.dados?.ordem ?? null}
-            fluxo={cabecalho.dados?.fluxoSnapshot?.nome}
-            bloqueado={bloqueado || cabecalho.carregando}
-            enviar={enviar}
-          />
-        )}
+      {origem === "PRODUCAO" && lista.status !== 401 && (
+        <CadastroOrdem
+          key={id}
+          requisitar={requisitar}
+          ordem={cabecalho.dados?.ordem ?? null}
+          fluxo={cabecalho.dados?.fluxoSnapshot?.nome}
+          bloqueado={bloqueado || cabecalho.carregando}
+          enviar={enviar}
+        />
+      )}
       {cabecalho.erro && (
         <Alert variant="destructive">
           <AlertDescription>{cabecalho.erro}</AlertDescription>
@@ -1216,7 +1203,11 @@ function ListaOrdens({
             <TableCell>
               {ordem.itens.map((item) => (
                 <div key={item.id}>
-                  {[item.produtos.nome, item.cores?.nome, item.tamanhos?.nome]
+                  {[
+                    item.produtos.nome,
+                    item.cores?.nome,
+                    item.tamanhos?.nome ?? item.tamanhoLegado,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                 </div>

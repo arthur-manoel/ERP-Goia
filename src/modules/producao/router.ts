@@ -21,7 +21,6 @@ import {
   idSchema,
 } from "./producao.schema"
 import {
-  executarEtapa,
   consultarOrdem,
   abrirOrdemNaTransacao,
   alterarOrdemNaTransacao,
@@ -49,6 +48,7 @@ async function confirmarEscrita<T>(
     | "EDICAO_ORDEM_PRODUCAO"
     | "AVANCO_ORDEM_PRODUCAO"
     | "ENCERRAMENTO_ORDEM_PRODUCAO"
+    | "INICIO_ETAPA_ORDEM_PRODUCAO"
     | "CONCLUSAO_ETAPA_ORDEM_PRODUCAO",
   input: object,
   operacao: (tx: Transaction) => Promise<T>,
@@ -159,6 +159,16 @@ async function executar(
         (tx) => conferir(tx, ctx, [["ESTOQUE", "editar"]]),
       )
     }
+    if (operacao === "iniciarEtapa") {
+      const { etapaId } = validar(etapaSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "INICIO_ETAPA_ORDEM_PRODUCAO",
+        { id, etapaId },
+        (tx) => executarEtapaNaTransacao(tx, ctx, id, etapaId, true),
+      )
+    }
     if (operacao === "concluirEtapa") {
       const { etapaId } = validar(etapaSchema)
       return await confirmarEscrita(
@@ -181,10 +191,7 @@ async function executar(
         },
       )
     }
-    const result =
-      operacao === "consultar"
-        ? await consultarOrdem(ctx, id)
-        : await executarEtapa(ctx, id, validar(etapaSchema).etapaId, true)
+    const result = await consultarOrdem(ctx, id)
     return Response.json(result, {
       status: 200,
       headers: { "Cache-Control": "no-store" },

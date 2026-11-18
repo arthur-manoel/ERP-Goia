@@ -147,10 +147,11 @@ export async function listarResumo(
               id_produto: true,
               id_cor: true,
               id_tamanho: true,
+              tamanho: true,
               quantidade_produzida: true,
               produtos: { select: { nome: true } },
-              cores: { select: { nome: true } },
-              tamanhos: { select: { nome: true } },
+              cores: { select: { nome: true, id_empresa: true } },
+              tamanhos: { select: { nome: true, id_empresa: true } },
             },
           },
           ordem_producao_fluxo_setor: {
@@ -188,7 +189,32 @@ export async function listarResumo(
         !["CONCLUIDA", "CANCELADA"].includes(ordem.status)
           ? (ordem_producao_fluxo_setor[0] ?? null)
           : null,
-      itens: ordem_producao_item,
+      itens: ordem_producao_item.map(
+        ({ cores, tamanhos, tamanho: rotulo, ...item }) => {
+          const cor =
+            cores?.id_empresa === null || cores?.id_empresa === ctx.idEmpresa
+              ? cores
+              : null
+          const tamanho =
+            tamanhos?.id_empresa === ctx.idEmpresa ? tamanhos : null
+          const tamanhoLegado = rotulo.trim()
+          return {
+            ...item,
+            id_cor: cor ? item.id_cor : null,
+            id_tamanho: tamanho ? item.id_tamanho : null,
+            cores: cor ? { nome: cor.nome } : null,
+            tamanhos: tamanho ? { nome: tamanho.nome } : null,
+            tamanhoLegado:
+              item.id_tamanho === null &&
+              tamanhoLegado &&
+              !["unico", "único"].includes(
+                tamanhoLegado.toLocaleLowerCase("pt-BR"),
+              )
+                ? tamanhoLegado
+                : null,
+          }
+        },
+      ),
     }),
   )
   return { rows, count }

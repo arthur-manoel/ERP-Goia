@@ -169,11 +169,12 @@ export function update(
       const order = await buscarOrdem(tx, ctx, id)
       // O fluxo existente sincroniza um único item. Com vários itens, a meta
       // geral não redistribui quantidades; cada item tem seu próprio planejamento.
+      const [item] = order.ordem_producao_item
       if (
         order.ordem_producao_item.length === 1 &&
-        new Prisma.Decimal(input.quantidade_planejada).gt(0)
+        new Prisma.Decimal(input.quantidade_planejada).gt(0) &&
+        !item.quantidade.eq(input.quantidade_planejada)
       ) {
-        const item = order.ordem_producao_item[0]
         const ficha = await produtoComFicha(tx, ctx, item.id_produto)
         await repo.deletePlan(ctx, id, item.id, tx)
         await repo.createPlan(

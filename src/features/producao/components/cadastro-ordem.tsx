@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
 import { paraEscala } from "@/modules/compras/compras.regras"
+import type { OrdemParaEdicao } from "../cadastro-op"
 
 type Consulta = (url: string, init?: RequestInit) => Promise<Response>
 type Enviar = (url: string, body: unknown, metodo?: string) => Promise<void>
@@ -30,6 +31,9 @@ export type DadosOrdem = {
   }[]
 }
 
+export type OrdemCadastro = DadosOrdem &
+  Pick<OrdemParaEdicao, "ordem_producao_item">
+
 export type ResumoOrdem = Pick<
   DadosOrdem,
   "id" | "numero" | "status" | "quantidade_planejada" | "data_previsao"
@@ -42,6 +46,7 @@ export type ResumoOrdem = Pick<
     produtos: { nome: string }
     cores: { nome: string } | null
     tamanhos: { nome: string } | null
+    tamanhoLegado: string | null
   }[]
 }
 
@@ -69,7 +74,7 @@ export function CadastroOrdem({
   enviar,
 }: {
   requisitar: Consulta
-  ordem: DadosOrdem | null
+  ordem: OrdemCadastro | null
   fluxo?: string
   bloqueado: boolean
   enviar: Enviar
@@ -97,7 +102,7 @@ export function CadastroOrdem({
         <div className="space-y-2 rounded-lg border p-4">
           <h3 className="font-semibold">Ordem {ordem.numero}</h3>
           {fluxo && <p>Fluxo cadastrado: {fluxo}</p>}
-          {terminal ? (
+          {terminal || ordem.ordem_producao_item.length === 0 ? (
             ordem.observacao && <p>{ordem.observacao}</p>
           ) : (
             <EditarOrdem
@@ -108,6 +113,10 @@ export function CadastroOrdem({
                 ordem.data_previsao,
                 ordem.quantidade_planejada,
                 ordem.prioridade,
+                ordem.ordem_producao_item.map(({ quantidade, tamanho }) => [
+                  quantidade,
+                  tamanho,
+                ]),
               ])}
               ordem={ordem}
               bloqueado={bloqueado}
@@ -219,7 +228,7 @@ function AbrirOrdem({
       quantidade: String(fd.get("quantidade")).replace(",", "."),
       prioridade: fd.get("prioridade"),
       observacao: String(fd.get("observacao") ?? "").trim() || null,
-      ...(previsao ? { dataPrevisao: `${previsao}T23:59:59Z` } : {}),
+      ...(previsao ? { dataPrevisao: `${previsao}T00:00:00.000Z` } : {}),
     })
   }
 
@@ -350,11 +359,14 @@ function EditarOrdem({
   bloqueado,
   enviar,
 }: {
-  ordem: DadosOrdem
+  ordem: OrdemCadastro
   bloqueado: boolean
   enviar: Enviar
 }) {
   const [erro, setErro] = useState("")
+  const itens = ordem.ordem_producao_item
+  const item = itens.length === 1 ? itens[0] : undefined
+  const quantidadeAtual = item?.quantidade ?? ordem.quantidade_planejada
   function salvar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (bloqueado) return
@@ -363,17 +375,22 @@ function EditarOrdem({
     const previsao = String(fd.get("previsao") ?? "")
     const quantidade = fd.get("quantidade")?.toString().replace(",", ".")
     const mudouQuantidade =
-      quantidade &&
-      paraEscala(quantidade, 3) !== paraEscala(ordem.quantidade_planejada, 3)
+      quantidade && paraEscala(quantidade, 3) !== paraEscala(quantidadeAtual, 3)
+    const tamanho = fd.get("tamanho")?.toString().trim()
+    if (mudouQuantidade && itens.length > 1) {
+      setErro("Altere a quantidade de cada item separadamente no planejamento.")
+      return
+    }
     const prioridade = fd.get("prioridade")
     const alteracoes = {
       ...(observacao !== (ordem.observacao?.trim() || null)
         ? { observacao }
         : {}),
       ...(previsao !== (ordem.data_previsao?.slice(0, 10) ?? "")
-        ? { dataPrevisao: previsao ? `${previsao}T23:59:59Z` : null }
+        ? { dataPrevisao: previsao ? `${previsao}T00:00:00.000Z` : null }
         : {}),
       ...(mudouQuantidade ? { quantidade } : {}),
+      ...(item && tamanho && tamanho !== item.tamanho ? { tamanho } : {}),
       ...(prioridade && prioridade !== ordem.prioridade ? { prioridade } : {}),
     }
     if (Object.keys(alteracoes).length === 0) {
@@ -391,6 +408,20 @@ function EditarOrdem({
     <form onSubmit={salvar} aria-label="Edição da ordem de produção">
       <fieldset disabled={bloqueado} className="grid gap-3 sm:grid-cols-2">
         <CamposOrdem prefixo="op-editar" ordem={ordem} />
+        {ordem.status === "PLANEJADA" && item && (
+          <Field>
+            <FieldLabel htmlFor="op-editar-tamanho">
+              Tamanho registrado
+            </FieldLabel>
+            <Input
+              id="op-editar-tamanho"
+              name="tamanho"
+              required
+              maxLength={30}
+              defaultValue={item.tamanho}
+            />
+          </Field>
+        )}
         {erro && <p role="alert">{erro}</p>}
         <Button type="submit">Salvar alterações da ordem</Button>
       </fieldset>
@@ -403,7 +434,7 @@ function CamposOrdem({
   ordem,
 }: {
   prefixo: string
-  ordem?: DadosOrdem
+  ordem?: OrdemCadastro
 }) {
   const planejamento = !ordem || ordem.status === "PLANEJADA"
   return (
@@ -420,8 +451,18 @@ function CamposOrdem({
               inputMode="decimal"
               required
               pattern="(?:0|[1-9][0-9]{0,11})(?:[.,][0-9]{1,3})?"
-              defaultValue={ordem?.quantidade_planejada}
+              defaultValue={
+                ordem?.ordem_producao_item.length === 1
+                  ? ordem.ordem_producao_item[0].quantidade
+                  : ordem?.quantidade_planejada
+              }
             />
+            {ordem && ordem.ordem_producao_item.length > 1 && (
+              <p className="text-sm text-muted-foreground">
+                O planejamento de uma ordem com vários itens é ajustado por
+                item.
+              </p>
+            )}
           </Field>
           <Field>
             <FieldLabel htmlFor={`${prefixo}-prioridade`}>
