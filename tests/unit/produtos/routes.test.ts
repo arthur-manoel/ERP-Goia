@@ -1,4 +1,4 @@
-import { expect, it } from "vitest"
+import { beforeEach, expect, it } from "vitest"
 import * as collection from "../../../src/app/api/produtos/route"
 import * as item from "../../../src/app/api/produtos/[id]/route"
 import { db } from "../../helpers/prisma"
@@ -97,6 +97,10 @@ it("permite manter unidade e trocar unidade de produto sem histórico", async ()
     ).status,
   ).toBe(200)
   db.produtos.findUnique.mockClear()
+  const locks = db.$queryRaw.mock.calls.map(([sql]) => sql.join("?"))
+  expect(
+    locks.findIndex((sql) => sql.includes("FROM produto_empresa")),
+  ).toBeLessThan(locks.findIndex((sql) => sql.includes("FROM produtos")))
   expect(
     (
       await item.PUT(
@@ -105,7 +109,9 @@ it("permite manter unidade e trocar unidade de produto sem histórico", async ()
       )
     ).status,
   ).toBe(200)
-  expect(db.produtos.findUnique).not.toHaveBeenCalled()
+  expect(
+    db.produtos.findUnique.mock.calls.some(([args]) => args.select?._count),
+  ).toBe(false)
 })
 
 it.each([10, 20])(
@@ -186,4 +192,8 @@ it("limita a inativação às empresas com edição e exclusão", async () => {
     },
     data: { status: "INATIVO" },
   })
+})
+
+beforeEach(() => {
+  db.produto_empresa.findMany.mockResolvedValue([{ id_empresa: 10 }])
 })

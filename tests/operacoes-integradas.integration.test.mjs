@@ -30,6 +30,13 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
   }).format(new Date())
   const produto = a.produtos[1]
   const [m, g] = a.variacoes
+  async function kardex(filtros = {}) {
+    const resposta = await a.chamar(
+      `/api/estoque/kardex?${new URLSearchParams(filtros)}`,
+    )
+    assert.equal(resposta.status, 200, JSON.stringify(resposta.body))
+    return resposta.body
+  }
   const entrada = (
     idProduto,
     idLocalEstoque,
@@ -193,9 +200,51 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     await prisma.produto_fluxo.create({
       data: { id_empresa: empresa, id_produto: produto, id_fluxo: fluxo.id },
     })
-    await entrada(tecido.id, locais[0].id, setores[0].id, "10.000")
+    const fornecedor = await prisma.fornecedores.create({
+      data: { id_empresa: empresa, razao_social: "Fornecedor do tecido" },
+    })
+    const { compra } = await post("/api/compras/compras", {
+      idFornecedor: fornecedor.id,
+      idLocalEstoque: locais[0].id,
+      itens: [
+        { idProduto: tecido.id, quantidade: "10.000", valorUnitario: "2.00" },
+      ],
+    })
+    await post(
+      `/api/compras/compras/${compra.id}/receber`,
+      { idSetorDestino: setores[0].id },
+      randomUUID(),
+      200,
+    )
+    const livroCompra = await kardex({
+      idProduto: tecido.id,
+      idLocalEstoque: locais[0].id,
+      origemTipo: "COMPRA_RECEBIMENTO",
+      origemId: compra.id,
+    })
+    assert.deepEqual(
+      livroCompra.dados.map((r) => [
+        r.tipo,
+        r.quantidade,
+        r.origem,
+        r.observacao,
+      ]),
+      [
+        [
+          "ENTRADA_NF",
+          "10.000",
+          { tipo: "COMPRA_RECEBIMENTO", id: compra.id },
+          null,
+        ],
+      ],
+    )
+    assert.equal(livroCompra.resumo.saldos.fechamento, "10.000")
     await entrada(produto, locais[2].id, setores[5].id, "2.000", m.id)
     await entrada(produto, locais[2].id, setores[5].id, "100.000", g.id)
+    const livroAntesReserva = await kardex({
+      idProduto: produto,
+      idLocalEstoque: locais[2].id,
+    })
     const pedido = await a.pedido({
       status: null,
       entrega: false,
@@ -231,6 +280,10 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       200,
     )
     assert.equal(await snapshot(), s1)
+    assert.deepEqual(
+      await kardex({ idProduto: produto, idLocalEstoque: locais[2].id }),
+      livroAntesReserva,
+    )
     let reserva = await prisma.reserva_estoque.findFirstOrThrow({
       where: { id_pedido_cliente_item: pedido.itens[0].id },
     })
@@ -256,6 +309,88 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       "100 peças G não atendem falta de M",
     )
     assert.equal(await snapshot(), s1)
+    await t.test(
+      "card OP: abertura com previsão hoje, edição e início da primeira etapa",
+      async () => {
+        const criada = await post("/api/ordens-producao", {
+          idProduto: produto,
+          quantidade: "1.000",
+          tamanho: "UNICO",
+          prioridade: "NORMAL",
+          observacao: "Validação HTTP do card",
+          dataPrevisao: `${dia}T00:00:00.000Z`,
+        })
+        const id = criada.ordem.id
+        const listagem = await a.chamar(
+          `/api/ordens-producao?page=1&limit=25&busca=${encodeURIComponent(criada.ordem.numero)}`,
+        )
+        assert.equal(listagem.status, 200)
+        assert.equal(listagem.body.data.count, 1)
+        assert.equal(listagem.body.data.rows[0].id, id)
+        const editar = await a.chamar(`/api/ordens-producao/${id}`, "PATCH", {
+          statusEsperado: "PLANEJADA",
+          quantidade: "2.000",
+          tamanho: "UNICO",
+          prioridade: "ALTA",
+          observacao: "Edição persistida pelo card",
+        })
+        assert.equal(editar.status, 200, JSON.stringify(editar.body))
+        const detalhe = await a.chamar(`/api/ordens-producao/${id}`)
+        assert.equal(detalhe.status, 200)
+        assert.equal(
+          detalhe.body.ordem.observacao,
+          "Edição persistida pelo card",
+        )
+        assert.equal(detalhe.body.ordem.quantidade_planejada, "2")
+        const persistida = await prisma.ordem_producao.findUniqueOrThrow({
+          where: { id },
+        })
+        assert.equal(persistida.quantidade_planejada.toFixed(3), "2.000")
+        await post(
+          `/api/ordem_producao/${id}/regularizar`,
+          {
+            motivo: "Destino da fixture de previsão para hoje",
+            idLocal: locais[1].id,
+            variacoes: [
+              {
+                idItem: criada.ordem.ordem_producao_item[0].id,
+                idVariacao: m.id,
+              },
+            ],
+          },
+          randomUUID(),
+          200,
+        )
+        await post(`/api/ordem_producao/${id}/liberar`, {}, randomUUID(), 200)
+        const [primeiraEtapa] =
+          await prisma.ordem_producao_fluxo_setor.findMany({
+            where: { id_ordem_producao: id },
+            orderBy: { ordem: "asc" },
+          })
+        await post(
+          `/api/ordem_producao/${id}/etapas/${primeiraEtapa.id}/iniciar`,
+          {},
+          randomUUID(),
+          200,
+        )
+        const iniciada = await prisma.ordem_producao.findUniqueOrThrow({
+          where: { id },
+        })
+        assert.equal(iniciada.status, "EM_PRODUCAO")
+        assert.ok(iniciada.data_inicio)
+        assert.equal(
+          iniciada.data_previsao.toISOString(),
+          persistida.data_previsao.toISOString(),
+        )
+        const semLogin = await a.chamar(
+          "/api/ordens-producao",
+          "GET",
+          undefined,
+          { usuario: null },
+        )
+        assert.equal(semLogin.status, 401)
+      },
+    )
     op = await post("/api/ordem_producao", {
       numero: `OP-${randomUUID()}`,
       quantidade_planejada: "3.000",
@@ -398,6 +533,20 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         ["ENTRADA_PRODUCAO", "3.000"],
       ],
     )
+    for (const mov of movimentosOP) {
+      const registro = await kardex({
+        idProduto: mov.id_produto,
+        idLocalEstoque: mov.id_local_estoque,
+        origemTipo: mov.origem_tipo,
+        origemId: op.id,
+      })
+      assert.equal(registro.dados[0].idMovimentacao, mov.id)
+      assert.equal(registro.dados[0].tipo, mov.tipo)
+      assert.equal(
+        registro.resumo.saldos.fechamento,
+        mov.tipo === "SAIDA_PRODUCAO" ? "4.000" : "3.000",
+      )
+    }
     assert.equal(
       await prisma.kardex.count({
         where: { id_movimentacao: { in: movimentosOP.map((m) => m.id) } },
@@ -443,10 +592,42 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       "102.000",
     )
     const chaveReceber = randomUUID()
-    await post(
+    const envio = await kardex({
+      origemTipo: "TRANSFERENCIA_ENVIO",
+      origemId: transferencia.idTransferencia,
+    })
+    assert.equal(envio.dados[0].idMovimentacao, transferencia.idMovimentoSaida)
+    assert.equal(envio.dados[0].idMovimentoRelacionado, null)
+    assert.deepEqual(
+      (
+        await kardex({
+          origemTipo: "TRANSFERENCIA_RECEBIMENTO",
+          origemId: transferencia.idTransferencia,
+        })
+      ).dados,
+      [],
+    )
+    const chegada = await post(
       `/api/estoque/transferencias/${transferencia.idTransferencia}/receber`,
       {},
       chaveReceber,
+    )
+    const recebidoKardex = await kardex({
+      origemTipo: "TRANSFERENCIA_RECEBIMENTO",
+      origemId: transferencia.idTransferencia,
+    })
+    assert.equal(
+      recebidoKardex.dados[0].idMovimentacao,
+      chegada.idMovimentoEntrada,
+    )
+    assert.equal(
+      recebidoKardex.dados[0].idMovimentoRelacionado,
+      transferencia.idMovimentoSaida,
+    )
+    assert.equal(
+      (await kardex({ idMovimentacao: transferencia.idMovimentoSaida }))
+        .dados[0].idMovimentoRelacionado,
+      chegada.idMovimentoEntrada,
     )
     const recebida = await snapshot()
     await post(
@@ -502,6 +683,19 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       ],
     })
     assert.equal(completa.status, "ENTREGUE")
+    const livroEntrega = await kardex({
+      idProduto: produto,
+      idLocalEstoque: locais[2].id,
+      origemTipo: "PEDIDO_ENTREGA",
+    })
+    assert.deepEqual(
+      livroEntrega.dados.map((r) => [r.direcao, r.quantidade]),
+      [
+        ["SAIDA", "3.000"],
+        ["SAIDA", "2.000"],
+      ],
+    )
+    assert.equal(livroEntrega.resumo.saldos.fechamento, "100.000")
     const estoqueFinal = await posicao(produto, locais[2].id)
     assert.equal(estoqueFinal.quantidade.toFixed(3), "100.000")
     assert.equal(
@@ -1342,6 +1536,11 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     assert.ok(ficha.id)
   } finally {
     const scope = { in: empresas }
+    await prisma.compra_itens.deleteMany({
+      where: { compras: { id_empresa: scope } },
+    })
+    await prisma.compras.deleteMany({ where: { id_empresa: scope } })
+    await prisma.fornecedores.deleteMany({ where: { id_empresa: scope } })
     await prisma.operacao_erp.deleteMany({ where: { id_empresa: scope } })
     await prisma.transferencia_estoque.deleteMany({
       where: { id_empresa: scope },

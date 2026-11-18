@@ -19,7 +19,6 @@ import {
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Empty, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
-import { useErp } from "@/features/erp/components/provedor"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import type { Setor } from "@/features/setores/schemas"
 import { fluxoProducaoSchema, type FluxoProducao } from "../schemas"
@@ -32,16 +31,17 @@ type ValoresSalvas = z.output<typeof fluxoProducaoSchema>
 export function FormularioFluxo({
   initial,
   setoresDisponiveis,
+  onSave,
   onClose,
   returnFocus,
 }: {
   initial?: FluxoProducao
   /** Todos os setores da empresa (ativos e inativos), para exibir corretamente etapas já existentes. */
   setoresDisponiveis: Setor[]
+  onSave: (valores: ValoresSalvas, id?: string) => Promise<void>
   onClose: () => void
   returnFocus: () => void
 }) {
-  const { save } = useErp()
   const [setorParaAdicionar, setSetorParaAdicionar] = useState("")
   const form = useForm<ValoresFormulario, unknown, ValoresSalvas>({
     resolver: zodResolver(fluxoProducaoSchema),
@@ -69,7 +69,7 @@ export function FormularioFluxo({
     .map((setor) => ({ value: setor.id, label: setor.name }))
 
   function adicionarEtapa() {
-    if (!setorParaAdicionar) return
+    if (!setorParaAdicionar || fields.length >= 100) return
     append({ sectorId: setorParaAdicionar })
     setSetorParaAdicionar("")
     form.clearErrors("steps")
@@ -77,7 +77,7 @@ export function FormularioFluxo({
 
   async function salvar(valores: ValoresSalvas) {
     try {
-      await save("productionFlows", valores, initial?.id)
+      await onSave(valores, initial?.id)
       toast.success(
         initial
           ? "Fluxo de produção atualizado."
@@ -235,7 +235,7 @@ export function FormularioFluxo({
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!setorParaAdicionar}
+                  disabled={!setorParaAdicionar || fields.length >= 100}
                   onClick={adicionarEtapa}
                 >
                   <Plus /> Adicionar etapa

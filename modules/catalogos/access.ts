@@ -4,6 +4,7 @@ import { HttpError } from "../../src/lib/api/errors"
 import { handleRequest, readJson } from "../../src/lib/api/http"
 import { enforceRateLimit, type RateLimit } from "../../src/lib/api/rate-limit"
 import { allowedCompanies, type Action } from "./repository"
+import { contextoAuditoriaCatalogo } from "./auditoria"
 export type CatalogActor = { idUsuario: number; empresasAutorizadas?: number[] }
 export function assertCompany(id: number | undefined, companies: number[]) {
   if (id !== undefined && !companies.includes(id))
@@ -69,6 +70,9 @@ export function catalogRequest<T>(
           throw new HttpError(403, "Sem permissão para inativar nesta empresa.")
       }
     }
-    return operation(companies, { idUsuario: id, empresasAutorizadas })
+    return contextoAuditoriaCatalogo.run(
+      { idUsuario: id, empresas: companies },
+      () => operation(companies, { idUsuario: id, empresasAutorizadas }),
+    )
   }, status)
 }

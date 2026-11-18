@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { RECURSOS_PERMISSAO } from "@/lib/permissoes"
 import { idSchema } from "../producao/producao.schema"
 export { idSchema }
 const campos = {
@@ -6,7 +7,11 @@ const campos = {
   descricao: z.string().trim().max(255).nullable().optional(),
   ativo: z.boolean().optional(),
 }
-export const setorSchema = z.strictObject(campos)
+export const TIPO_SETOR_PADRAO = "Outro"
+export const setorSchema = z.strictObject({
+  ...campos,
+  tipo: z.string().trim().min(1).max(80).optional(),
+})
 export const editarSetorSchema = setorSchema
   .partial()
   .refine((v) => Object.keys(v).length > 0, "Informe dados para alteração.")
@@ -15,7 +20,10 @@ export const setoresSchema = z
   .min(1)
   .max(100)
   .refine((ids) => new Set(ids).size === ids.length, "Não repita setores.")
-export const fluxoSchema = z.strictObject({ ...campos, setores: setoresSchema })
+export const fluxoSchema = z.strictObject({
+  ...campos,
+  setores: setoresSchema,
+})
 export const editarFluxoSchema = fluxoSchema
   .partial()
   .refine((v) => Object.keys(v).length > 0, "Informe dados para alteração.")
@@ -35,5 +43,21 @@ export const listarSchema = z.strictObject({
 export const associarSchema = z.strictObject({ fluxoId: idSchema })
 export const etapaSchema = z.strictObject({ etapaId: idSchema })
 export type Cadastro = z.infer<typeof setorSchema>
-export type Edicao = z.infer<typeof editarFluxoSchema>
+export type Edicao = z.infer<typeof editarFluxoSchema> & { tipo?: string }
 export type Listagem = z.infer<typeof listarSchema>
+export const recursosSetorSchema = z.strictObject({
+  recursos: z
+    .array(z.enum(RECURSOS_PERMISSAO))
+    .max(RECURSOS_PERMISSAO.length)
+    .refine(
+      (itens) => new Set(itens).size === itens.length,
+      "Não repita recursos.",
+    ),
+})
+export const tipoSetorSchema = z.strictObject({
+  nome: z.string().trim().min(1).max(80),
+})
+export const alterarTipoSetorSchema = z.strictObject({ ativo: z.boolean() })
+export const listarTiposSchema = z.strictObject({
+  status: z.enum(["ATIVO", "INATIVO"]).optional(),
+})

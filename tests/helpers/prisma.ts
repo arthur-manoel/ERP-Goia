@@ -45,6 +45,7 @@ export const db = {
   empresa_fornecedor: model(),
   contas_receber: model(),
   contas_pagar: model(),
+  contas_bancarias: model(),
   empresas: model(),
   venda: model(),
   categoria_financeira: model(),

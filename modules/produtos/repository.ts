@@ -1,3 +1,4 @@
+import { gravarCatalogo } from "../catalogos/auditoria"
 import {
   Prisma,
   type produtos as Produto,
@@ -16,17 +17,19 @@ export type AutorProduto = { idUsuario: number; acoes: Action[] }
 
 export async function create(
   data: CreateProdutoData,
-  database: Prisma.TransactionClient = prisma,
+  database?: Prisma.TransactionClient,
 ): Promise<Produto> {
   const { id_empresa, ...fields } = data
-  return database.produtos.create({
-    data: {
-      ...fields,
-      produto_empresa: {
-        create: { id_empresa, codigo_interno: fields.codigo },
+  return await gravarCatalogo("produtos", null, database, (tx) =>
+    tx.produtos.create({
+      data: {
+        ...fields,
+        produto_empresa: {
+          create: { id_empresa, codigo_interno: fields.codigo },
+        },
       },
-    },
-  })
+    }),
+  )
 }
 
 export async function findAll(
@@ -80,15 +83,17 @@ export async function update(
   id: number,
   data: UpdateProdutoData,
   companies: number[],
-  database: Prisma.TransactionClient = prisma,
+  database?: Prisma.TransactionClient,
   selecionadas?: number[],
   autor?: AutorProduto,
 ): Promise<Produto | null> {
   try {
-    return await database.produtos.update({
-      where: { ...scope(companies, true, selecionadas, autor), id },
-      data,
-    })
+    return await gravarCatalogo("produtos", id, database, (tx) =>
+      tx.produtos.update({
+        where: { ...scope(companies, true, selecionadas, autor), id },
+        data,
+      }),
+    )
   } catch (error: unknown) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -124,7 +129,7 @@ export async function inactivate(
       id,
       { status: "INATIVO" },
       companies,
-      prisma,
+      undefined,
       selecionadas,
       autor,
     )) !== null
