@@ -653,7 +653,6 @@ model item_venda {
 
   @@unique([id_empresa, id_venda, id_produto, id_cor, id_tamanho], map: "uk_item_venda_produto_variacao")
   @@unique([id_venda, id_pedido_cliente_item], map: "uk_item_venda_pedido_item")
-  @@unique([id_venda, id_produto_sem_pedido], map: "uk_item_venda_produto_avulso")
   @@index([id_empresa, id_cor], map: "fk_item_venda_cor")
   @@index([id_empresa, id_tamanho], map: "fk_item_venda_tamanho")
   @@index([id_produto], map: "fk_item_venda_produto")

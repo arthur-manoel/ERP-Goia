@@ -17,11 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
-import {
-  lerPedido,
-  type OpcoesPedidos,
-  type PedidoApi,
-} from "@/features/pedidos/api"
+import { lerPedido, type OpcoesPedidos } from "@/features/pedidos/api"
 
 type Item = {
   idProduto: number | null
@@ -45,10 +41,11 @@ type Venda = {
   items: Item[]
   desconto: number
   frete: number
+  acrescimo: number
 }
 type VendaApi = Omit<
   Venda,
-  "data" | "status" | "items" | "desconto" | "frete"
+  "data" | "status" | "items" | "desconto" | "frete" | "acrescimo"
 > & {
   data: string
   status:
@@ -61,6 +58,7 @@ type VendaApi = Omit<
     | "CANCELADA"
   desconto: number | string
   frete: number | string
+  acrescimo: number | string
   items: (Item & {
     total: string
     quantidade: number | string
@@ -80,6 +78,7 @@ function converterVenda(venda: VendaApi): Venda {
           : "Concluída",
     desconto: Number(venda.desconto),
     frete: Number(venda.frete),
+    acrescimo: Number(venda.acrescimo),
     items: venda.items.map((item) => ({
       ...item,
       quantidade: Number(item.quantidade),
@@ -99,13 +98,17 @@ const moeda = (valor: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
     valor,
   )
-const total = (venda: Pick<Venda, "items" | "desconto" | "frete">) =>
+const total = (
+  venda: Pick<Venda, "items" | "desconto" | "frete" | "acrescimo">,
+) =>
   venda.items.reduce(
-    (soma, item) => soma + item.quantidade * item.unitario,
+    (soma, item) =>
+      soma + Math.round(item.quantidade * item.unitario * 100) / 100,
     0,
   ) -
   venda.desconto +
-  venda.frete
+  venda.frete +
+  venda.acrescimo
 
 const iniciais = (nome: string) =>
   nome
@@ -157,11 +160,6 @@ function TelaPdvConteudo({
   const [carregandoOpcoes, setCarregandoOpcoes] = useState(false)
   const [erroOpcoes, setErroOpcoes] = useState("")
   const [revisaoOpcoes, setRevisaoOpcoes] = useState(0)
-  const [idPedido, setIdPedido] = useState("")
-  const [pedidos, setPedidos] = useState<PedidoApi[]>([])
-  const [carregandoPedidos, setCarregandoPedidos] = useState(false)
-  const [erroPedidos, setErroPedidos] = useState("")
-  const [revisaoPedidos, setRevisaoPedidos] = useState(0)
   const [items, setItems] = useState<Item[]>([
     {
       idProduto: null,
@@ -175,6 +173,7 @@ function TelaPdvConteudo({
   ])
   const [desconto, setDesconto] = useState(0)
   const [frete, setFrete] = useState(0)
+  const [acrescimo, setAcrescimo] = useState(0)
   const [erroApi, setErroApi] = useState("")
   const [salvando, setSalvando] = useState(false)
   const [acoesEmCurso, setAcoesEmCurso] = useState<number[]>([])
@@ -250,66 +249,6 @@ function TelaPdvConteudo({
     }
   }, [buscaOpcoes, empresaId, formAberto, requisitar, revisaoOpcoes])
 
-  useEffect(() => {
-    if (!formAberto || !empresaId || !cliente) return
-    const controller = new AbortController()
-    async function carregarPedidos() {
-      try {
-        const query = new URLSearchParams({
-          pagina: "1",
-          limite: "100",
-          idCliente: cliente,
-        })
-        const primeira = await requisitar(`/api/pedidos?${query}`, {
-          signal: controller.signal,
-          headers: { "X-Empresa-Id": String(empresaId) },
-        }).then(
-          lerPedido<{
-            dados: PedidoApi[]
-            paginacao: { totalPaginas: number }
-          }>,
-        )
-        const todos = [...primeira.dados]
-        for (
-          let pagina = 2;
-          pagina <= primeira.paginacao.totalPaginas;
-          pagina += 1
-        ) {
-          const paginaQuery = new URLSearchParams({
-            pagina: String(pagina),
-            limite: "100",
-            idCliente: cliente,
-          })
-          const resposta = await requisitar(`/api/pedidos?${paginaQuery}`, {
-            signal: controller.signal,
-            headers: { "X-Empresa-Id": String(empresaId) },
-          }).then(
-            lerPedido<{
-              dados: PedidoApi[]
-              paginacao: { totalPaginas: number }
-            }>,
-          )
-          todos.push(...resposta.dados)
-        }
-        if (!controller.signal.aborted)
-          setPedidos(todos.filter((item) => item.status !== "CANCELADO"))
-      } catch (erro) {
-        if (!controller.signal.aborted) {
-          setPedidos([])
-          setErroPedidos(
-            erro instanceof Error
-              ? erro.message
-              : "Não foi possível carregar os pedidos.",
-          )
-        }
-      } finally {
-        if (!controller.signal.aborted) setCarregandoPedidos(false)
-      }
-    }
-    void carregarPedidos()
-    return () => controller.abort()
-  }, [cliente, empresaId, formAberto, requisitar, revisaoPedidos])
-
   const opcoesAtuais = opcoes.idEmpresa === empresaId ? opcoes : opcoesVazias
 
   const filtradas = useMemo(
@@ -330,11 +269,7 @@ function TelaPdvConteudo({
     setCliente(venda?.idCliente ? String(venda.idCliente) : "")
     setCarregandoOpcoes(Boolean(empresaId))
     setErroOpcoes("")
-    setPedidos([])
-    setCarregandoPedidos(Boolean(venda?.idCliente))
-    setErroPedidos("")
     setBuscaOpcoes("")
-    setIdPedido(venda?.idPedido ? String(venda.idPedido) : "")
     setItems(
       venda
         ? venda.items.map((item) => ({ ...item }))
@@ -352,6 +287,7 @@ function TelaPdvConteudo({
     )
     setDesconto(venda?.desconto ?? 0)
     setFrete(venda?.frete ?? 0)
+    setAcrescimo(venda?.acrescimo ?? 0)
     setFormAberto(true)
   }
 
@@ -361,20 +297,17 @@ function TelaPdvConteudo({
       !empresaId ||
       !todosItensValidos ||
       !clienteValido ||
-      !pedidoValido ||
       desconto < 0 ||
-      frete < 0
+      frete < 0 ||
+      acrescimo < 0
     )
       return
     const idCliente = cliente ? Number(cliente) : null
-    const pedidoSelecionado = pedidos.find(
-      (item) => item.idPedido === Number(idPedido),
-    )
     const payload = {
       idCliente,
-      idPedido: pedidoSelecionado?.idPedido ?? null,
       desconto,
       frete,
+      acrescimo,
       itens: itensValidos.map((item) => ({
         idProduto: item.idProduto!,
         idVariacao: item.idVariacao,
@@ -452,14 +385,6 @@ function TelaPdvConteudo({
   const clienteValido =
     cliente === "" ||
     opcoesAtuais.clientes.some((opcao) => String(opcao.id) === cliente)
-  const pedidoValido =
-    idPedido === "" ||
-    pedidos.some(
-      (item) =>
-        item.idPedido === Number(idPedido) &&
-        String(item.idCliente) === cliente,
-    )
-
   async function alterarStatus(venda: Venda, status: Venda["status"]) {
     setAcoesEmCurso((atuais) => [...atuais, venda.id])
     setErroApi("")
@@ -522,8 +447,7 @@ function TelaPdvConteudo({
               Vendas da loja
             </h2>
             <p className="mt-2 max-w-lg text-sm text-white/70">
-              Registre vendas, vincule pedidos e acompanhe cada atendimento em
-              um só lugar.
+              Registre vendas e acompanhe cada atendimento em um só lugar.
             </p>
           </div>
           <Button
@@ -817,10 +741,6 @@ function TelaPdvConteudo({
                     value={cliente}
                     onValueChange={(valor) => {
                       setCliente(valor)
-                      setIdPedido("")
-                      setPedidos([])
-                      setCarregandoPedidos(Boolean(valor))
-                      setErroPedidos("")
                     }}
                     options={[
                       { value: "", label: "Venda avulsa (sem cliente)" },
@@ -833,37 +753,9 @@ function TelaPdvConteudo({
                     disabled={!empresaId || carregandoOpcoes}
                   />
                 </label>
-                <label className="space-y-1.5 text-sm font-medium">
-                  Pedido de venda{" "}
-                  <span className="font-normal text-muted-foreground">
-                    (opcional)
-                  </span>
-                  <SearchSelect
-                    label="Pedido de venda"
-                    value={idPedido}
-                    onValueChange={(valor) => {
-                      setIdPedido(valor)
-                    }}
-                    options={[
-                      {
-                        value: "",
-                        label: cliente
-                          ? "Venda avulsa (sem pedido)"
-                          : "Selecione um cliente primeiro",
-                      },
-                      ...pedidos.map((item) => ({
-                        value: String(item.idPedido),
-                        label: `${item.numero} · ${item.status.replaceAll("_", " ")}`,
-                      })),
-                    ]}
-                    placeholder={
-                      cliente
-                        ? "Buscar pedido do cliente..."
-                        : "Selecione um cliente primeiro"
-                    }
-                    disabled={!cliente || carregandoPedidos}
-                  />
-                </label>
+                <p className="self-center text-sm text-muted-foreground">
+                  Pedidos são associados à venda pelo fechamento financeiro.
+                </p>
               </div>
               <div className="space-y-2">
                 <label
@@ -900,26 +792,6 @@ function TelaPdvConteudo({
                       setCarregandoOpcoes(true)
                       setErroOpcoes("")
                       setRevisaoOpcoes((valor) => valor + 1)
-                    }}
-                  >
-                    Tentar novamente
-                  </Button>
-                </div>
-              )}
-              {erroPedidos && (
-                <div
-                  role="alert"
-                  className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-                >
-                  <span>{erroPedidos}</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setCarregandoPedidos(true)
-                      setErroPedidos("")
-                      setRevisaoPedidos((valor) => valor + 1)
                     }}
                   >
                     Tentar novamente
@@ -1142,13 +1014,26 @@ function TelaPdvConteudo({
                     className="h-10"
                   />
                 </label>
+                <label className="space-y-1.5 text-sm font-medium">
+                  Acréscimo (R$)
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={acrescimo}
+                    onChange={(event) =>
+                      setAcrescimo(Number(event.target.value))
+                    }
+                    className="h-10"
+                  />
+                </label>
               </div>
               <div className="flex items-center justify-between rounded-xl bg-[#173d35]/5 px-4 py-3">
                 <span className="text-sm font-medium text-muted-foreground">
                   Total da venda
                 </span>
                 <span className="text-xl font-semibold text-[#173d35] tabular-nums">
-                  {moeda(total({ items, desconto, frete }))}
+                  {moeda(total({ items, desconto, frete, acrescimo }))}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -1167,9 +1052,9 @@ function TelaPdvConteudo({
                   carregandoOpcoes ||
                   !todosItensValidos ||
                   !clienteValido ||
-                  !pedidoValido ||
                   desconto < 0 ||
-                  frete < 0
+                  frete < 0 ||
+                  acrescimo < 0
                 }
                 onClick={salvar}
                 className="bg-[#173d35] text-white hover:bg-[#23584c]"

@@ -53,6 +53,7 @@ function serializar(
     subtotal: venda.valor_subtotal.toFixed(2),
     desconto: venda.valor_desconto.toFixed(2),
     frete: venda.valor_frete.toFixed(2),
+    acrescimo: venda.valor_acrescimo.toFixed(2),
     total: venda.valor_total.toFixed(2),
     items: venda.item_venda.map((item) => ({
       idProduto: item.id_produto,
@@ -237,13 +238,19 @@ function valores(
   itens: Awaited<ReturnType<typeof carregarItens>>,
   desconto: string,
   frete: string,
+  acrescimo: string,
 ) {
   const subtotal = itens
     .reduce((soma, item) => soma.add(item.valor_total), new Prisma.Decimal(0))
     .toDecimalPlaces(2)
   const desc = new Prisma.Decimal(desconto)
   const shipping = new Prisma.Decimal(frete)
-  const total = subtotal.sub(desc).add(shipping).toDecimalPlaces(2)
+  const surcharge = new Prisma.Decimal(acrescimo)
+  const total = subtotal
+    .sub(desc)
+    .add(shipping)
+    .add(surcharge)
+    .toDecimalPlaces(2)
   if (subtotal.gt(LIMITE_MOEDA) || total.gt(LIMITE_MOEDA))
     throw new VendaError(400, "O total da venda supera o limite aceito.")
   if (total.isNegative())
@@ -251,7 +258,7 @@ function valores(
       400,
       "O desconto não pode superar o subtotal mais o frete.",
     )
-  return { subtotal, desc, shipping, total }
+  return { subtotal, desc, shipping, surcharge, total }
 }
 
 export async function listarVendas(ctx: ContextoVenda, filtros: ListarVenda) {
@@ -283,22 +290,29 @@ export async function consultarVenda(ctx: ContextoVenda, id: number) {
 export async function criarVenda(ctx: ContextoVenda, input: CriarVenda) {
   return prisma.$transaction(
     async (tx) => {
-      await validarVinculos(tx, ctx, input.idCliente, input.idPedido)
+      await validarVinculos(tx, ctx, input.idCliente, null)
       const itens = await carregarItens(tx, ctx, input.itens)
-      const montantes = valores(itens, input.desconto, input.frete)
+      const montantes = valores(
+        itens,
+        input.desconto,
+        input.frete,
+        input.acrescimo,
+      )
       const numero = `PDV-${new Date().getFullYear()}-${randomUUID().slice(0, 12).toUpperCase()}`
       const venda = await tx.venda.create({
         data: {
           id_empresa: ctx.idEmpresa,
           id_usuario: ctx.idUsuario,
           id_cliente: input.idCliente,
-          id_pedido_cliente: input.idPedido,
+          // O vínculo do pedido é criado exclusivamente pelo fechamento financeiro.
+          id_pedido_cliente: null,
           numero,
           status: "RASCUNHO",
           canal_venda: "BALCAO",
           valor_subtotal: montantes.subtotal,
           valor_desconto: montantes.desc,
           valor_frete: montantes.shipping,
+          valor_acrescimo: montantes.surcharge,
           valor_total: montantes.total,
           item_venda: {
             create: itens,
@@ -341,9 +355,7 @@ export async function editarVenda(
         )
       const idCliente =
         input.idCliente === undefined ? atual.id_cliente : input.idCliente
-      const idPedido =
-        input.idPedido === undefined ? atual.id_pedido_cliente : input.idPedido
-      await validarVinculos(tx, ctx, idCliente, idPedido)
+      await validarVinculos(tx, ctx, idCliente, null)
 
       if (input.status !== undefined) {
         if (
@@ -370,7 +382,8 @@ export async function editarVenda(
           }))
       const desconto = input.desconto ?? atual.valor_desconto.toFixed(2)
       const frete = input.frete ?? atual.valor_frete.toFixed(2)
-      const montantes = valores(itens, desconto, frete)
+      const acrescimo = input.acrescimo ?? atual.valor_acrescimo.toFixed(2)
+      const montantes = valores(itens, desconto, frete, acrescimo)
       if (input.itens)
         await tx.item_venda.deleteMany({
           where: { id_empresa: ctx.idEmpresa, id_venda: id },
@@ -380,10 +393,12 @@ export async function editarVenda(
         where: { id_empresa_id: { id_empresa: ctx.idEmpresa, id } },
         data: {
           id_cliente: idCliente,
-          id_pedido_cliente: idPedido,
+          id_pedido_cliente:
+            input.status === "CANCELADA" ? null : atual.id_pedido_cliente,
           valor_subtotal: montantes.subtotal,
           valor_desconto: montantes.desc,
           valor_frete: montantes.shipping,
+          valor_acrescimo: montantes.surcharge,
           valor_total: montantes.total,
           status,
           ...(input.status === "CANCELADA"

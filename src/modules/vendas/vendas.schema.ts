@@ -41,9 +41,10 @@ const itens = z
 export const criarVendaSchema = z
   .strictObject({
     idCliente: id.nullable(),
-    idPedido: id.nullable(),
+    idPedido: id.nullable().optional(),
     desconto: dinheiro,
     frete: dinheiro,
+    acrescimo: dinheiro.default("0.00"),
   })
   .extend({ itens })
 
@@ -53,6 +54,7 @@ export const editarVendaSchema = z
     idPedido: id.nullable().optional(),
     desconto: dinheiro.optional(),
     frete: dinheiro.optional(),
+    acrescimo: dinheiro.optional(),
     itens: itens.optional(),
     status: z.enum(["RASCUNHO", "CONFIRMADA", "CANCELADA"]).optional(),
   })
