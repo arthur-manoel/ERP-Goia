@@ -22,6 +22,7 @@ const base = {
 it("aceita venda avulsa e normaliza valores para a precisão das colunas", () => {
   expect(criarVendaSchema.parse(base)).toEqual({
     ...base,
+    acrescimo: "0.00",
     desconto: "0.00",
     frete: "1.50",
     itens: [
