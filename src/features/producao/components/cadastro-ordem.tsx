@@ -71,12 +71,14 @@ export function CadastroOrdem({
   ordem,
   fluxo,
   bloqueado,
+  revisaoDados,
   enviar,
 }: {
   requisitar: Consulta
   ordem: OrdemCadastro | null
   fluxo?: string
   bloqueado: boolean
+  revisaoDados: number
   enviar: Enviar
 }) {
   const [abrir, setAbrir] = useState(false)
@@ -96,6 +98,7 @@ export function CadastroOrdem({
           requisitar={requisitar}
           enviar={enviar}
           bloqueado={bloqueado}
+          revisaoDados={revisaoDados}
         />
       )}
       {ordem && (
@@ -133,13 +136,16 @@ function AbrirOrdem({
   requisitar,
   enviar,
   bloqueado,
+  revisaoDados,
 }: {
   requisitar: Consulta
   enviar: Enviar
   bloqueado: boolean
+  revisaoDados: number
 }) {
   const [busca, setBusca] = useState("")
-  const [revisao, setRevisao] = useState(0)
+  const [repeticao, setRepeticao] = useState(0)
+  const revisao = revisaoDados + repeticao
   const [resposta, setResposta] = useState<{
     busca: string
     revisao: number
@@ -147,7 +153,6 @@ function AbrirOrdem({
     erro?: string
   }>()
   const [produto, setProduto] = useState<Produto>()
-  const [variacao, setVariacao] = useState("")
   const [local, setLocal] = useState("")
 
   useEffect(() => {
@@ -210,6 +215,8 @@ function AbrirOrdem({
 
   function salvar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const fd = new FormData(event.currentTarget)
+    const variacao = String(fd.get("variacao") ?? "")
     if (
       bloqueado ||
       !produto ||
@@ -219,7 +226,6 @@ function AbrirOrdem({
         !variacoes.some((v) => String(v.id) === variacao))
     )
       return
-    const fd = new FormData(event.currentTarget)
     const previsao = String(fd.get("previsao") ?? "")
     void enviar(rota, {
       idProduto: produto.id,
@@ -259,7 +265,6 @@ function AbrirOrdem({
             disabled={!atual?.dados}
             onChange={(e) => {
               setProduto(produtos.find((p) => p.id === Number(e.target.value)))
-              setVariacao("")
               setLocal("")
             }}
           >
@@ -281,7 +286,7 @@ function AbrirOrdem({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setRevisao((r) => r + 1)}
+                onClick={() => setRepeticao((r) => r + 1)}
               >
                 Tentar novamente
               </Button>
@@ -300,9 +305,10 @@ function AbrirOrdem({
             <FieldLabel htmlFor="op-variacao">Variação</FieldLabel>
             <NativeSelect
               id="op-variacao"
+              key={produto?.id}
+              name="variacao"
               required
-              value={variacao}
-              onChange={(e) => setVariacao(e.target.value)}
+              defaultValue=""
             >
               <NativeSelectOption value="">
                 Selecione a variação

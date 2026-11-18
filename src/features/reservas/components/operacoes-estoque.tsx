@@ -1113,6 +1113,7 @@ function DocumentoOperacional({
           ordem={cabecalho.dados?.ordem ?? null}
           fluxo={cabecalho.dados?.fluxoSnapshot?.nome}
           bloqueado={bloqueado || cabecalho.carregando}
+          revisaoDados={revisao}
           enviar={enviar}
         />
       )}

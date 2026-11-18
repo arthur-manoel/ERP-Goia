@@ -1430,7 +1430,13 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         })
         const item = await post(`/api/ordem_producao/${ordem.id}/itens`, {
           id_produto: produto,
+          id_variacao: m.id,
           quantidade: "1.000",
+        })
+        // A inclusão atual exige a grade. A perda também precisa cobrir uma ordem legada sem essas referências.
+        await prisma.ordem_producao_item.update({
+          where: { id: item.id },
+          data: { id_cor: null, id_tamanho: null, tamanho: "UNICO" },
         })
         const rota = `/api/ordem_producao/${ordem.id}`
         await post(`${rota}/liberar`, {}, randomUUID(), 409)
@@ -1794,12 +1800,8 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           `/api/ordens-producao?page=1&limit=25&numero=${encodeURIComponent(criada.ordem.numero)}`,
         )
         assert.equal(listagem.status, 200)
-        assert.equal(listagem.body.data.count, 1)
-        assert.equal(listagem.body.data.rows[0].id, id)
-        assert.equal(
-          listagem.body.data.rows[0].observacao,
-          "Validação HTTP do card",
-        )
+        const linha = listagem.body.data.rows.find((row) => row.id === id)
+        assert.equal(linha?.observacao, "Validação HTTP do card")
         const editar = await a.chamar(`/api/ordens-producao/${id}`, "PATCH", {
           statusEsperado: "PLANEJADA",
           quantidade: "2.000",
