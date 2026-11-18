@@ -32,6 +32,7 @@ type Contexto = {
   selecionarEmpresa: (id: number) => void
   entrar: (email: string, password: string) => Promise<void>
   sair: () => Promise<void>
+  sessaoIdentificada: boolean
   saindo: boolean
   erroSaida: boolean
   chaveEmpresa: number
@@ -90,6 +91,7 @@ export function ProvedorAutenticacao({
   const [empresa, setEmpresa] = useState<EmpresaSessao | null>(null)
   const [erroAcesso, setErroAcesso] = useState<string | null>(null)
   const [saindo, setSaindo] = useState(false)
+  const [sessaoIdentificada, setSessaoIdentificada] = useState(false)
   const [erroSaida, setErroSaida] = useState(false)
   const [chaveEmpresa, setChaveEmpresa] = useState(0)
   const token = useRef<string | null>(null)
@@ -122,6 +124,7 @@ export function ProvedorAutenticacao({
     consulta.current?.abort()
     token.current = null
     tokenRecebido.current = null
+    setSessaoIdentificada(false)
     usuarioAtual.current = null
     empresaAtual.current = null
     logoutSolicitado.current = null
@@ -158,6 +161,7 @@ export function ProvedorAutenticacao({
       const controller = new AbortController()
       consulta.current = controller
       tokenRecebido.current = accessToken
+      setSessaoIdentificada(true)
       if (!silencioso) {
         setEstado("carregando")
         setErroAcesso(null)
@@ -479,6 +483,7 @@ export function ProvedorAutenticacao({
         selecionarEmpresa,
         entrar,
         sair,
+        sessaoIdentificada,
         saindo,
         erroSaida,
         chaveEmpresa,

@@ -6,7 +6,10 @@ import {
   ProvedorAutenticacao,
   useAutenticacao,
 } from "@/features/autenticacao/provedor-autenticacao"
-import { ProtecaoRota } from "@/features/autenticacao/components/protecao-rota"
+import {
+  ConteudoDaEmpresa,
+  ProtecaoRota,
+} from "@/features/autenticacao/components/protecao-rota"
 import { comBloqueioSessao } from "@/features/autenticacao/requisicoes-sessao"
 import { ProdutosProntosView } from "@/features/produtos/components/produtos-prontos-view"
 import { TelaUsuarios } from "@/features/usuarios/components/tela-usuarios"
@@ -1170,7 +1173,20 @@ it("sem sessão identificada o logout não usa apenas o cookie de outra aba", as
     )
   })
   expect(ctx.estado).toBe("erro")
+  expect(host.textContent).toContain("Tentar novamente")
+  expect(host.textContent).not.toContain("Sair")
   expect(chamadas.mock.calls.some(([url]) => url === "/api/auth/logout")).toBe(
     false,
   )
+})
+
+it("troca de empresa reinicia o estado da tela protegida", async () => {
+  resposta = async () => json(1, duasEmpresas)
+  await montar(createElement(ConteudoDaEmpresa, null, createElement(Modulo)))
+  await act(async () => ctx.selecionarEmpresa(10))
+  const campo = host.querySelector("input")!
+  campo.value = "rascunho da empresa A"
+  await act(async () => ctx.selecionarEmpresa(20))
+  expect(host.querySelector("input")?.value).toBe("")
+  expect(montagens).toBe(2)
 })

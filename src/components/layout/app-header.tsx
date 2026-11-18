@@ -16,7 +16,7 @@ export function AppHeader({ usuario }: { usuario: UsuarioLogado | null }) {
           Notificações
         </Link>
         <ThemeToggle />
-        <SeletorEmpresa />
+        <SeletorEmpresa label="Empresa ativa no cabeçalho" />
         <MenuUsuario usuario={usuario} />
       </div>
     </header>

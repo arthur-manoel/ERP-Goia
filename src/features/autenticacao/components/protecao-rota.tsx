@@ -1,5 +1,5 @@
 "use client"
-import { useEffect } from "react"
+import { Fragment, useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -17,6 +17,7 @@ export function ProtecaoRota({ children }: { children: React.ReactNode }) {
     erroAcesso,
     recarregarAcesso,
     sair,
+    sessaoIdentificada,
     saindo,
     erroSaida,
   } = useAutenticacao()
@@ -68,22 +69,29 @@ export function ProtecaoRota({ children }: { children: React.ReactNode }) {
             >
               Tentar novamente
             </Button>
-            <Button
-              variant="ghost"
-              disabled={saindo}
-              onClick={() =>
-                void sair().catch(() =>
-                  toast.error(
-                    "Não foi possível confirmar o encerramento da sessão. Tente sair novamente.",
-                  ),
-                )
-              }
-            >
-              {saindo ? "Saindo…" : "Sair"}
-            </Button>
+            {sessaoIdentificada && (
+              <Button
+                variant="ghost"
+                disabled={saindo}
+                onClick={() =>
+                  void sair().catch(() =>
+                    toast.error(
+                      "Não foi possível confirmar o encerramento da sessão. Tente sair novamente.",
+                    ),
+                  )
+                }
+              >
+                {saindo ? "Saindo…" : "Sair"}
+              </Button>
+            )}
           </div>
         </div>
       </main>
     )
   return <>{children}</>
+}
+
+export function ConteudoDaEmpresa({ children }: { children: React.ReactNode }) {
+  const { chaveEmpresa } = useAutenticacao()
+  return <Fragment key={chaveEmpresa}>{children}</Fragment>
 }

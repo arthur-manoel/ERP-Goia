@@ -36,7 +36,12 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
         }
       : usuario
   return (
-    <Dialog open={aberto} onOpenChange={setAberto}>
+    <Dialog
+      open={aberto}
+      onOpenChange={(proximo) => {
+        if (proximo || (!saindo && !erroSaida)) setAberto(proximo)
+      }}
+    >
       <DialogTrigger
         render={
           <Button
@@ -74,7 +79,10 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
           </span>
         </span>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        showCloseButton={!saindo && !erroSaida}
+      >
         <DialogHeader>
           <DialogTitle>Minha conta</DialogTitle>
           <DialogDescription>

@@ -2,7 +2,11 @@
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import { useAutenticacao } from "../provedor-autenticacao"
 
-export function SeletorEmpresa() {
+export function SeletorEmpresa({
+  label = "Empresa ativa",
+}: {
+  label?: string
+}) {
   const { estado, empresas, empresa, selecionarEmpresa } = useAutenticacao()
   if (
     estado !== "autenticado" ||
@@ -12,7 +16,7 @@ export function SeletorEmpresa() {
     return null
   return (
     <SearchSelect
-      label="Empresa ativa"
+      label={label}
       placeholder="Selecione uma empresa"
       className="w-full sm:w-64"
       value={empresa ? String(empresa.id) : ""}
