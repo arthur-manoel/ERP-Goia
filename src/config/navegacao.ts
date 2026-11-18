@@ -133,6 +133,11 @@ export const navegacao: GrupoNavegacao[] = [
         href: "/producao/movimentacoes",
         icone: Route,
       },
+      {
+        titulo: "Relatório de produção",
+        href: "/producao/relatorio",
+        icone: Factory,
+      },
     ],
   },
   {
