@@ -1,4 +1,5 @@
 import "server-only"
+import { usaLotes, posicoesLote } from "../producao/lotes.repository"
 import { createHash } from "node:crypto"
 import { Prisma } from "@/generated/prisma/client"
 import { serializarJsonTextMysql } from "@/lib/limites-texto"
@@ -197,13 +198,16 @@ export function gravar(
         item.quantidade_produzida,
       )
     }
-    try {
-      validarDisponibilidade(etapas, item.quantidade, posteriores)
-    } catch (error) {
-      if (!(error instanceof ProducaoError) || operacao.tipo !== "ESTORNO")
-        throw error
-      validarEstornoLegado(etapas, item.quantidade, anteriores, posteriores)
-    }
+    if (await usaLotes(tx, ordemId)) {
+      await posicoesLote(tx, ordemId, { idItem: itemId, totais: posteriores })
+    } else
+      try {
+        validarDisponibilidade(etapas, item.quantidade, posteriores)
+      } catch (error) {
+        if (!(error instanceof ProducaoError) || operacao.tipo !== "ESTORNO")
+          throw error
+        validarEstornoLegado(etapas, item.quantidade, anteriores, posteriores)
+      }
     const novo = novos
       ? await tx.ordem_producao_apontamento.create({
           data: {
@@ -297,6 +301,9 @@ export function consultar(
       orderBy: { id: "asc" },
     })
     const acumuladosDaOrdem = await repository.totaisDaOrdem(tx, ordemId)
+    const parcelas = (await usaLotes(tx, ordemId))
+      ? await posicoesLote(tx, ordemId)
+      : null
     const totais = []
     for (const item of itens) {
       const acumulados = acumuladosDaOrdem.filter(
@@ -306,11 +313,17 @@ export function consultar(
       let disponibilidade = null,
         pendencia = null
       try {
-        disponibilidade = validarDisponibilidade(
-          etapas,
-          item.quantidade,
-          acumulados,
-        )
+        disponibilidade = parcelas
+          ? parcelas
+              .find((p) => p.idItem === item.id)!
+              .etapas.map((e) => ({
+                idEtapa: e.idEtapa,
+                disponivel: e.entrada,
+                produzida: e.produzida,
+                perdida: e.perdida,
+                restante: e.aProduzir,
+              }))
+          : validarDisponibilidade(etapas, item.quantidade, acumulados)
       } catch (error) {
         if (!(error instanceof ProducaoError)) throw error
         pendencia = error.message
