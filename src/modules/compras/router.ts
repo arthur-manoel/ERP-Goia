@@ -11,6 +11,7 @@ import {
 import { ValorForaDoLimite } from "./compras.regras"
 import { ComprasError, type Acao, type Contexto } from "./compras.repository"
 import * as s from "./compras.schema"
+import { itensNotaSchema } from "./notas.schema"
 import * as svc from "./compras.service"
 
 // Aceita rotas sem parâmetros (listas) e com [id]; o Next valida esse tipo no build.
@@ -209,7 +210,13 @@ export const notas = {
     "notas",
     "criar",
     async ({ ctx, request }) =>
-      svc.criarNota(ctx, validar(s.criarNotaSchema, await corpo(request))),
+      svc.criarNota(
+        ctx,
+        validar(
+          s.criarNotaSchema.extend({ itens: itensNotaSchema.optional() }),
+          await corpo(request),
+        ),
+      ),
     201,
   ),
   consultar: rota("notas", "ler", async ({ ctx, context }) =>

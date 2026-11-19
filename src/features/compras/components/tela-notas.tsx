@@ -40,6 +40,9 @@ import {
   type Filtros,
 } from "./comuns"
 import { DialogoNota } from "./dialogo-nota"
+import { ConferenciaNota } from "./conferencia-nota"
+import { useProcessamentoPendente } from "../processamento-pendente"
+import type { NotaDetalhe } from "../notas-entrada"
 
 type Resposta = Lista<"notas", Nota, ResumoStatus & { valorTotal: string }>
 
@@ -47,7 +50,7 @@ export function TelaNotas() {
   return (
     <ShellCompras
       titulo="Notas fiscais"
-      descricao="Registro e controle das notas fiscais de compra. Sem integração com a SEFAZ."
+      descricao="Cadastre os documentos, confira os itens e confirme ou associe o recebimento no estoque."
     >
       {(api) => <Conteudo api={api} />}
     </ShellCompras>
@@ -58,6 +61,7 @@ function Conteudo({ api }: { api: ComprasApi }) {
   const [filtros, setFiltros] = useState<Filtros>(filtrosVazios)
   const [pagina, setPagina] = useState(1)
   const [aberto, setAberto] = useState<number | null>(null)
+  const pendente = useProcessamentoPendente()
   const [dialogo, setDialogo] = useState<"nova" | { editar: Nota } | null>(null)
   const busca = useAtraso(filtros.busca.trim())
   const { dados, erro, carregando, recarregar } = useLista<Resposta>(
@@ -74,11 +78,27 @@ function Conteudo({ api }: { api: ComprasApi }) {
 
   return (
     <>
+      {pendente.tentativa && (
+        <Alert>
+          <AlertDescription>
+            Há uma confirmação de entrada fiscal aguardando recuperação.{" "}
+            <Button
+              variant="outline"
+              onClick={() => setAberto(pendente.tentativa!.idNota)}
+            >
+              Recuperar NF #{pendente.tentativa.idNota}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       {dados && total > 0 && (
         <CartoesResumo
           itens={[
             { rotulo: "Notas pendentes", valor: s.PENDENTE ?? 0 },
-            { rotulo: "Notas recebidas", valor: s.RECEBIDA ?? 0 },
+            {
+              rotulo: "Recebimento documental registrado",
+              valor: s.RECEBIDA ?? 0,
+            },
             {
               rotulo: "Valor total registrado",
               valor: moeda(dados.resumo.valorTotal),
@@ -125,7 +145,8 @@ function Conteudo({ api }: { api: ComprasApi }) {
                     <TableHead>Entrada</TableHead>
                     <TableHead>Compra</TableHead>
                     <TableHead className="text-right">Valor</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Status documental</TableHead>
+                    <TableHead>Estoque</TableHead>
                     <TableHead className="w-20">
                       <span className="sr-only">Ações</span>
                     </TableHead>
@@ -148,6 +169,16 @@ function Conteudo({ api }: { api: ComprasApi }) {
                       </TableCell>
                       <TableCell>
                         <BadgeStatus tipo="nota" status={n.status} />
+                      </TableCell>
+                      <TableCell>
+                        {n.entradaProcessada
+                          ? "Entrada vinculada"
+                          : "Pendente de processamento"}
+                        {n.dataProcessamento && (
+                          <div className="text-xs text-muted-foreground">
+                            {data(n.dataProcessamento)}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -218,7 +249,7 @@ function Detalhe({
 }) {
   const [versao, setVersao] = useState(0)
   const [cancelando, setCancelando] = useState(false)
-  const { dados, erro, carregando } = useDetalhe<{ nota: Nota }>(
+  const { dados, erro, carregando } = useDetalhe<{ nota: NotaDetalhe }>(
     api,
     `${BASE}/notas-fiscais/${id}`,
     versao,
@@ -240,7 +271,7 @@ function Detalhe({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>
             {n ? `NF ${n.numero} / série ${n.serie}` : "Nota fiscal"}
@@ -309,6 +340,16 @@ function Detalhe({
                 <AlertDescription>{erroAcao}</AlertDescription>
               </Alert>
             )}
+            <ConferenciaNota
+              key={`${n.id}:${n.versao}`}
+              nota={n}
+              api={api}
+              podeEditar={podeEditar}
+              atualizar={() => {
+                setVersao((v) => v + 1)
+                onMudou()
+              }}
+            />
             <DialogFooter>
               {podeEditar &&
                 n.status !== "CANCELADA" &&
@@ -333,7 +374,10 @@ function Detalhe({
                   <Button
                     disabled={ocupado}
                     onClick={() =>
-                      void acao("receber", "Nota marcada como recebida.")
+                      void acao(
+                        "receber",
+                        "Recebimento documental registrado; confira e processe os itens para vincular o estoque.",
+                      )
                     }
                   >
                     Marcar como recebida
