@@ -84,7 +84,10 @@ export function DialogoNota({
     const v = valor.trim() ? dinheiro2(valor) : null
     if (valor.trim() && v === null)
       return setErro("Valor total inválido (até 2 casas, não negativo).")
-    if (!v && !totalCompra) return setErro("Informe o valor total da nota.")
+    if (v === null)
+      return setErro(
+        "Informe o valor total desta nota, inclusive quando ela cobre apenas parte da compra.",
+      )
     const corpo = {
       numero: numeroNf.trim(),
       serie: serie.trim(),
@@ -93,7 +96,8 @@ export function DialogoNota({
       idCompra: compra ? compra.id : (compraSel?.id ?? null),
       dataEmissao: emissao || null,
       dataRecebimento: entrada || null,
-      ...(v ? { valorTotal: v } : {}),
+      valorTotal: v,
+      ...(existente ? { versaoEsperada: existente.versao } : {}),
       observacao: obs.trim() || null,
     }
     const r = existente
@@ -122,8 +126,8 @@ export function DialogoNota({
               : "Registrar nota fiscal"}
           </DialogTitle>
           <DialogDescription>
-            Apenas registro e controle: não há integração com a SEFAZ nem
-            movimentação de estoque.
+            O cadastro salva o documento. Confira os itens e confirme a entrada
+            de estoque no detalhe da nota.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -223,7 +227,7 @@ export function DialogoNota({
             rotulo="Valor total (R$)"
             ajuda={
               totalCompra
-                ? `Em branco = total da compra (${moeda(totalCompra)})`
+                ? `Referência da compra inteira: ${moeda(totalCompra)}. Informe o total desta nota.`
                 : undefined
             }
           >

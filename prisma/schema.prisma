@@ -174,6 +174,9 @@ model compra_itens {
   @@index([id_cor], map: "fk_compra_item_cor")
   @@index([id_produto], map: "fk_compra_item_produto")
   @@index([id_tamanho], map: "fk_compra_item_tamanho")
+  compra_recebimento_linha compra_recebimento_linha[]
+  @@unique([id_compra, id, id_produto], map: "uk_compra_linha_produto")
+  item_nota_fiscal         item_nota_fiscal[]
 }
 
 model compras {
@@ -213,6 +216,7 @@ model compras {
   @@index([id_ordem_producao], map: "fk_compra_op")
   @@index([id_usuario], map: "fk_compra_usuario")
   @@index([id_empresa, status], map: "idx_compra_empresa_status")
+  compra_recebimento_linha compra_recebimento_linha[]
 }
 
 model condicoes_pagamento {
@@ -603,6 +607,24 @@ model item_nota_fiscal {
   @@index([id_cor], map: "fk_item_nf_cor")
   @@index([id_produto], map: "fk_item_nf_produto")
   @@index([id_tamanho], map: "fk_item_nf_tamanho")
+  id_empresa                                                                    Int?
+  id_compra                                                                     Int?
+  id_compra_item                                                                Int?
+  id_variacao                                                                   Int?
+  id_local_estoque                                                              Int?
+  id_setor                                                                      Int?
+  nota_fiscal_item_nota_fiscal_id_nota_fiscal_id_empresa_id_compraTonota_fiscal nota_fiscal?                @relation("item_nota_fiscal_id_nota_fiscal_id_empresa_id_compraTonota_fiscal", fields: [id_nota_fiscal, id_empresa, id_compra], references: [id, id_empresa, id_compra], onUpdate: Restrict, map: "fk_nf_linha_cab")
+  compra_itens                                                                  compra_itens?               @relation(fields: [id_compra, id_compra_item, id_produto], references: [id_compra, id, id_produto], onDelete: Restrict, onUpdate: Restrict, map: "fk_nf_linha_compra")
+  locais_estoque                                                                locais_estoque?             @relation(fields: [id_local_estoque], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_nf_linha_local")
+  setores                                                                       setores?                    @relation(fields: [id_setor], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_nf_linha_setor")
+  produto_variacoes                                                             produto_variacoes?          @relation(fields: [id_variacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onDelete: Restrict, onUpdate: Restrict, map: "fk_nf_linha_variacao")
+  nota_item_entrada                                                             nota_item_entrada[]
+  @@unique([id, id_nota_fiscal, id_empresa, id_compra, id_compra_item, id_produto], map: "uk_nf_linha_identidade")
+  @@index([id_nota_fiscal, id_empresa, id_compra], map: "fk_nf_linha_cab")
+  @@index([id_compra, id_compra_item, id_produto], map: "fk_nf_linha_compra")
+  @@index([id_local_estoque], map: "fk_nf_linha_local")
+  @@index([id_setor], map: "fk_nf_linha_setor")
+  @@index([id_variacao, id_empresa, id_produto], map: "fk_nf_linha_variacao")
 }
 
 model item_pedido_compra {
@@ -704,6 +726,7 @@ model locais_estoque {
 
   @@unique([id_empresa, nome], map: "uk_local_estoque_empresa_nome")
   @@unique([id_empresa, id], map: "idx_local_estoque_empresa_id")
+  item_nota_fiscal                                                                        item_nota_fiscal[]
 }
 
 model movimentacao_estoque {
@@ -745,6 +768,8 @@ model movimentacao_estoque {
   @@index([id_setor], map: "fk_mov_estoque_setor")
   @@index([id_usuario], map: "fk_mov_estoque_usuario")
   @@index([id_variacao, id_empresa, id_produto], map: "fk_movimento_variacao")
+  compra_recebimento_linha                                                                                      compra_recebimento_linha?
+  @@unique([id, id_empresa, id_produto], map: "uk_mov_compra_produto")
 }
 
 model movimentacoes_financeiras {
@@ -825,6 +850,10 @@ model nota_fiscal {
   @@index([id_fornecedor], map: "fk_nota_fiscal_fornecedor")
   @@index([id_local_estoque], map: "fk_nota_fiscal_local")
   @@index([id_pedido_compra], map: "fk_nota_fiscal_pedido")
+  versao                                                                             Int                @default(1)
+  justificativa_valores                                                              String?            @db.VarChar(255)
+  item_nota_fiscal_item_nota_fiscal_id_nota_fiscal_id_empresa_id_compraTonota_fiscal item_nota_fiscal[] @relation("item_nota_fiscal_id_nota_fiscal_id_empresa_id_compraTonota_fiscal")
+  @@unique([id, id_empresa, id_compra], map: "uk_nf_identidade_compra")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1347,6 +1376,7 @@ model produto_variacoes {
   @@index([id_cor], map: "fk_produto_variacao_cor")
   @@index([id_produto], map: "fk_produto_variacao_produto")
   @@index([id_tamanho], map: "fk_produto_variacao_tamanho")
+  item_nota_fiscal      item_nota_fiscal[]
 }
 
 model produtos {
@@ -1512,6 +1542,7 @@ model setores {
   usuario_empresa                                                                               usuario_empresa[]
 
   @@unique([id_empresa, nome], map: "uk_setor_empresa_nome")
+  item_nota_fiscal                                                                              item_nota_fiscal[]
 }
 
 model tamanhos {
@@ -2567,4 +2598,40 @@ enum producao_confirmacao_tipo {
   REGISTRO
   CONFIRMACAO
   LEGADO
+}
+
+
+model compra_recebimento_linha {
+  id_movimentacao      Int                  @id
+  id_empresa           Int
+  id_compra            Int
+  id_compra_item       Int
+  id_produto           Int
+  quantidade           Decimal              @db.Decimal(15, 3)
+  compras              compras              @relation(fields: [id_compra, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_recebimento_linha_compra")
+  compra_itens         compra_itens         @relation(fields: [id_compra, id_compra_item, id_produto], references: [id_compra, id, id_produto], onUpdate: Restrict, map: "fk_recebimento_linha_item")
+  movimentacao_estoque movimentacao_estoque @relation(fields: [id_movimentacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onUpdate: Restrict, map: "fk_recebimento_linha_mov")
+  nota_item_entrada    nota_item_entrada[]
+
+  @@unique([id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], map: "uk_recebimento_linha_identidade")
+  @@unique([id_movimentacao, id_empresa, id_produto], map: "uk_recebimento_linha_mov")
+  @@index([id_compra, id_empresa], map: "fk_recebimento_linha_compra")
+  @@index([id_compra, id_compra_item, id_produto], map: "fk_recebimento_linha_item")
+}
+
+model nota_item_entrada {
+  id_item_nota             Int
+  id_nota                  Int
+  id_empresa               Int
+  id_compra                Int
+  id_compra_item           Int
+  id_produto               Int
+  id_movimentacao          Int
+  quantidade               Decimal                  @db.Decimal(15, 3)
+  item_nota_fiscal         item_nota_fiscal         @relation(fields: [id_item_nota, id_nota, id_empresa, id_compra, id_compra_item, id_produto], references: [id, id_nota_fiscal, id_empresa, id_compra, id_compra_item, id_produto], onUpdate: Restrict, map: "fk_nf_entrada_linha")
+  compra_recebimento_linha compra_recebimento_linha @relation(fields: [id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], references: [id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], onUpdate: Restrict, map: "fk_nf_entrada_recebimento")
+
+  @@id([id_item_nota, id_movimentacao])
+  @@index([id_item_nota, id_nota, id_empresa, id_compra, id_compra_item, id_produto], map: "fk_nf_entrada_linha")
+  @@index([id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], map: "fk_nf_entrada_recebimento")
 }
