@@ -1,4 +1,5 @@
 import "server-only"
+import { usaLotes, posicoesLote } from "./lotes.repository"
 import { previsaoAnteriorAoDiaDeInicio } from "./producao.datas"
 import { liberarReservasOP } from "@/modules/reservas/reservas.service"
 import { conferir } from "@/modules/reservas/operacoes"
@@ -619,12 +620,15 @@ export function recordProduction(
     let sector: number | null = null
     if (snapshot) {
       const stages = await fluxos.etapas(tx, id)
-      const stage = stages.find((value) => value.status !== "CONCLUIDA")
+      const quantitativo = await usaLotes(tx, id)
+      const stage = quantitativo
+        ? stages.at(-1)
+        : stages.find((value) => value.status !== "CONCLUIDA")
       if (
         !stage ||
         stage.id !== stages.at(-1)?.id ||
         stage.status !== "EM_PRODUCAO" ||
-        stage.id_setor !== row.id_setor
+        (!quantitativo && stage.id_setor !== row.id_setor)
       )
         return conflict("Registre a produção na última etapa em execução.")
       sector = stage.id_setor
@@ -658,6 +662,13 @@ export function recordProduction(
       sector,
       item.quantidade_produzida,
     )
+    if (await usaLotes(tx, id)) {
+      await posicoesLote(tx, id)
+      if (!fonte.detalhado || !total.eq(fonte.total))
+        conflict(
+          "Registre os apontamentos válidos da última etapa antes de confirmar o total das parcelas.",
+        )
+    }
     const existente = await confirmacaoPorChave(
       tx,
       ctx.idEmpresa,
