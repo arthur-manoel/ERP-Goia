@@ -2,12 +2,23 @@
 -- 20261007000000_sigilo_clientes_pedidos remover o índice que ela usa.
 -- Em bancos que já aplicaram a migration de 07/10, esta etapa vira no-op.
 
-SET @sigilo_clientes_applied = (
+-- A tabela de histórico pode não existir durante o replay no banco sombra.
+-- Consulte-a dinamicamente apenas quando ela estiver presente.
+SET @sigilo_clientes_applied = 0;
+SET @migration_history_exists = (
   SELECT COUNT(*)
-  FROM `_prisma_migrations`
-  WHERE `migration_name` = '20261007000000_sigilo_clientes_pedidos'
-    AND `finished_at` IS NOT NULL
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE()
+    AND table_name = '_prisma_migrations'
 );
+SET @sigilo_clientes_history_sql = IF(
+  @migration_history_exists > 0,
+  'SET @sigilo_clientes_applied = (SELECT COUNT(*) FROM `_prisma_migrations` WHERE `migration_name` = ''20261007000000_sigilo_clientes_pedidos'' AND `finished_at` IS NOT NULL)',
+  'SET @sigilo_clientes_applied = 0'
+);
+PREPARE sigilo_clientes_history_stmt FROM @sigilo_clientes_history_sql;
+EXECUTE sigilo_clientes_history_stmt;
+DEALLOCATE PREPARE sigilo_clientes_history_stmt;
 
 SET @drop_item_venda_product_fk_sql = IF(
   @sigilo_clientes_applied = 0

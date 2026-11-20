@@ -4,6 +4,7 @@ import {
   editarSchema,
   listarSchema,
 } from "@/modules/clientes/clientes.schema"
+import { formatarCep, formatarCpfCnpj, formatarTelefone } from "./formatacao"
 
 const id = z.number().int().positive()
 export const clienteApiSchema = z.object({
@@ -69,16 +70,16 @@ function respostaValida<T>(schema: z.ZodType<T>, body: unknown): T {
 export function camposCliente(cliente?: ClienteApi): CamposCliente {
   return {
     nomeRazaoSocial: cliente?.nome_razao_social ?? "",
-    cpfCnpj: cliente?.cpf_cnpj ?? "",
+    cpfCnpj: cliente?.cpf_cnpj ? formatarCpfCnpj(cliente.cpf_cnpj) : "",
     email: cliente?.email ?? "",
-    telefone: cliente?.telefone ?? "",
+    telefone: cliente?.telefone ? formatarTelefone(cliente.telefone) : "",
     endereco: cliente?.endereco ?? "",
     numero: cliente?.numero ?? "",
     complemento: cliente?.complemento ?? "",
     bairro: cliente?.bairro ?? "",
     cidade: cliente?.cidade ?? "",
     estado: cliente?.estado ?? "",
-    cep: cliente?.cep ?? "",
+    cep: cliente?.cep ? formatarCep(cliente.cep) : "",
   }
 }
 
