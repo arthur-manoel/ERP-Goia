@@ -1,4 +1,4 @@
-import { GitBranch, Grid2X2, Pencil, Trash2 } from "lucide-react"
+import { GitBranch, Grid2X2, Pencil, Trash2, Truck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,6 +17,7 @@ export function TabelaProdutosProntos({
   onEditar,
   onFluxo,
   onGrade,
+  onFornecedores,
   onInativar,
 }: {
   produtos: Produto[]
@@ -24,6 +25,7 @@ export function TabelaProdutosProntos({
   onEditar: (produto: Produto) => void
   onFluxo: (produto: Produto) => void
   onGrade: (produto: Produto) => void
+  onFornecedores: (produto: Produto) => void
   onInativar: (produto: Produto) => void
 }) {
   const nomesTipos = new Map(tipos.map((tipo) => [tipo.id, tipo.nome]))
@@ -74,6 +76,14 @@ export function TabelaProdutosProntos({
               </TableCell>
               <TableCell>
                 <div className="flex gap-1">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label={`Fornecedores de ${produto.nome}`}
+                    onClick={() => onFornecedores(produto)}
+                  >
+                    <Truck className="size-4" />
+                  </Button>
                   <Button
                     size="icon"
                     variant="ghost"
