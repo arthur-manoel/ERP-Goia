@@ -579,15 +579,13 @@ Enviar ou incorporar a PR não executa DDL automaticamente.
 
 ## Histórico
 
-- A tela de lançamentos financeiros consulta o livro de caixa, com contas e categorias reais, saldo por conta e lançamento manual auditado. [Contrato financeiro](src/modules/lancamentos-financeiros/README.md).
-
-
 - 11/11/2026: tela de auditoria em `/admin/auditoria`, filtros por período/usuário/tabela/registro, snapshots antes/depois e auditoria transacional dos catálogos. Contrato e cobertura em [src/modules/auditoria/README.md](src/modules/auditoria/README.md).
 
 - 01/11/2026: reservas, movimentações na entrega/conclusão e recebimentos integrados em uma entrega. Contrato e implantação DB-first em `docs/operacoes-integradas.md`.
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-11-20 | Maria | `feature/lancamentos-financeiros-banco` | Tela de lançamentos com livro real, conta, categoria, saldo e auditoria. [Contrato financeiro](src/modules/lancamentos-financeiros/README.md). |
 | 2026-11-02 | Maria | `feature/auth-empresas-usuario` | Issue #12: descoberta em `/api/auth/empresas`, vínculos ativos sem permissão de módulo, preferência por usuário, seletor comum e proteção contra respostas atrasadas. Sem migration ou concessão automática. |
 | 2026-10-31 | — | `feature/21-vincular-fornecedores-empresas` | Backend e interface de associações empresa–fornecedor, condições comerciais independentes e elegibilidade de globais integrada a Compras. Sem alteração de schema ou histórico financeiro. |
 | 2026-10-31 | Alexsander Gabriel | `feature/integracao-api-categorias` | Integração da tela de categorias do PR #102 à API do PR #110, com busca, paginação, cadastro, edição e situação por empresa. Sem alterações no schema ou migrations. |
