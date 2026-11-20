@@ -77,6 +77,8 @@ novos recursos. As suítes próprias indicadas cobrem operações e regras adici
 | `/pedidos/{id}/itens/{idItem}` | PATCH; DELETE | PEDIDOS / E; E **e** X | S | A | I, unit/pedidos |
 | `/pedidos/{id}/fechar` | POST, fechamento comercial | PEDIDOS / E | S | A | I, unit/pedido-recebiveis |
 | `/pedidos/{id}/conta-a-receber` | GET | FINANCEIRO / L | S | A | I, unit/pedido-recebiveis |
+| `/financeiro/lancamentos`, `/financeiro/lancamentos/{id}`, `/financeiro/lancamentos/opcoes` | GET do livro, detalhe e opções | FINANCEIRO / L | S | A | I |
+| `/financeiro/lancamentos` | POST de lançamento manual | FINANCEIRO / L **e** C | S | A | I |
 | `/contas_receber`, `/contas_pagar`, `/despesas`, e respectivos `/{id}` | GET | FINANCEIRO / L | C | A | I, unit/contas_receber, unit/contas_pagar, unit/despesas |
 | `/contas_receber`, `/contas_pagar`, `/despesas` | POST | FINANCEIRO / C | C | A | I, suítes acima |
 | `/contas_receber/{id}`, `/contas_pagar/{id}`, `/despesas/{id}` | PUT, PATCH; DELETE | FINANCEIRO / E; X | C | A | I, suítes acima, unit/financeiro |
