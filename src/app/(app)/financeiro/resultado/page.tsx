@@ -9,7 +9,7 @@ export default function Page() {
     <>
       <PageHeader
         titulo="Relatório de resultado"
-        descricao="Receita, saídas e margem apurada no período."
+        descricao="Receita, custos, despesas e margem por categoria no período."
       />
       <RelatorioResultado />
     </>
