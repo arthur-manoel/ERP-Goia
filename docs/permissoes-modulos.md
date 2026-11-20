@@ -96,6 +96,8 @@ novos recursos. As suítes próprias indicadas cobrem operações e regras adici
 | `/estoque/kardex` | GET do histórico físico e saldo comprovado por posição | ESTOQUE / L | S | A | I, kardex.integration.test.mjs |
 | `/estoque/entradas`, `/estoque/saidas` | POST de movimentação | ESTOQUE / L **e** C | S | A | I, unit/movimentacoes-estoque (develop a5d3b72) |
 | `/estoque/ajustes` | POST de ajuste | ESTOQUE / L **e** E | S | A | I, unit/movimentacoes-estoque (develop a5d3b72) |
+| `/estoque/movimentacoes`, `/estoque/movimentacoes/catalogo` | GET de histórico e catálogo reais | ESTOQUE / L | S | A | I, telas-estoque.integration.test.mjs |
+| `/estoque/movimentacoes/exportar`, `/estoque/kardex/exportar` | GET de CSV/PDF filtrado | RELATORIOS / L **e** ESTOQUE / L | S | A | I, telas-estoque.integration.test.mjs |
 | `/estoque/movimentacoes/opcoes` | GET de opções demonstrativas autenticadas | ESTOQUE / L | S | A | I, unit/movimentacao/opcoes |
 | `/estoque-minimo` | GET; PUT de configuração | ESTOQUE / L; E | S | A | I, unit/estoque, estoque-minimo.integration.test.mjs |
 | `/estoque-minimo/empresas` | GET de vínculos autorizados para estoque | ESTOQUE / L por vínculo retornado | Cada vínculo | A | I, unit/estoque |

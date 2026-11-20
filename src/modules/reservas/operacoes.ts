@@ -8,7 +8,7 @@ import { disputaPersistencia } from "@/lib/prisma-concorrencia"
 export type Tx = Prisma.TransactionClient
 export type Contexto = { idEmpresa: number; idUsuario: number }
 export type Exigencia = [
-  "ESTOQUE" | "PEDIDOS" | "ORDENS_PRODUCAO" | "FINANCEIRO",
+  "ESTOQUE" | "PEDIDOS" | "ORDENS_PRODUCAO" | "FINANCEIRO" | "RELATORIOS",
   "ler" | "criar" | "editar" | "excluir",
 ]
 export async function conferir(

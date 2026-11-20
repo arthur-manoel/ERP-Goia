@@ -237,6 +237,7 @@ export async function consultarSaldo(
       })
       return {
         ...pos,
+        idSetor: estoque?.id_setor ?? null,
         saldo: historico.saldo.toFixed(3),
         saldoArmazenado: estoque?.quantidade.toFixed(3) ?? "0.000",
         quantidadeReservada:
