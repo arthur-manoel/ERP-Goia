@@ -129,6 +129,7 @@ function LivroFinanceiro() {
       <FormularioLancamento
         opcoes={opcoes}
         buscarOpcoes={setBuscaOpcoes}
+        filtrosOpcoes={buscaOpcoes}
         erroOpcoes={opcoesConsulta?.erro}
         recarregarOpcoes={() => setRevOpcoes((v) => v + 1)}
         atualizar={() => {
@@ -136,12 +137,11 @@ function LivroFinanceiro() {
           setRevisao((v) => v + 1)
         }}
       />
-      <BuscaOpcoesFinanceiras buscar={setBuscaOpcoes} />
-      {opcoes && (opcoes.maisContas || opcoes.maisCategorias) && (
-        <p className="text-sm text-muted-foreground">
-          Há mais de 500 opções. Refine a busca por nome.
-        </p>
-      )}
+      <BuscaOpcoesFinanceiras
+        buscar={setBuscaOpcoes}
+        filtros={buscaOpcoes}
+        excedeu={opcoes?.maisContas || opcoes?.maisCategorias}
+      />
       {opcoesConsulta?.erro && (
         <Alert variant="destructive">
           <AlertDescription>

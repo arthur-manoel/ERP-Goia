@@ -20,6 +20,7 @@ import {
   type ConsultaLancamentos,
   type LancamentoManual,
 } from "./schema"
+import { totalLiquido } from "./valores"
 
 // Prisma aplica LIKE ao contains no MySQL. Preserve a busca literal.
 const trechoLiteral = (texto: string) =>
@@ -200,7 +201,7 @@ type Total = {
 }
 function apurar(totais: Total[]) {
   const valor = (tipo: Total["tipo"]) =>
-    totais.find((t) => t.tipo === tipo)?._sum.valor ?? new Prisma.Decimal(0)
+    totais.find((t) => t.tipo === tipo)?._sum.valor?.toFixed(2) ?? "0.00"
   return { entradas: valor("ENTRADA"), saidas: valor("SAIDA") }
 }
 
@@ -231,7 +232,7 @@ async function saldoConta(
     nome: conta.nome,
     status: conta.status,
     saldoInicial: conta.saldo_inicial.toFixed(2),
-    saldoAtual: conta.saldo_inicial.plus(entradas).minus(saidas).toFixed(2),
+    saldoAtual: totalLiquido(entradas, saidas, conta.saldo_inicial.toFixed(2)),
     dataReferencia: dataCivil(agora),
   }
 }
@@ -309,9 +310,9 @@ export function listarLancamentos(
         dados: linhas.map((m) => apresentar(m, empresa)),
         conta,
         resumo: {
-          entradas: entradas.toFixed(2),
-          saidas: saidas.toFixed(2),
-          liquido: entradas.minus(saidas).toFixed(2),
+          entradas,
+          saidas,
+          liquido: totalLiquido(entradas, saidas),
         },
         paginacao: {
           pagina,

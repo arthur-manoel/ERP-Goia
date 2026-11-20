@@ -59,15 +59,28 @@ function rascunho(t: Tentativa | null) {
 
 export function BuscaOpcoesFinanceiras({
   buscar,
+  filtros,
+  excedeu,
 }: {
   buscar: (q: string) => void
+  filtros: string
+  excedeu?: boolean
 }) {
+  const parametros = new URLSearchParams(filtros)
+  const conta = parametros.get("conta") ?? ""
+  const categoria = parametros.get("categoria") ?? ""
   return (
     <details className="rounded-md border p-3">
       <summary className="cursor-pointer text-sm font-medium">
-        Buscar contas ou categorias
+        Buscar contas ou categorias{filtros && " · busca ativa"}
       </summary>
+      {excedeu && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Há mais de 500 opções. Refine a busca por nome.
+        </p>
+      )}
       <form
+        key={filtros}
         className="mt-3 flex flex-wrap items-end gap-2"
         onSubmit={(e) => {
           e.preventDefault()
@@ -81,15 +94,20 @@ export function BuscaOpcoesFinanceiras({
       >
         <label className="grid gap-1 text-sm">
           Buscar conta
-          <Input name="conta" maxLength={100} />
+          <Input name="conta" maxLength={100} defaultValue={conta} />
         </label>
         <label className="grid gap-1 text-sm">
           Buscar categoria
-          <Input name="categoria" maxLength={100} />
+          <Input name="categoria" maxLength={100} defaultValue={categoria} />
         </label>
         <Button type="submit" variant="outline">
           Buscar opções
         </Button>
+        {filtros && (
+          <Button type="button" variant="ghost" onClick={() => buscar("")}>
+            Limpar busca de opções
+          </Button>
+        )}
       </form>
     </details>
   )
@@ -98,12 +116,14 @@ export function BuscaOpcoesFinanceiras({
 export function FormularioLancamento({
   opcoes,
   buscarOpcoes,
+  filtrosOpcoes,
   erroOpcoes,
   recarregarOpcoes,
   atualizar,
 }: {
   opcoes: Opcoes | undefined
   buscarOpcoes: (q: string) => void
+  filtrosOpcoes: string
   erroOpcoes?: string
   recarregarOpcoes: () => void
   atualizar: () => void
@@ -113,6 +133,7 @@ export function FormularioLancamento({
   const key = `erp-lancamento:${usuario?.id}:${empresa?.id}`
   const [pendente, setPendente] = useState(() => lerTentativa(key))
   const [form, setForm] = useState(() => rascunho(pendente))
+  const [rotulos, setRotulos] = useState<Record<string, string>>({})
   const [aberto, setAberto] = useState(false)
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState("")
@@ -190,6 +211,7 @@ export function FormularioLancamento({
       limpar(t)
       setAberto(false)
       setForm(rascunho(null))
+      setRotulos({})
       setCampos({})
       atualizar()
       toast.success(
@@ -228,12 +250,18 @@ export function FormularioLancamento({
     setCampos({})
     void enviar({ chave: crypto.randomUUID(), body: JSON.stringify(v.data) })
   }
-  const editar = (campo: keyof typeof form, valor: string) =>
+  const editar = (campo: keyof typeof form, valor: string) => {
+    const lista =
+      campo === "idConta" ? contas : campo === "idCategoria" ? categorias : []
+    const selecionado = lista.find((o) => String(o.id) === valor)
+    if (selecionado)
+      setRotulos((r) => ({ ...r, [campo + ":" + valor]: selecionado.nome }))
     setForm((f) => ({
       ...f,
       [campo]: valor,
       ...(campo === "tipo" ? { idCategoria: "" } : {}),
     }))
+  }
 
   return (
     <>
@@ -262,7 +290,13 @@ export function FormularioLancamento({
               {erro}
             </p>
           )}
-          {!pendente && <BuscaOpcoesFinanceiras buscar={buscarOpcoes} />}
+          {!pendente && (
+            <BuscaOpcoesFinanceiras
+              buscar={buscarOpcoes}
+              filtros={filtrosOpcoes}
+              excedeu={opcoes?.maisContas || opcoes?.maisCategorias}
+            />
+          )}
           {!pendente &&
             !opcoes &&
             (erroOpcoes ? (
@@ -311,7 +345,8 @@ export function FormularioLancamento({
                     {form.idConta &&
                       !contas.some((c) => String(c.id) === form.idConta) && (
                         <option value={form.idConta}>
-                          Conta #{form.idConta}
+                          {rotulos["idConta:" + form.idConta] ??
+                            `Conta #${form.idConta}`}
                         </option>
                       )}
                     {contas.map((c) => (
@@ -340,7 +375,8 @@ export function FormularioLancamento({
                         (c) => String(c.id) === form.idCategoria,
                       ) && (
                         <option value={form.idCategoria}>
-                          Categoria #{form.idCategoria}
+                          {rotulos["idCategoria:" + form.idCategoria] ??
+                            `Categoria #${form.idCategoria}`}
                         </option>
                       )}
                     {categorias.map((c) => (
