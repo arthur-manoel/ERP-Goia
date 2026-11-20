@@ -982,7 +982,7 @@ test("Pedidos: persistência real, HTTP de produção, permissões e concorrênc
           data: { status: "INATIVO" },
         })
         try {
-          assert.equal((await chamar("/api/pedidos")).status, 403)
+          assert.equal((await chamar("/api/pedidos")).status, 401)
         } finally {
           await prisma.usuarios.update({
             where: { id: usuarios[0] },

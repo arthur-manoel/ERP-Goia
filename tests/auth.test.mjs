@@ -413,6 +413,11 @@ test("rotas: sessão divergente e falha de revogação preservam o cookie", asyn
   assert.ok(await service.verifyAccessToken(anterior.accessToken))
   assert.ok(await service.verifyAccessToken(atual.accessToken))
 
+  await service.logout(anterior.refreshToken, anterior.accessToken)
+  assert.equal((await logoutHandler(request(anterior.accessToken))).status, 200)
+  assert.equal(jar.get("refresh_token"), atual.refreshToken)
+  assert.ok(await service.verifyAccessToken(atual.accessToken))
+
   prisma.refresh_tokens.updateMany = async () => {
     throw new Error("gravação indisponível")
   }
@@ -496,6 +501,7 @@ test("perfis Prisma: administrador, setores, cargos, vínculos inativos e ambigu
   const { resolveUserRole } = load("src/modules/auth/auth.role.ts")
   const membership = (name) => ({
     status: "ATIVO",
+    nivel_acesso: "USUARIO",
     empresas: { status: "ATIVA" },
     cargos: { nome: name, status: "ATIVO" },
     setores: null,
@@ -508,7 +514,7 @@ test("perfis Prisma: administrador, setores, cargos, vínculos inativos e ambigu
     [" produção ", "PRODUCAO"],
     ["Comercial", "VENDAS"],
     ["Financeiro", "FINANCEIRO"],
-    ["Administrativo", "ADMINISTRACAO"],
+    ["Administrativo", null],
   ]) {
     assert.equal(
       resolveUserRole({
@@ -523,10 +529,16 @@ test("perfis Prisma: administrador, setores, cargos, vínculos inativos e ambigu
     usuario_empresa: [membership("Operador")],
   }
   assert.equal(resolveUserRole(user), null)
+  assert.equal(
+    resolveUserRole({
+      ...user,
+      usuario_empresa: [{ ...membership("Operador"), nivel_acesso: "EMPRESA" }],
+    }),
+    "ADMINISTRACAO",
+  )
   user.usuario_empresa[0].setores = {
-    nome: "Costura",
-    tipo: "Produção",
     status: "ATIVO",
+    permissoes_setor: [{ recurso: "ORDENS_PRODUCAO" }],
   }
   assert.equal(resolveUserRole(user), "PRODUCAO")
   user.usuario_empresa.push(membership("Vendas"))

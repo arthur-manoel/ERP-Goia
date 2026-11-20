@@ -75,7 +75,7 @@ A tela `/cadastros/clientes` consulta `/api/clientes` com busca por nome, CPF/CN
 
 Somente nome/razão social é obrigatório. O formulário compartilha a validação da API para CPF/CNPJ (inclusive alfanumérico), UF e CEP; opcionais vazios são enviados como `null`. A edição envia apenas campos alterados, preservando documentos legados não modificados. A troca de empresa reinicia a tela e cancela consultas pendentes.
 
-O contexto `/api/auth/contexto` fornece os vínculos ativos para seleção de empresa, sem exigir acesso a estoque. A autorização de `CLIENTES` permanece no servidor por operação. Nenhum schema, migration, permissão ou dado de demonstração foi adicionado ao fluxo real. A tela de fornecedores continua na sua implementação própria.
+A rota `/api/auth/empresas` fornece os vínculos ativos para seleção de empresa, sem exigir acesso a estoque. A escolha é associada ao usuário; ausência de vínculo e falhas têm estados próprios. O contrato está em [src/modules/auth/README.md](src/modules/auth/README.md). A autorização de `CLIENTES` permanece no servidor por operação. Nenhum schema, migration, permissão ou dado de demonstração foi adicionado ao fluxo real. A tela de fornecedores continua na sua implementação própria.
 
 ### Interface de categorias
 
@@ -313,10 +313,6 @@ O alias `@/*` aponta para `src/*`.
 | `npm run db:validate` | Valida `prisma/schema.prisma` |
 | `npm run db:studio` | Prisma Studio |
 
-O build usa `next build --webpack`, opção suportada pelo Next.js instalado,
-para contornar a falha do processo auxiliar do Turbopack observada no Windows.
-O mesmo comando é usado localmente e no CI.
-
 ---
 
 O build de produção usa `next build --webpack`, opção suportada pelo Next.js 16.3, para evitar a falha de inicialização do processo de CSS do Turbopack observada no Windows. O comando `npm run build` é o mesmo usado localmente e no CI; o desenvolvimento com `npm run dev` continua usando Turbopack.
@@ -402,6 +398,13 @@ abas, para evitar reuso. O JWT contém um identificador aleatório de sessão
 assinatura, validade, refresh ativo da mesma sessão e perfil atual. Sessões
 revogadas recebem 401 de imediato. Uma sessão válida sem permissão recebe 403.
 Uma falha ao consultar a sessão recebe 500 e interrompe a operação protegida.
+
+A autenticação consulta `/api/auth/empresas` antes de selecionar a empresa. A
+lista usa vínculos ativos e dispensa permissões de módulo. A renovação mantém
+em memória a empresa selecionada enquanto o vínculo estiver válido, mesmo
+com o armazenamento bloqueado. A preferência por usuário pode restaurar a
+escolha após uma recarga completa. O [contrato da API](src/modules/auth/README.md)
+inclui os comandos de teste da issue #12.
 
 O `src/instrumentation.ts` registra automaticamente o adapter Prisma em cada
 instância Node.js do Next, antes de atender requisições, usando o singleton de
@@ -580,6 +583,7 @@ Enviar ou incorporar a PR não executa DDL automaticamente.
 
 | Data | Autor | Referência | Descrição |
 | --- | --- | --- | --- |
+| 2026-11-02 | Maria | `feature/auth-empresas-usuario` | Issue #12: descoberta em `/api/auth/empresas`, vínculos ativos sem permissão de módulo, preferência por usuário, seletor comum e proteção contra respostas atrasadas. Sem migration ou concessão automática. |
 | 2026-10-31 | — | `feature/21-vincular-fornecedores-empresas` | Backend e interface de associações empresa–fornecedor, condições comerciais independentes e elegibilidade de globais integrada a Compras. Sem alteração de schema ou histórico financeiro. |
 | 2026-10-31 | Alexsander Gabriel | `feature/integracao-api-categorias` | Integração da tela de categorias do PR #102 à API do PR #110, com busca, paginação, cadastro, edição e situação por empresa. Sem alterações no schema ou migrations. |
 | 2026-10-30 | — | Backend de ordens de produção | CRUD, ciclo de vida, itens e apontamentos em `/api/ordem_producao`, com isolamento multiempresa, permissões, rate limiting, auditoria e concorrência. Schema preservado; estornos e liberação de reservas indisponíveis bloqueiam cancelamentos dependentes. |

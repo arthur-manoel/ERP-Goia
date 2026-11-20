@@ -87,11 +87,11 @@ export async function refreshHandler(request: Request) {
 
 export async function logoutHandler(request: Request) {
   try {
-    await logout(
+    const resultado = await logout(
       (await cookies()).get(REFRESH_COOKIE)?.value,
       readBearer(request),
     )
-    await setRefreshCookie("")
+    if (resultado !== "preservar-cookie") await setRefreshCookie("")
     return Response.json({ ok: true }, { headers })
   } catch (error) {
     return sessionError(error, "Não foi possível encerrar a sessão.")
