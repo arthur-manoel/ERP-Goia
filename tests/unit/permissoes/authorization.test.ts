@@ -25,9 +25,9 @@ const vinculo = (
   usuarios: { nivel_acesso: global },
   permissoes_usuario: permissoes,
 })
-it("preserva os 18 recursos e não aceita recurso/ação ausente nem fallback null", async () => {
-  expect(RECURSOS_PERMISSAO).toHaveLength(18)
-  expect(new Set(RECURSOS_PERMISSAO).size).toBe(18)
+it("preserva os recursos do catálogo e não aceita recurso/ação ausente nem fallback null", async () => {
+  expect(RECURSOS_PERMISSAO).toHaveLength(19)
+  expect(new Set(RECURSOS_PERMISSAO).size).toBe(19)
   for (const value of [null, undefined, "__proto__", "INEXISTENTE"])
     expect(await allowedCompanies(1, value as never, "pode_ler")).toEqual([])
   expect(await allowedCompanies(1, "PRODUTOS", "constructor" as never)).toEqual(
