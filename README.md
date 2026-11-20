@@ -579,6 +579,9 @@ Enviar ou incorporar a PR não executa DDL automaticamente.
 
 ## Histórico
 
+- Movimentações e Kardex consultam o estoque persistido, registram operações manuais pela API oficial e exportam CSV/PDF. [Contrato de estoque](src/modules/movimentacoes-estoque/README.md).
+
+
 - 11/11/2026: tela de auditoria em `/admin/auditoria`, filtros por período/usuário/tabela/registro, snapshots antes/depois e auditoria transacional dos catálogos. Contrato e cobertura em [src/modules/auditoria/README.md](src/modules/auditoria/README.md).
 
 - 01/11/2026: reservas, movimentações na entrega/conclusão e recebimentos integrados em uma entrega. Contrato e implantação DB-first em `docs/operacoes-integradas.md`.

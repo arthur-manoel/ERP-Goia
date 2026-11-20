@@ -10,7 +10,7 @@ import { calcularPaginacao, direcoes, type Consulta } from "./kardex.schema"
 type Tx = Prisma.TransactionClient
 type Decimal = Prisma.Decimal
 type Direcao = "ENTRADA" | "SAIDA"
-type Linha = {
+export type Linha = {
   id: number
   idMovimentacao: number | null
   instante: number | bigint
@@ -66,7 +66,12 @@ const lancamentoValido = Prisma.sql`
   AND k.saldo_atual = k.saldo_anterior
     + CASE WHEN k.tipo_movimentacao = 'ENTRADA' THEN k.quantidade ELSE -k.quantidade END`
 
-async function validarReferencias(tx: Tx, idEmpresa: number, f: Consulta) {
+export async function validarReferencias(
+  tx: Tx,
+  idEmpresa: number,
+  f: Consulta,
+  leitura: "kardex" | "movimentacoes" = "kardex",
+) {
   const [produto, local, setor, variacao] = await Promise.all([
     f.idProduto
       ? tx.produto_empresa.findFirst({
@@ -94,7 +99,11 @@ async function validarReferencias(tx: Tx, idEmpresa: number, f: Consulta) {
       : true,
   ])
   if (!produto) {
-    const historico = await tx.$queryRaw<{ id: number }[]>`
+    const historico =
+      leitura === "movimentacoes"
+        ? await tx.$queryRaw<{ id: number }[]>`
+        SELECT id FROM movimentacao_estoque WHERE id_empresa = ${idEmpresa} AND id_produto = ${f.idProduto} LIMIT 1`
+        : await tx.$queryRaw<{ id: number }[]>`
       SELECT k.id FROM kardex k JOIN movimentacao_estoque m ON ${vinculoMovimento}
       WHERE k.id_empresa = ${idEmpresa} AND k.id_produto = ${f.idProduto} LIMIT 1`
     if (!historico.length)
@@ -124,13 +133,17 @@ function filtrosSql(idEmpresa: number, f: Consulta) {
   return Prisma.sql`WHERE ${Prisma.join(filtros, " AND ")}`
 }
 
-export function consultaPagina(idEmpresa: number, f: Consulta) {
+export function consultaPagina(
+  idEmpresa: number,
+  f: Consulta,
+  limite = f.limite,
+) {
   return Prisma.sql`
     WITH pagina AS (
       SELECT k.id, ${instante} AS instante ${livro}
       ${filtrosSql(idEmpresa, f)}
       ORDER BY instante DESC, k.id DESC
-      LIMIT ${f.limite} OFFSET ${(f.pagina - 1) * f.limite}
+      LIMIT ${limite} OFFSET ${(f.pagina - 1) * f.limite}
     )
     SELECT k.id, m.id AS idMovimentacao, pagina.instante,
       CASE WHEN m.id IS NOT NULL OR pe.id IS NOT NULL THEN p.id END AS idProduto,
@@ -175,7 +188,7 @@ export function consultaPagina(idEmpresa: number, f: Consulta) {
     ORDER BY pagina.instante DESC, k.id DESC`
 }
 
-function apresentar(l: Linha) {
+export function apresentar(l: Linha) {
   const valido = Number(l.valido) === 1
   return {
     id: l.id,

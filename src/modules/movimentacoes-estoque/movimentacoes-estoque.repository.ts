@@ -141,6 +141,23 @@ export async function movimentarNaTransacao(
   })
   if (estoque && estoque.id_setor !== dados.idSetor)
     throw new ConflictError("A posição pertence a outro setor.")
+  if (
+    !estoque &&
+    (await tx.estoque.findUnique({
+      where: {
+        id_empresa_id_setor_id_produto: {
+          id_empresa: ctx.idEmpresa,
+          id_setor: dados.idSetor,
+          id_produto: dados.idProduto,
+        },
+      },
+      select: { id: true },
+    }))
+  )
+    throw new ConflictError(
+      "O produto já possui posição neste setor em outro local.",
+    )
+
   const { saldo: anterior, idMovimentacaoAbertura } =
     await prepararSaldoEstoque(tx, ctx, dados, estoque)
   const ajuste = "saldoNovo" in dados
@@ -237,6 +254,7 @@ export async function consultarSaldo(
       })
       return {
         ...pos,
+        idSetor: estoque?.id_setor ?? null,
         saldo: historico.saldo.toFixed(3),
         saldoArmazenado: estoque?.quantidade.toFixed(3) ?? "0.000",
         quantidadeReservada:
