@@ -4,6 +4,7 @@ import {
   chaveMovimento,
   executar,
   type Contexto,
+  type Exigencia,
 } from "@/modules/reservas/operacoes"
 import { movimentarNaTransacao } from "./movimentacoes-estoque.repository"
 import type {
@@ -11,44 +12,70 @@ import type {
   MovimentoInput,
 } from "./movimentacoes-estoque.schema"
 
-export function confirmarMovimento(
+type Confirmacao =
+  | {
+      confirmada: true
+      movimento: Awaited<ReturnType<typeof movimentarNaTransacao>>
+    }
+  | { confirmada: false; status: number; mensagem: string }
+
+class MovimentoRecusado extends Error {
+  constructor(readonly recusa: HttpError) {
+    super(recusa.message)
+  }
+}
+
+export async function confirmarMovimento(
   ctx: Contexto,
   chave: string,
   dados: MovimentoInput | AjusteInput,
   operacao: "entrada" | "saida" | "ajuste",
 ) {
-  return executar(
-    ctx,
-    chaveMovimento("estoque-manual", chave),
-    `ESTOQUE_MANUAL_${operacao.toUpperCase()}`,
-    dados,
-    [
-      ["ESTOQUE", "ler"],
-      ["ESTOQUE", operacao === "ajuste" ? "editar" : "criar"],
-    ],
-    async (tx) => {
-      // A recusa encerra a chave sob o mesmo lock do replay.
-      await tx.$executeRaw`SAVEPOINT estoque_manual`
-      try {
-        const movimento = await movimentarNaTransacao(tx, ctx, dados, operacao)
-        await tx.$executeRaw`RELEASE SAVEPOINT estoque_manual`
-        return { confirmada: true as const, movimento }
-      } catch (erro) {
-        if (
-          !(erro instanceof HttpError) ||
-          erro instanceof ConflitoTransitorio ||
-          ![400, 404, 409].includes(erro.status)
-        )
+  const identidade = chaveMovimento("estoque-manual", chave)
+  const tipo = `ESTOQUE_MANUAL_${operacao.toUpperCase()}`
+  const exigencias: Exigencia[] = [
+    ["ESTOQUE", "ler"],
+    ["ESTOQUE", operacao === "ajuste" ? "editar" : "criar"],
+  ]
+  try {
+    return await executar<Confirmacao>(
+      ctx,
+      identidade,
+      tipo,
+      dados,
+      exigencias,
+      async (tx) => {
+        try {
+          return {
+            confirmada: true,
+            movimento: await movimentarNaTransacao(tx, ctx, dados, operacao),
+          }
+        } catch (erro) {
+          if (
+            erro instanceof HttpError &&
+            !(erro instanceof ConflitoTransitorio) &&
+            [400, 404, 409].includes(erro.status)
+          )
+            throw new MovimentoRecusado(erro)
           throw erro
-        // Desfaz também uma eventual abertura legada antes de persistir a recusa.
-        await tx.$executeRaw`ROLLBACK TO SAVEPOINT estoque_manual`
-        await tx.$executeRaw`RELEASE SAVEPOINT estoque_manual`
-        return {
-          confirmada: false as const,
-          status: erro.status,
-          mensagem: erro.message,
         }
-      }
-    },
-  )
+      },
+    )
+  } catch (erro) {
+    if (!(erro instanceof MovimentoRecusado)) throw erro
+    // A transação da movimentação já reverteu todos os efeitos. Sob o mesmo
+    // lock, devolve a confirmação concorrente se houve commit ou encerra a chave.
+    return executar<Confirmacao>(
+      ctx,
+      identidade,
+      tipo,
+      dados,
+      exigencias,
+      async () => ({
+        confirmada: false,
+        status: erro.recusa.status,
+        mensagem: erro.recusa.message,
+      }),
+    )
+  }
 }

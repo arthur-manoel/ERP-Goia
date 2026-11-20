@@ -188,6 +188,20 @@ test("Movimentos manuais, Kardex e exportações autorizadas por HTTP", async (t
       }),
       4,
     )
+    const outroLocal = await prisma.locais_estoque.create({
+      data: { id_empresa: empresa.id, nome: "Outro depósito da mesma empresa" },
+    })
+    const chavePosicao = randomUUID()
+    for (let i = 0; i < 2; i++) {
+      const resposta = await movimento(
+        "entradas",
+        { ...entrada, idLocalEstoque: outroLocal.id },
+        chavePosicao,
+      )
+      assert.equal(resposta.status, 409)
+      assert.equal((await resposta.json()).code, "ESTOQUE_RECUSADO")
+    }
+    assert.equal(await prisma.estoque.count(where), 1)
     const pos = await prisma.estoque.findFirstOrThrow(where)
     assert.equal(pos.quantidade.toFixed(3), "0.500")
     await prisma.estoque.update({
