@@ -579,6 +579,9 @@ Enviar ou incorporar a PR não executa DDL automaticamente.
 
 ## Histórico
 
+- A tela de lançamentos financeiros consulta o livro de caixa, com contas e categorias reais, saldo por conta e lançamento manual auditado. [Contrato financeiro](src/modules/lancamentos-financeiros/README.md).
+
+
 - 11/11/2026: tela de auditoria em `/admin/auditoria`, filtros por período/usuário/tabela/registro, snapshots antes/depois e auditoria transacional dos catálogos. Contrato e cobertura em [src/modules/auditoria/README.md](src/modules/auditoria/README.md).
 
 - 01/11/2026: reservas, movimentações na entrega/conclusão e recebimentos integrados em uma entrega. Contrato e implantação DB-first em `docs/operacoes-integradas.md`.
