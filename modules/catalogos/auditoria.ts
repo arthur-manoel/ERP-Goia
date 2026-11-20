@@ -13,6 +13,7 @@ type Tabela =
   | "tipos_produto"
   | "fornecedores"
   | "categorias"
+  | "locais_estoque"
   | "produtos"
 type Registro = { id: number; id_empresa?: number | null }
 
@@ -59,6 +60,9 @@ export async function gravarCatalogo<T extends Registro>(
         case "categorias":
           await tx.$queryRaw`SELECT id FROM categorias WHERE id = ${id} FOR UPDATE`
           break
+        case "locais_estoque":
+          await tx.$queryRaw`SELECT id FROM locais_estoque WHERE id = ${id} FOR UPDATE`
+          break
         case "produtos":
           await bloquearProdutoCatalogo(tx, id)
           break
@@ -76,6 +80,8 @@ export async function gravarCatalogo<T extends Registro>(
           return tx.fornecedores.findUnique({ where: { id: registro } })
         case "categorias":
           return tx.categorias.findUnique({ where: { id: registro } })
+        case "locais_estoque":
+          return tx.locais_estoque.findUnique({ where: { id: registro } })
         case "produtos":
           return tx.produtos.findUnique({ where: { id: registro } })
       }
