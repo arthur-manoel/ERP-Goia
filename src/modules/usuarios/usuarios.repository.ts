@@ -411,6 +411,33 @@ export async function editarUsuario(
 ) {
   const { usuario, vinculo } = await vinculoDaEmpresa(tx, ctx, id)
   const antes = { usuario, vinculo }
+  if (
+    input.statusVinculo === "INATIVO" &&
+    vinculo.status === "ATIVO" &&
+    usuario.status === "ATIVO" &&
+    vinculo.cargos.status === "ATIVO" &&
+    administrador(vinculo)
+  ) {
+    const outro = await tx.usuario_empresa.findFirst({
+      where: {
+        id_empresa: ctx.idEmpresa,
+        id_usuario: { not: id },
+        status: "ATIVO",
+        cargos: { status: "ATIVO", id_empresa: ctx.idEmpresa },
+        usuarios: { status: "ATIVO" },
+        OR: [
+          { nivel_acesso: "EMPRESA" },
+          { usuarios: { nivel_acesso: "ADMIN" } },
+        ],
+      },
+      select: { id: true },
+    })
+    if (!outro)
+      throw new UsuarioError(
+        409,
+        "A empresa deve manter ao menos um vínculo administrativo ativo.",
+      )
+  }
   if (input.nome !== undefined || input.email !== undefined) {
     const outrosVinculos = await tx.usuario_empresa.count({
       where: {
@@ -445,6 +472,12 @@ export async function editarUsuario(
     await revogarSessoes(tx, id)
   }
   if (input.statusVinculo !== undefined) {
+    if (
+      input.statusVinculo === "ATIVO" &&
+      input.idCargo === undefined &&
+      input.idSetor === undefined
+    )
+      await buscarCargo(tx, ctx, vinculo.id_cargo)
     if (input.statusVinculo === "ATIVO" && usuario.status !== "ATIVO")
       throw new UsuarioError(
         409,

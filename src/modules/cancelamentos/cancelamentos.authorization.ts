@@ -10,6 +10,7 @@ export async function acesso(tx: Tx, ctx: Contexto) {
       status: "ATIVO",
       usuarios: { status: "ATIVO" },
       empresas: { status: "ATIVA" },
+      cargos: { id_empresa: ctx.idEmpresa, status: "ATIVO" },
     },
     include: { usuarios: true, cargos: true, permissoes_usuario: true },
   })

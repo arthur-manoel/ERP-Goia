@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import { ambienteRecebiveis } from "./integracao-recebiveis.mjs"
 export async function ambienteCancelamentos() {
-  const a = await ambienteRecebiveis()
+  const a = await ambienteRecebiveis({ segundoAdministrador: true })
   const { prisma, empresas } = a
   const id_empresa = empresas[0]
   const local = await prisma.locais_estoque.create({
