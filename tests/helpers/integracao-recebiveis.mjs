@@ -11,7 +11,7 @@ export const normalizar = (value) =>
     ),
   )
 
-export async function ambienteRecebiveis() {
+export async function ambienteRecebiveis({ segundoAdministrador = false } = {}) {
   const url = process.env.RECEBIVEIS_TEST_DATABASE_URL
   bancoLocal(url)
   process.env.DATABASE_URL = url
@@ -190,6 +190,7 @@ export async function ambienteRecebiveis() {
       { cadastros: true },
       { admin: true, empresa: 1 },
       { financeiro: true },
+      ...(segundoAdministrador ? [{ admin: true }] : []),
     ]
     const pessoas = []
     for (let i = 0; i < perfis.length; i++) {

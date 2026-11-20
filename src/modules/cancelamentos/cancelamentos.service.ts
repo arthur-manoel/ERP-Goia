@@ -1,7 +1,7 @@
 import { auditar } from "./cancelamentos.auditoria"
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
-import { ConflictError } from "@/lib/api/errors"
+import { ConflictError, HttpError } from "@/lib/api/errors"
 import {
   chaveMovimento,
   type Contexto,
@@ -106,6 +106,8 @@ export async function decidir(
     "A decisão exige autorização gerencial expressa na empresa ativa.",
   )
   const row = await buscar(tx, ctx, id)
+  if (decisao === "APROVADA" && row.id_solicitante === ctx.idUsuario)
+    throw new HttpError(403, "Você não pode aprovar a própria solicitação.")
   if (
     !["AGUARDANDO_APROVACAO", "AGUARDANDO_EXECUCAO", "INTERVENCAO"].includes(
       row.status,

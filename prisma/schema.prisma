@@ -1749,6 +1749,7 @@ enum permissoes_usuario_recurso {
   FLUXOS_PRODUCAO
   TAMANHOS
   TIPOS_PRODUTO
+  CARGOS
 }
 
 enum tipos_setor_status {

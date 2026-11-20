@@ -15,10 +15,11 @@ test("Cancelamentos HTTP e MariaDB: etapas, efeitos, permissões, concorrência 
     return { p, r, e, titulos: await a.titulos(p) }
   }
   async function aprovar(c) {
-    return a.post(op(c, "decisao"), {
-      decisao: "APROVADA",
-      motivo: "Aprovado pelo responsável da fixture",
-    })
+    return a.post(
+      op(c, "decisao"),
+      { decisao: "APROVADA", motivo: "Aprovado pelo responsável da fixture" },
+      { usuario: 7 },
+    )
   }
   async function snapshot() {
     return JSON.stringify({
