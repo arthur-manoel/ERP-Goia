@@ -82,7 +82,12 @@ const enderecoCampos = {
   principal: z.boolean().optional().default(false),
 }
 export const enderecoCriarSchema = z.strictObject(enderecoCampos)
-export const enderecoEditarSchema = enderecoCriarSchema
+export const enderecoEditarSchema = z
+  .strictObject({
+    ...enderecoCampos,
+    tipo: z.enum(cliente_endereco_tipo).optional(),
+    principal: z.boolean().optional(),
+  })
   .partial()
   .refine((v) => Object.keys(v).length > 0, "Informe ao menos um campo.")
 
@@ -306,18 +311,19 @@ export async function editarEndereco(
       where: { id, id_cliente: idCliente, ativo: true },
     })
     if (!antes) throw new ClienteError(404, "Endereço não encontrado.")
-    const principal =
-      data.principal === true || data.tipo === "PRINCIPAL"
-        ? true
-        : data.principal
-    if (principal)
+    const tornarPrincipal = data.principal === true || data.tipo === "PRINCIPAL"
+    if (tornarPrincipal)
       await tx.cliente_endereco.updateMany({
         where: { id_cliente: idCliente, ativo: true, id: { not: id } },
         data: { principal: false },
       })
+    const alteracoes = {
+      ...data,
+      ...(tornarPrincipal ? { principal: true } : {}),
+    }
     const row = await tx.cliente_endereco.update({
       where: { id },
-      data: { ...data, principal },
+      data: alteracoes,
     })
     await auditar(tx, ctx, "cliente_endereco", id, antes, row, "UPDATE")
     return row

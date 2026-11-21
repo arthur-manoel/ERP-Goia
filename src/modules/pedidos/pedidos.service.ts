@@ -23,7 +23,7 @@ async function validarCliente(tx: repo.Transaction, ctx: Contexto, id: number) {
     throw new PedidoError(409, "Cliente não está ativo.")
   return cliente
 }
-async function prepararEntrega(
+export async function prepararEntrega(
   tx: repo.Transaction,
   ctx: Contexto,
   idCliente: number,
@@ -45,7 +45,7 @@ async function prepararEntrega(
           id_cliente: idCliente,
           ativo: true,
           clientes: { id_empresa: ctx.idEmpresa },
-          OR: [{ principal: true }, { tipo: "PRINCIPAL" }, { tipo: "ENTREGA" }],
+          tipo: { in: ["PRINCIPAL", "ENTREGA"] },
         },
         orderBy: [{ principal: "desc" }, { id: "asc" }],
       })
@@ -63,13 +63,13 @@ async function prepararEntrega(
     id_endereco_entrega: endereco?.id ?? null,
     destinatario: cliente.nome_razao_social,
     telefone_entrega: contato?.valor ?? cliente.telefone,
-    endereco_entrega: endereco?.endereco ?? cliente.endereco,
-    numero_entrega: endereco?.numero ?? cliente.numero,
-    complemento_entrega: endereco?.complemento ?? cliente.complemento,
-    bairro_entrega: endereco?.bairro ?? cliente.bairro,
-    cidade_entrega: endereco?.cidade ?? cliente.cidade,
-    estado_entrega: endereco?.estado ?? cliente.estado,
-    cep_entrega: endereco?.cep ?? cliente.cep,
+    endereco_entrega: endereco ? endereco.endereco : cliente.endereco,
+    numero_entrega: endereco ? endereco.numero : cliente.numero,
+    complemento_entrega: endereco ? endereco.complemento : cliente.complemento,
+    bairro_entrega: endereco ? endereco.bairro : cliente.bairro,
+    cidade_entrega: endereco ? endereco.cidade : cliente.cidade,
+    estado_entrega: endereco ? endereco.estado : cliente.estado,
+    cep_entrega: endereco ? endereco.cep : cliente.cep,
     referencia_entrega: endereco?.referencia ?? null,
   }
 }
