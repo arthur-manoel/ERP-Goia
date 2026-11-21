@@ -38,6 +38,8 @@ export const db = {
   pedido_cliente_historico: model(),
   produto_variacoes: model(),
   clientes: model(),
+  cliente_contato: model(),
+  cliente_endereco: model(),
   sequencias_automaticas: { ...model(), upsert: vi.fn() },
   tipos_produto: model(),
   $queryRaw: vi.fn(),
