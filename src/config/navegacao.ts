@@ -149,7 +149,12 @@ export const navegacao: GrupoNavegacao[] = [
         href: "/vendas/pedidos/cancelamentos",
         icone: ArrowLeftRight,
       },
-      { titulo: "Vendas", href: "/vendas", icone: BadgeDollarSign },
+      { titulo: "PDV", href: "/vendas", icone: BadgeDollarSign },
+      {
+        titulo: "Histórico de vendas",
+        href: "/vendas/historico",
+        icone: Receipt,
+      },
     ],
   },
   {
