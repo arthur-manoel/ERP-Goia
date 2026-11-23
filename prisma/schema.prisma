@@ -456,6 +456,11 @@ model empresas {
   cor_tema                  String                      @default("#22c55e") @db.VarChar(50)
   status                    empresas_status             @default(ATIVA)
   data_cadastro             DateTime                    @default(now()) @db.Timestamp(0)
+  created_at                DateTime                    @default(now()) @db.Timestamp(0)
+  updated_at                DateTime                    @default(now()) @updatedAt @db.Timestamp(0)
+  inativado_em              DateTime?                   @db.Timestamp(0)
+  inativado_por             Int?
+  inativador                usuarios?                   @relation("EmpresaInativador", fields: [inativado_por], references: [id], onDelete: SetNull, map: "fk_empresa_inativador")
   auditoria                 auditoria[]
   cargos                    cargos[]
   categorias                categorias[]
@@ -498,6 +503,10 @@ model empresas {
   movimentacoes_financeiras movimentacoes_financeiras[]
   pedido_cliente            pedido_cliente[]
   pedido_cliente_fechamento pedido_cliente_fechamento[]
+
+  @@index([inativado_por], map: "fk_empresa_inativador")
+  @@index([razao_social, id], map: "idx_empresa_razao_id")
+  @@index([status, razao_social, id], map: "idx_empresa_status_razao_id")
 }
 
 model estoque {
@@ -1607,6 +1616,7 @@ model usuario_empresa {
 }
 
 model usuarios {
+  empresas_inativadas empresas[] @relation("EmpresaInativador")
   ordem_producao_apontamento                                                                           ordem_producao_apontamento[]
   pedido_cliente_fechamento                                                                            pedido_cliente_fechamento[]
   id                                                                                                   Int                                 @id @default(autoincrement())
@@ -1764,6 +1774,7 @@ enum permissoes_usuario_recurso {
   FLUXOS_PRODUCAO
   TAMANHOS
   TIPOS_PRODUTO
+  EMPRESAS
 }
 
 enum tipos_setor_status {
