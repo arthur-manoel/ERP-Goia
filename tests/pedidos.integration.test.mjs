@@ -328,6 +328,91 @@ test("Pedidos: persistência real, HTTP de produção, permissões e concorrênc
         assert.equal(detalhe.itens[0].idCor, corA.id)
       },
     )
+    await t.test(
+      "01a pedido persiste o endereço selecionado sem completar campos com a matriz",
+      async () => {
+        const clienteEntrega = await prisma.clientes.create({
+          data: {
+            id_empresa: empresas[0],
+            nome_razao_social: `Cliente endereço ${marker}`,
+            endereco: "Rua da matriz",
+            numero: "100",
+            complemento: "Sala 2",
+            bairro: "Centro",
+            cidade: "Fortaleza",
+            estado: "CE",
+            cep: "60000000",
+          },
+        })
+        const galpao = await prisma.cliente_endereco.create({
+          data: {
+            id_cliente: clienteEntrega.id,
+            tipo: "ENTREGA",
+            endereco: "Rua do galpão",
+            numero: null,
+            complemento: null,
+            bairro: "Distrito",
+            cidade: "Maracanaú",
+            estado: "CE",
+            cep: null,
+          },
+        })
+        const criado = await crear({
+          ...corpo(),
+          idCliente: clienteEntrega.id,
+          idEnderecoEntrega: galpao.id,
+        })
+        assert.equal(criado.status, 201, JSON.stringify(criado.body))
+        const salvo = (await chamar(`/api/pedidos/${criado.body.idPedido}`))
+          .body
+        assert.deepEqual(salvo.entrega, {
+          idEndereco: galpao.id,
+          destinatario: clienteEntrega.nome_razao_social,
+          telefone: clienteEntrega.telefone,
+          endereco: "Rua do galpão",
+          numero: null,
+          complemento: null,
+          bairro: "Distrito",
+          cidade: "Maracanaú",
+          estado: "CE",
+          cep: null,
+          referencia: null,
+        })
+      },
+    )
+    await t.test(
+      "01b seleção automática ignora cobrança e escolhe endereço de entrega válido",
+      async () => {
+        const clienteAuto = await prisma.clientes.create({
+          data: {
+            id_empresa: empresas[0],
+            nome_razao_social: `Cliente automático ${marker}`,
+          },
+        })
+        const cobranca = await prisma.cliente_endereco.create({
+          data: {
+            id_cliente: clienteAuto.id,
+            tipo: "COBRANCA",
+            endereco: "Rua de cobrança",
+            principal: true,
+          },
+        })
+        const entregaValida = await prisma.cliente_endereco.create({
+          data: {
+            id_cliente: clienteAuto.id,
+            tipo: "ENTREGA",
+            endereco: "Rua de entrega",
+          },
+        })
+        const criado = await crear({ ...corpo(), idCliente: clienteAuto.id })
+        assert.equal(criado.status, 201, JSON.stringify(criado.body))
+        const salvo = (await chamar(`/api/pedidos/${criado.body.idPedido}`))
+          .body
+        assert.equal(salvo.entrega.idEndereco, entregaValida.id)
+        assert.notEqual(salvo.entrega.idEndereco, cobranca.id)
+        assert.equal(salvo.entrega.endereco, "Rua de entrega")
+      },
+    )
     assert.ok(
       principal?.body.idPedido,
       "A criação inicial deve funcionar antes dos demais cenários.",
@@ -982,7 +1067,7 @@ test("Pedidos: persistência real, HTTP de produção, permissões e concorrênc
           data: { status: "INATIVO" },
         })
         try {
-          assert.equal((await chamar("/api/pedidos")).status, 403)
+          assert.equal((await chamar("/api/pedidos")).status, 401)
         } finally {
           await prisma.usuarios.update({
             where: { id: usuarios[0] },

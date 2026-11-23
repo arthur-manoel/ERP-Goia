@@ -1,26 +1,14 @@
 "use client"
 
-import { useState } from "react"
-import { Info } from "lucide-react"
-
-import { useErp } from "@/features/erp/components/provedor"
-
+import { useEffect, useState } from "react"
+import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
+import { hoje } from "@/features/erp/datas"
+import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
+import type { ResultadoDados } from "@/modules/resultado/calculo"
+import { formatarValorCaixa as brl } from "@/modules/fluxo-caixa/formatacao"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -32,80 +20,81 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-/**
- * TODO (bloqueado no schema): `Lancamento` só distingue type "Pagar"/"Receber",
- * sem nenhuma categoria que separe custo de insumos de despesas gerais dentro
- * do que é pago. Por isso o relatório abaixo mostra "Saídas" como um total
- * único. Quando o schema (features/financeiro/schemas.ts) ganhar um campo de
- * categoria, dividir esse total em "Custo de insumos" e "Despesas".
- */
-
-function brl(valor: number) {
-  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-}
-
-function primeiroDiaDoMes() {
-  const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
-}
-
-function hojeLocal() {
-  return new Date().toLocaleDateString("sv-SE")
-}
-
 export function RelatorioResultado() {
-  const { data, error, reload } = useErp()
-
-  const [de, setDe] = useState(primeiroDiaDoMes())
-  const [ate, setAte] = useState(hojeLocal())
-
-  if (error)
-    return (
-      <Alert variant="destructive">
-        <AlertTitle>Não foi possível carregar os dados</AlertTitle>
-        <AlertDescription className="flex flex-col items-start gap-2">
-          {error}
-          <Button variant="outline" onClick={() => void reload()}>
-            Tentar novamente
-          </Button>
-        </AlertDescription>
-      </Alert>
-    )
-
-  if (!data)
-    return (
-      <div role="status" aria-label="Carregando dados" className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-        <Skeleton className="h-64 w-full" />
-      </div>
-    )
-
-  const client = (id: string) =>
-    data.clients.find((row) => row.id === id)?.name ?? "Cadastro não encontrado"
-
-  const noPeriodo = data.transactions.filter(
-    (row) => row.dueDate >= de && row.dueDate <= ate,
-  )
-
-  const receita = noPeriodo
-    .filter((row) => row.type === "Receber")
-    .reduce((soma, row) => soma + row.amount, 0)
-
-  const saidas = noPeriodo
-    .filter((row) => row.type === "Pagar")
-    .reduce((soma, row) => soma + row.amount, 0)
-
-  const margem = receita - saidas
-  const margemPercentual = receita > 0 ? (margem / receita) * 100 : 0
-
+  const { estado, usuario, empresa, empresas, selecionarEmpresa } =
+    useAutenticacao()
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
+    <div className="space-y-6">
+      {empresas.length > 1 && (
+        <SearchSelect
+          value={empresa ? String(empresa.id) : ""}
+          onValueChange={(v) => selecionarEmpresa(Number(v))}
+          label="Empresa ativa"
+          placeholder="Selecione uma empresa"
+          options={empresas.map((e) => ({
+            value: String(e.id),
+            label: e.nome,
+          }))}
+        />
+      )}
+      {estado === "carregando" ? (
+        <Skeleton className="h-64 w-full" />
+      ) : estado === "autenticado" && empresa ? (
+        <ResultadoEmpresa key={`${usuario?.email}:${empresa.id}`} />
+      ) : (
+        <Alert>
+          <AlertDescription>
+            Entre na sua conta e selecione uma empresa para consultar o
+            resultado.
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>
+  )
+}
+
+function ResultadoEmpresa() {
+  const { requisitar } = useAutenticacao()
+  const [de, setDe] = useState(() => `${hoje().slice(0, 7)}-01`)
+  const [ate, setAte] = useState(hoje)
+  const [revisao, setRevisao] = useState(0)
+  const [resultado, setResultado] = useState<{
+    chave: string
+    dados?: ResultadoDados
+    erro?: string
+  } | null>(null)
+  const valido = Boolean(de && ate && de <= ate)
+  const chave = `${de}:${ate}:${revisao}`
+  const atual = resultado?.chave === chave ? resultado : null
+  useEffect(() => {
+    if (!valido) return
+    const controller = new AbortController()
+    requisitar(
+      `/api/financeiro/resultado?${new URLSearchParams({ de, ate })}`,
+      { signal: controller.signal },
+    )
+      .then(async (res) => {
+        const json = await res.json()
+        if (!res.ok)
+          throw new Error(json.error ?? "Falha ao consultar o resultado.")
+        if (!controller.signal.aborted)
+          setResultado({ chave, dados: json.data as ResultadoDados })
+      })
+      .catch((erro: unknown) => {
+        if (!controller.signal.aborted)
+          setResultado({
+            chave,
+            erro: erro instanceof Error ? erro.message : "Falha na consulta.",
+          })
+      })
+    return () => controller.abort()
+  }, [de, ate, chave, valido, requisitar])
+  const dados = atual?.dados
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-sm">
+          De
           <Input
             type="date"
             aria-label="De"
@@ -113,7 +102,9 @@ export function RelatorioResultado() {
             onChange={(e) => setDe(e.target.value)}
             className="w-[160px]"
           />
-          <span className="text-sm text-muted-foreground">até</span>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Até
           <Input
             type="date"
             aria-label="Até"
@@ -121,118 +112,110 @@ export function RelatorioResultado() {
             onChange={(e) => setAte(e.target.value)}
             className="w-[160px]"
           />
-        </div>
+        </label>
+        <Button variant="outline" onClick={() => setRevisao((r) => r + 1)}>
+          Atualizar
+        </Button>
       </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Receita
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold tabular-nums">
-            {brl(receita)}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-              Saídas (insumos + despesas)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold tabular-nums">
-            {brl(saidas)}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Margem apurada
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-baseline gap-2">
-            <span className="text-2xl font-semibold tabular-nums">
-              {brl(margem)}
-            </span>
-            <Badge variant={margem >= 0 ? "secondary" : "destructive"}>
-              {margemPercentual.toFixed(1)}%
-            </Badge>
-          </CardContent>
-        </Card>
-      </div>
-
       <Alert>
-        <Info aria-hidden />
-        <AlertTitle>Saídas ainda não são separadas por categoria</AlertTitle>
+        <AlertTitle>Critério do relatório</AlertTitle>
         <AlertDescription>
-          Os lançamentos &quot;a pagar&quot; hoje não distinguem custo de
-          insumos de despesas gerais — o valor acima é o total das duas coisas
-          juntas.
+          Receitas são os títulos a receber; custos são os títulos de compras a
+          pagar, ambos pelo vencimento e valor final, incluindo títulos em
+          aberto. Créditos de cancelamento são descontados da receita no período
+          do título original, incluindo valores a restituir. Despesas sem
+          vínculo são apuradas pela data da despesa. Despesas vinculadas a
+          títulos já integram os custos de compras e não são somadas novamente.
+          Cancelados são excluídos. Margem = receita − custos − despesas. Este
+          resultado por vencimento não representa o lucro contábil por
+          competência nem o fluxo de caixa.
         </AlertDescription>
       </Alert>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Lançamentos considerados no período</CardTitle>
-          <CardDescription>
-            Todos os lançamentos com vencimento entre as datas selecionadas.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-hidden rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Descrição</TableHead>
-                  <TableHead>Cliente / Fornecedor</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Vencimento</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {noPeriodo.length ? (
-                  noPeriodo.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-medium">
-                        {row.description}
-                      </TableCell>
-                      <TableCell>{client(row.partyId)}</TableCell>
-                      <TableCell>
-                        {row.type === "Pagar" ? "Saída" : "Receita"}
-                      </TableCell>
-                      <TableCell>
-                        {new Date(row.dueDate + "T00:00:00").toLocaleDateString(
-                          "pt-BR",
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {row.type === "Pagar" ? "-" : ""}
-                        {brl(row.amount)}
+      {!valido ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            Informe um período válido, com início anterior ou igual ao fim.
+          </AlertDescription>
+        </Alert>
+      ) : atual?.erro ? (
+        <Alert variant="destructive">
+          <AlertTitle>Não foi possível carregar o resultado</AlertTitle>
+          <AlertDescription>
+            {atual.erro}
+            <Button variant="outline" onClick={() => setRevisao((r) => r + 1)}>
+              Tentar novamente
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : !dados ? (
+        <div role="status" aria-label="Carregando resultado">
+          <Skeleton className="h-64 w-full" />
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {(
+              [
+                ["Receita", dados.receita],
+                ["Custos de compras", dados.custo],
+                ["Despesas", dados.despesa],
+                ["Margem apurada", dados.margem],
+              ] as const
+            ).map(([titulo, valor]) => (
+              <Card key={titulo}>
+                <CardHeader>
+                  <CardTitle className="text-sm">{titulo}</CardTitle>
+                </CardHeader>
+                <CardContent className="text-2xl font-semibold tabular-nums">
+                  {brl(valor)}
+                  {titulo === "Margem apurada" && (
+                    <p className="text-sm text-muted-foreground">
+                      {dados.percentual === null
+                        ? "Sem receita para calcular percentual"
+                        : `${dados.percentual.replace(".", ",")}% da receita`}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Resultado por categoria no período</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Classificação</TableHead>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dados.grupos.length ? (
+                    dados.grupos.map((g) => (
+                      <TableRow key={`${g.tipo}:${g.categoria}`}>
+                        <TableCell>{g.tipo}</TableCell>
+                        <TableCell>{g.categoria}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {brl(g.valor)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={3} className="h-32 text-center">
+                        Nenhum lançamento no período.
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={5} className="h-32 text-center">
-                      <Empty>
-                        <EmptyHeader>
-                          <EmptyTitle>Nenhum lançamento no período.</EmptyTitle>
-                          <EmptyDescription>
-                            Altere as datas ou cadastre lançamentos em
-                            Financeiro.
-                          </EmptyDescription>
-                        </EmptyHeader>
-                      </Empty>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   )
 }

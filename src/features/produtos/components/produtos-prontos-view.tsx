@@ -32,6 +32,7 @@ import {
 } from "@/features/autenticacao/provedor-autenticacao"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
 import type { Produto, RespostaPaginada, TipoProduto } from "../tipos"
+import { DialogoFornecedoresProduto } from "./dialogo-fornecedores-produto"
 import { DialogoFluxoProduto } from "./dialogo-fluxo-produto"
 import { FormularioProdutoPronto } from "./formulario-produto-pronto"
 import { DialogoGradeProduto } from "./dialogo-grade-produto"
@@ -65,6 +66,8 @@ export function ProdutosProntosView() {
     number | null
   >(null)
   const [dialogo, setDialogo] = useState<"novo" | Produto | null>(null)
+  const [produtoDosFornecedores, setProdutoDosFornecedores] =
+    useState<Produto | null>(null)
   const [produtoDaGrade, setProdutoDaGrade] = useState<Produto | null>(null)
   const [produtoDoFluxo, setProdutoDoFluxo] = useState<Produto | null>(null)
   const [produtoParaInativar, setProdutoParaInativar] =
@@ -95,8 +98,14 @@ export function ProdutosProntosView() {
       if (status) parametros.set("status", status)
 
       const respostaProdutos = await requisitar(`/api/produtos?${parametros}`)
-      if (!respostaProdutos.ok)
+      if (!respostaProdutos.ok) {
+        if (
+          versao === versaoRequisicao.current &&
+          respostaProdutos.status === 403
+        )
+          setEmpresaCarregada(null)
         throw new Error(await mensagemErro(respostaProdutos))
+      }
       const corpoProdutos = (await respostaProdutos.json()) as {
         data: RespostaPaginada<Produto>
       }
@@ -116,7 +125,6 @@ export function ProdutosProntosView() {
     } catch (causa) {
       if (versao !== versaoRequisicao.current) return
       setProdutos([])
-      setEmpresaCarregada(null)
       setErro(
         causa instanceof Error
           ? causa.message
@@ -234,6 +242,7 @@ export function ProdutosProntosView() {
           disabled={
             !empresa ||
             empresaCarregada !== empresa.id ||
+            Boolean(erro) ||
             empresaTiposCarregados !== empresa.id ||
             carregandoTipos ||
             Boolean(erroTipos) ||
@@ -283,6 +292,7 @@ export function ProdutosProntosView() {
             setPagina(1)
             setDialogo(null)
             setProdutoDaGrade(null)
+            setProdutoDosFornecedores(null)
             setProdutoDoFluxo(null)
             setProdutoParaInativar(null)
             selecionarEmpresa(Number(valor))
@@ -306,6 +316,7 @@ export function ProdutosProntosView() {
             setPagina(1)
             setDialogo(null)
             setProdutoDaGrade(null)
+            setProdutoDosFornecedores(null)
             setProdutoDoFluxo(null)
             setProdutoParaInativar(null)
             selecionarEmpresa(Number(valor))
@@ -430,6 +441,7 @@ export function ProdutosProntosView() {
               onEditar={(produto) => void abrirEdicao(produto)}
               onFluxo={setProdutoDoFluxo}
               onGrade={setProdutoDaGrade}
+              onFornecedores={setProdutoDosFornecedores}
               onInativar={setProdutoParaInativar}
             />
             <nav
@@ -492,6 +504,14 @@ export function ProdutosProntosView() {
           idEmpresa={empresa.id}
           produto={produtoDaGrade}
           aoFechar={() => setProdutoDaGrade(null)}
+        />
+      )}
+      {produtoDosFornecedores && empresaCarregada === empresa.id && (
+        <DialogoFornecedoresProduto
+          key={`${empresa.id}:${produtoDosFornecedores.id}`}
+          produto={produtoDosFornecedores}
+          idEmpresa={empresa.id}
+          aoFechar={() => setProdutoDosFornecedores(null)}
         />
       )}
       {produtoDoFluxo && empresaCarregada === empresa.id && (

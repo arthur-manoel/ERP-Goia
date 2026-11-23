@@ -299,7 +299,7 @@ describe("integridade do conjunto financeiro já gerado", () => {
     [
       "cliente da venda",
       (e) => {
-        e.fechamento.venda.id_cliente++
+        e.fechamento.venda.id_cliente = (e.fechamento.venda.id_cliente ?? 0) + 1
       },
     ],
     [

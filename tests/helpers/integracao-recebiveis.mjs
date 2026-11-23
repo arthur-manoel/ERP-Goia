@@ -317,7 +317,9 @@ export async function ambienteRecebiveis() {
     assert.equal(
       response.headers.get("Cache-Control"),
       rota.startsWith("/api/clientes/") ||
-        /^\/api\/ordens-producao(?:\?|$|\/\d+$)/.test(rota) ||
+        /^\/api\/ordens-producao(?:\?|$|\/(?:opcoes|resumo)(?:\?|$)|\/\d+(?:$|\/(?:avancar|encerrar|etapas\/(?:iniciar|concluir))$))/.test(
+          rota,
+        ) ||
         (method === "PATCH" && /^\/api\/contas_receber\/\d+$/.test(rota)) ||
         /^\/api\/estoque\/(entradas|saidas|ajustes|saldo)(?:\?|$)/.test(rota) ||
         (rota.startsWith("/api/ordem_producao") &&
@@ -326,6 +328,10 @@ export async function ambienteRecebiveis() {
         ? "no-store"
         : "private, no-store",
     )
+    if (op.descartarResposta) {
+      await response.body?.cancel()
+      return { status: response.status }
+    }
     return {
       status: response.status,
       body: await response.json(),

@@ -18,8 +18,14 @@ import { useAutenticacao } from "../provedor-autenticacao"
 
 export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
   const [aberto, setAberto] = useState(false)
-  const [saindo, setSaindo] = useState(false)
-  const { estado, usuario: conta, empresa, sair } = useAutenticacao()
+  const {
+    estado,
+    usuario: conta,
+    empresa,
+    sair,
+    saindo,
+    erroSaida,
+  } = useAutenticacao()
   const usuarioAtual =
     estado === "autenticado" && conta
       ? {
@@ -30,7 +36,12 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
         }
       : usuario
   return (
-    <Dialog open={aberto} onOpenChange={setAberto}>
+    <Dialog
+      open={aberto}
+      onOpenChange={(proximo) => {
+        if (proximo || (!saindo && !erroSaida)) setAberto(proximo)
+      }}
+    >
       <DialogTrigger
         render={
           <Button
@@ -68,7 +79,10 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
           </span>
         </span>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        showCloseButton={!saindo && !erroSaida}
+      >
         <DialogHeader>
           <DialogTitle>Minha conta</DialogTitle>
           <DialogDescription>
@@ -92,11 +106,13 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
                 </div>
               ))}
             </dl>
+            {erroSaida && (
+              <p role="alert">Saída sem confirmação. Tente sair novamente.</p>
+            )}
             <Button
               variant="outline"
               disabled={saindo}
               onClick={async () => {
-                setSaindo(true)
                 try {
                   await sair()
                   setAberto(false)
@@ -104,8 +120,6 @@ export function MenuUsuario({ usuario }: { usuario: UsuarioLogado | null }) {
                   toast.error(
                     "Não foi possível encerrar a sessão. Tente novamente.",
                   )
-                } finally {
-                  setSaindo(false)
                 }
               }}
             >

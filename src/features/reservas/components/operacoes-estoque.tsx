@@ -2,7 +2,6 @@
 
 import { lerRespostaOperacao } from "@/features/erp/resposta-operacao"
 import { CadastroPedidos } from "@/features/pedidos/components/cadastro-pedidos"
-import { CadastroOpApi } from "@/features/producao/components/cadastro-op-api"
 
 import Link from "next/link"
 import {
@@ -34,7 +33,14 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { SearchSelect } from "@/features/erp/components/seletor-pesquisavel"
+import { rotuloData } from "@/features/erp/datas"
 import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
+import {
+  CadastroOrdem,
+  type ResumoOrdem,
+  type DadosOrdem,
+  type OrdemCadastro,
+} from "@/features/producao/components/cadastro-ordem"
 import { formatarDataHora, formatarQuantidade } from "@/lib/formatacao"
 import {
   quantidade as quantidadeOperacional,
@@ -106,6 +112,23 @@ type Opcoes = {
 type Documento = { id: number; numero: string; status: string }
 type Pedido = Documento & {
   versao: number
+  id_endereco_entrega: number | null
+  destinatario: string | null
+  telefone_entrega: string | null
+  endereco_entrega: string | null
+  numero_entrega: string | null
+  complemento_entrega: string | null
+  bairro_entrega: string | null
+  cidade_entrega: string | null
+  estado_entrega: string | null
+  cep_entrega: string | null
+  referencia_entrega: string | null
+  contatosCliente: {
+    tipo: string
+    valor: string
+    descricao: string | null
+    principal: boolean
+  }[]
   pedido_cliente_fechamento: { id: number }[]
   pedido_cliente_item: {
     id: number
@@ -121,7 +144,7 @@ type Pedido = Documento & {
     }[]
   }[]
 }
-type Ordem = Documento & {
+type Ordem = DadosOrdem & {
   itensComPerdaIntegral?: number[]
   id_local_estoque: number | null
   id_setor: number | null
@@ -157,12 +180,6 @@ type Ordem = Documento & {
     consumo_confirmado_em: string | null
   }[]
   reserva_estoque: Reserva[]
-  ordem_producao_fluxo_setor: {
-    id: number
-    id_setor: number
-    ordem: number
-    status: string
-  }[]
 }
 type Pendente = {
   url: string
@@ -186,9 +203,13 @@ const assinar = (fn: () => void) => {
   return () => window.removeEventListener("storage", fn)
 }
 async function json<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const erro = await response.json().catch(() => null)
+    throw new Error(erro?.error ?? "Não foi possível consultar os dados.", {
+      cause: response.status,
+    })
+  }
   const value = await response.json()
-  if (!response.ok)
-    throw new Error(value.error ?? "Não foi possível consultar os dados.")
   return (value.data ?? value) as T
 }
 function useConsulta<T>(
@@ -201,6 +222,8 @@ function useConsulta<T>(
     url?: string
     dados: T | null
     erro: string
+    status?: number
+    revisao?: number
   }>({
     dados: null,
     erro: "",
@@ -211,7 +234,8 @@ function useConsulta<T>(
     requisitar(url, { signal: controller.signal })
       .then(json<T>)
       .then((dados) => {
-        if (!controller.signal.aborted) setEstado({ url, dados, erro: "" })
+        if (!controller.signal.aborted)
+          setEstado({ url, dados, erro: "", revisao })
       })
       .catch((e: unknown) => {
         if (!controller.signal.aborted)
@@ -219,11 +243,23 @@ function useConsulta<T>(
             url,
             dados: manterDados ? anterior.dados : null,
             erro: e instanceof Error ? e.message : "Falha na consulta.",
+            status:
+              e instanceof Error && typeof e.cause === "number"
+                ? e.cause
+                : undefined,
+            revisao,
           }))
       })
     return () => controller.abort()
   }, [url, requisitar, revisao, manterDados])
-  return estado.url === url || manterDados ? estado : { dados: null, erro: "" }
+  return {
+    ...(estado.url === url || (url && manterDados)
+      ? estado
+      : { dados: null, erro: "", status: undefined }),
+    carregando: Boolean(
+      url && (estado.url !== url || estado.revisao !== revisao),
+    ),
+  }
 }
 function Seletor({
   titulo,
@@ -336,7 +372,10 @@ function Conteudo({
   const [revisaoEntrega, setRevisaoEntrega] = useState(0)
   const [erro, setErro] = useState("")
   const [ocupado, setOcupado] = useState(false)
+  const [ordemCriada, setOrdemCriada] = useState<number>()
   const trava = useRef(false)
+  const envioAtivo = useRef<AbortController | null>(null)
+  useEffect(() => () => envioAtivo.current?.abort(), [])
   const chaveStorage = `erp-operacao-estoque:${identidade}`
   const armazenado = useSyncExternalStore(
     assinar,
@@ -356,7 +395,7 @@ function Conteudo({
         typeof v.url === "string" &&
         v.url.startsWith("/api/") &&
         typeof v.chave === "string" &&
-        ["POST", "PUT"].includes(v.metodo)
+        ["POST", "PUT", "PATCH"].includes(v.metodo)
         ? v
         : null
     } catch {
@@ -404,11 +443,14 @@ function Conteudo({
       return
     }
     trava.current = true
+    const controller = new AbortController()
+    envioAtivo.current = controller
     setOcupado(true)
     setErro("")
     try {
       const resposta = await requisitar(tentativa.url, {
         method: tentativa.metodo,
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": tentativa.chave,
@@ -416,6 +458,7 @@ function Conteudo({
         },
         body: JSON.stringify(tentativa.body),
       })
+      if (controller.signal.aborted) return
       const value = await lerRespostaOperacao(
         resposta,
         () => {
@@ -430,10 +473,14 @@ function Conteudo({
         )
       }
       limparTentativa()
+      if (controller.signal.aborted) return
+      if (tentativa.url === "/api/ordens-producao" && value.ordem?.id)
+        setOrdemCriada(value.ordem.id)
       toast.success("Operação confirmada no banco.")
       if (entrega) setRevisaoEntrega((r) => r + 1)
       setRevisao((r) => r + 1)
     } catch (e) {
+      if (controller.signal.aborted) return
       setErro(
         e instanceof Error &&
           !(e instanceof TypeError || e instanceof SyntaxError)
@@ -441,8 +488,9 @@ function Conteudo({
           : "Resposta interrompida. Repita a mesma confirmação para evitar duplicidade.",
       )
     } finally {
+      envioAtivo.current = null
       trava.current = false
-      setOcupado(false)
+      if (!controller.signal.aborted) setOcupado(false)
     }
   }
   const bloqueado = ocupado || !!pendente
@@ -496,6 +544,21 @@ function Conteudo({
           </AlertDescription>
         </Alert>
       )}
+      {origem === "PRODUCAO" && (
+        <DocumentoOperacional
+          key={ordemCriada}
+          origem={origem}
+          ordemInicial={ordemCriada}
+          requisitar={requisitar}
+          revisao={revisao}
+          revisaoEntrega={revisaoEntrega}
+          aoAtualizar={() => setRevisao((r) => r + 1)}
+          opcoes={opcoes}
+          erroOpcoes={erroOpcoes}
+          bloqueado={bloqueado}
+          enviar={enviar}
+        />
+      )}
       <Field>
         <FieldLabel htmlFor="busca-produto-operacao">
           Buscar produto para as operações
@@ -509,10 +572,10 @@ function Conteudo({
         />
       </Field>
       {!opcoes ? (
-        <Skeleton className="h-32 w-full" />
+        !erroOpcoes && <Skeleton className="h-32 w-full" />
       ) : (
         <>
-          {origem !== "RESERVAS" && (
+          {origem === "PEDIDO" && (
             <DocumentoOperacional
               key={origem}
               origem={origem}
@@ -844,26 +907,32 @@ function Reservas({
 
 function DocumentoOperacional({
   origem,
+  ordemInicial,
   requisitar,
   revisao,
   revisaoEntrega,
   aoAtualizar,
   opcoes,
+  erroOpcoes,
   bloqueado,
   enviar,
 }: {
   origem: Exclude<Origem, "RESERVAS">
+  ordemInicial?: number
   requisitar: Api
   revisao: number
   revisaoEntrega: number
   aoAtualizar: () => void
-  opcoes: Opcoes
+  opcoes: Opcoes | null
+  erroOpcoes?: string
   bloqueado: boolean
   enviar: Enviar
 }) {
   const [busca, setBusca] = useState("")
   const [pagina, setPagina] = useState(1)
-  const [escolhido, setId] = useState("")
+  const [escolhido, setId] = useState(ordemInicial?.toString() ?? "")
+  const [status, setStatus] = useState("")
+  const [repetirConsulta, setRepetirConsulta] = useState(0)
   const [revisaoCadastro, setRevisaoCadastro] = useState(0)
   const [planejamento, setPlanejamento] = useState<"novo" | Ordem | null>(null)
   const urlInicial = useSyncExternalStore(
@@ -884,15 +953,23 @@ function DocumentoOperacional({
   const url =
     origem === "PEDIDO"
       ? `/api/pedidos?pagina=${pagina}&limite=25&busca=${encodeURIComponent(busca)}`
-      : `/api/ordens-producao?page=${pagina}&limit=25&busca=${encodeURIComponent(busca)}`
+      : `/api/ordens-producao/resumo?page=${pagina}&limit=25&busca=${encodeURIComponent(busca)}${status ? `&status=${status}` : ""}`
   const lista = useConsulta<{
     dados?: { idPedido: number; numero: string; status: string }[]
     paginacao?: { totalPaginas: number }
-    rows?: Documento[]
+    rows?: ResumoOrdem[]
     totalPages?: number
-  }>(url, requisitar, revisao + revisaoCadastro)
+  }>(url, requisitar, revisao + repetirConsulta + revisaoCadastro)
+  const cabecalho = useConsulta<{
+    ordem: OrdemCadastro
+    fluxoSnapshot?: { nome: string }
+  }>(
+    origem === "PRODUCAO" && id ? `/api/ordens-producao/${id}` : null,
+    requisitar,
+    revisao + revisaoCadastro,
+  )
   const detalhes = useConsulta<Pedido | Ordem>(
-    id
+    id && opcoes
       ? `/api/${origem === "PEDIDO" ? "pedidos" : "ordem_producao"}/${id}/operacao`
       : null,
     requisitar,
@@ -911,28 +988,17 @@ function DocumentoOperacional({
       titulo={
         origem === "PEDIDO"
           ? "Confirmar pedido, reservar e entregar"
-          : "Registrar consumo e concluir produção"
+          : "Ordens de produção"
       }
     >
-      {origem === "PRODUCAO" && (
+      {origem === "PRODUCAO" && opcoes && (
         <div className="flex flex-wrap gap-2">
           <Button
             disabled={bloqueado || !opcoes.locais.length}
             onClick={() => setPlanejamento("novo")}
           >
-            Nova ordem
+            Nova ordem com número manual
           </Button>
-          {id &&
-            detalhes.dados &&
-            "ordem_producao_item" in detalhes.dados &&
-            detalhes.dados.ordem_producao_item.length > 0 && (
-              <CadastroOpApi
-                key={`editar:${id}:${revisao}:${revisaoCadastro}`}
-                id={id}
-                bloqueado={bloqueado}
-                aoSalvar={() => setRevisaoCadastro((r) => r + 1)}
-              />
-            )}
           {!opcoes.locais.length && (
             <p>Cadastre um local de estoque ativo para abrir a ordem.</p>
           )}
@@ -949,7 +1015,7 @@ function DocumentoOperacional({
             )}
         </div>
       )}
-      {planejamento && (
+      {planejamento && opcoes && (
         <FormularioPlanejamentoOP
           inicial={planejamento === "novo" ? undefined : planejamento}
           produtos={opcoes.produtos}
@@ -977,16 +1043,63 @@ function DocumentoOperacional({
           maxLength={50}
         />
       </Field>
-      {lista.erro && <p role="alert">{lista.erro}</p>}
-      <Seletor
-        titulo={origem === "PEDIDO" ? "Pedido" : "Ordem de produção"}
-        valor={id}
-        alterar={setId}
-        opcoes={rows.map((d) => ({
-          value: String(d.id),
-          label: `${d.numero} · ${d.status}`,
-        }))}
-      />
+      {origem === "PRODUCAO" && (
+        <Field>
+          <FieldLabel htmlFor="status-op">Situação</FieldLabel>
+          <NativeSelect
+            id="status-op"
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value)
+              setPagina(1)
+            }}
+          >
+            <NativeSelectOption value="">Todas</NativeSelectOption>
+            {Object.entries(situacoesOrdem).map(([value, label]) => (
+              <NativeSelectOption key={value} value={value}>
+                {label}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </Field>
+      )}
+      {lista.carregando && <p role="status">Carregando documentos…</p>}
+      {lista.erro && !lista.carregando && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {lista.status === 403
+              ? "Sem acesso à listagem nesta empresa."
+              : lista.erro}
+            {lista.status !== 403 && (
+              <Button
+                variant="outline"
+                onClick={() => setRepetirConsulta((r) => r + 1)}
+              >
+                Tentar novamente
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+      {origem === "PRODUCAO" ? (
+        lista.dados &&
+        !lista.carregando &&
+        (lista.dados.rows?.length ? (
+          <ListaOrdens ordens={lista.dados.rows} selecionar={setId} />
+        ) : (
+          <p>Nenhuma ordem de produção encontrada.</p>
+        ))
+      ) : (
+        <Seletor
+          titulo={origem === "PEDIDO" ? "Pedido" : "Ordem de produção"}
+          valor={id}
+          alterar={setId}
+          opcoes={rows.map((d) => ({
+            value: String(d.id),
+            label: `${d.numero} · ${d.status}`,
+          }))}
+        />
+      )}
       <div className="flex gap-3">
         <Button
           variant="outline"
@@ -999,35 +1112,265 @@ function DocumentoOperacional({
         <Button
           variant="outline"
           disabled={
+            lista.carregando ||
             pagina >=
-            (lista.dados?.totalPages ??
-              lista.dados?.paginacao?.totalPaginas ??
-              0)
+              (lista.dados?.totalPages ??
+                lista.dados?.paginacao?.totalPaginas ??
+                0)
           }
           onClick={() => setPagina((p) => p + 1)}
         >
           Próxima
         </Button>
       </div>
+      {origem === "PRODUCAO" && lista.status !== 401 && (
+        <CadastroOrdem
+          key={`cadastro:${id}`}
+          requisitar={requisitar}
+          ordem={cabecalho.dados?.ordem ?? null}
+          fluxo={cabecalho.dados?.fluxoSnapshot?.nome}
+          bloqueado={bloqueado || cabecalho.carregando}
+          revisaoDados={revisao}
+          enviar={enviar}
+        />
+      )}
+      {cabecalho.erro && (
+        <Alert variant="destructive">
+          <AlertDescription>{cabecalho.erro}</AlertDescription>
+        </Alert>
+      )}
+      {cabecalho.dados &&
+        ((!opcoes && erroOpcoes) || detalhes.status === 403) && (
+          <AcoesFluxoOrdem
+            ordem={cabecalho.dados.ordem}
+            comSnapshot={Boolean(cabecalho.dados.fluxoSnapshot)}
+            faltaDestino={cabecalho.dados.ordem.id_local_estoque === null}
+            podeConcluir={false}
+            bloqueado={bloqueado || cabecalho.carregando}
+            enviar={enviar}
+          />
+        )}
       {detalhes.erro && (
         <Alert variant="destructive">
           <AlertDescription>{detalhes.erro}</AlertDescription>
         </Alert>
       )}
-      {id && detalhes.dados && (
-        <DetalheDocumento
-          requisitar={requisitar}
-          revisao={revisao}
-          revisaoEntrega={revisaoEntrega}
-          key={id}
-          origem={origem}
-          documento={detalhes.dados}
-          opcoes={opcoes}
-          bloqueado={bloqueado}
-          enviar={enviar}
-        />
-      )}
+      {id &&
+        detalhes.dados &&
+        opcoes &&
+        (origem === "PEDIDO" || cabecalho.dados) && (
+          <DetalheDocumento
+            requisitar={requisitar}
+            revisao={revisao}
+            revisaoEntrega={revisaoEntrega}
+            key={`detalhe:${id}`}
+            origem={origem}
+            documento={detalhes.dados}
+            opcoes={opcoes}
+            bloqueado={bloqueado || detalhes.carregando || cabecalho.carregando}
+            enviar={enviar}
+            comSnapshot={Boolean(cabecalho.dados?.fluxoSnapshot)}
+          />
+        )}
     </Caixa>
+  )
+}
+
+const situacoesOrdem: Record<string, string> = {
+  PLANEJADA: "Planejada",
+  AGUARDANDO_MATERIAL: "Aguardando material",
+  LIBERADA: "Liberada",
+  EM_PRODUCAO: "Em produção",
+  PAUSADA: "Pausada",
+  CONCLUIDA: "Concluída",
+  CANCELADA: "Cancelada",
+}
+
+function ListaOrdens({
+  ordens,
+  selecionar,
+}: {
+  ordens: ResumoOrdem[]
+  selecionar: (id: string) => void
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Ordem</TableHead>
+          <TableHead>Produto e variação</TableHead>
+          <TableHead>Planejada</TableHead>
+          <TableHead>Produzida por item</TableHead>
+          <TableHead>Situação</TableHead>
+          <TableHead>Etapa</TableHead>
+          <TableHead>Previsão</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {ordens.map((ordem) => (
+          <TableRow key={ordem.id}>
+            <TableCell>
+              <Button
+                variant="link"
+                className="px-0"
+                onClick={() => selecionar(String(ordem.id))}
+              >
+                {ordem.numero}
+              </Button>
+            </TableCell>
+            <TableCell>
+              {ordem.itens.map((item) => (
+                <div key={item.id}>
+                  {[
+                    item.produtos.nome,
+                    item.cores?.nome,
+                    item.tamanhos?.nome ?? item.tamanhoLegado,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              ))}
+            </TableCell>
+            <TableCell>
+              {formatarQuantidade(ordem.quantidade_planejada)}
+            </TableCell>
+            <TableCell>
+              {ordem.itens.map((item) => (
+                <div key={item.id}>
+                  {formatarQuantidade(item.quantidade_produzida)}
+                </div>
+              ))}
+            </TableCell>
+            <TableCell>
+              {situacoesOrdem[ordem.status] ?? ordem.status}
+            </TableCell>
+            <TableCell>
+              {ordem.etapaAtual
+                ? `${ordem.etapaAtual.ordem} · ${ordem.etapaAtual.setores.nome}`
+                : (ordem.setorAtual ?? "—")}
+            </TableCell>
+            <TableCell>
+              {rotuloData(ordem.data_previsao?.slice(0, 10) ?? "")}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+function temProximoSetor(ordem: DadosOrdem) {
+  const etapas = ordem.ordem_producao_fluxo_setor
+  const atual = etapas.findIndex((etapa) => etapa.id_setor === ordem.id_setor)
+  return atual >= 0 && atual < etapas.length - 1
+}
+
+function AcoesFluxoOrdem({
+  ordem,
+  comSnapshot,
+  faltaDestino,
+  podeConcluir,
+  bloqueado,
+  setores,
+  enviar,
+}: {
+  ordem: DadosOrdem
+  comSnapshot: boolean
+  faltaDestino: boolean
+  podeConcluir: boolean
+  bloqueado: boolean
+  setores?: Opcoes["setores"]
+  enviar: Enviar
+}) {
+  const podeAvancarLegado = !comSnapshot && temProximoSetor(ordem)
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ["Liberar OP", ["PLANEJADA", "AGUARDANDO_MATERIAL"], "LIBERADA"],
+            [
+              "Aguardar material",
+              ["PLANEJADA", "LIBERADA"],
+              "AGUARDANDO_MATERIAL",
+            ],
+            ["Iniciar OP", comSnapshot ? [] : ["LIBERADA"], "EM_PRODUCAO"],
+            [
+              "Avançar para o próximo setor",
+              podeAvancarLegado ? ["EM_PRODUCAO"] : [],
+              "EM_PRODUCAO",
+            ],
+            ["Pausar OP", ["EM_PRODUCAO"], "PAUSADA"],
+            ["Retomar OP", ["PAUSADA"], "EM_PRODUCAO"],
+          ] satisfies [string, string[], string][]
+        )
+          .filter(([, origens]) => origens.includes(ordem.status))
+          .map(([rotulo, , destino]) => (
+            <Button
+              key={rotulo}
+              variant="outline"
+              disabled={
+                bloqueado ||
+                (faltaDestino &&
+                  (destino === "LIBERADA" ||
+                    (ordem.status === "LIBERADA" && destino === "EM_PRODUCAO")))
+              }
+              onClick={() =>
+                enviar(`/api/ordens-producao/${ordem.id}/avancar`, {
+                  statusEsperado: ordem.status,
+                  setorEsperado: ordem.id_setor,
+                  statusDestino: destino,
+                })
+              }
+            >
+              {rotulo}
+            </Button>
+          ))}
+      </div>
+      <h3 className="font-semibold">Etapas da produção</h3>
+      {ordem.ordem_producao_fluxo_setor.map((etapa) => (
+        <div key={etapa.id} className="flex flex-wrap items-center gap-3">
+          <span>
+            {etapa.ordem} ·{" "}
+            {setores?.find((s) => s.id === etapa.id_setor)?.nome ??
+              `Setor ${etapa.id_setor}`}{" "}
+            · {etapa.status}
+          </span>
+          {comSnapshot && etapa.status !== "CONCLUIDA" && (
+            <Button
+              variant="outline"
+              disabled={
+                bloqueado ||
+                (faltaDestino && etapa.status === "PENDENTE") ||
+                (ordem.status !== "EM_PRODUCAO" &&
+                  !(
+                    ordem.status === "LIBERADA" && etapa.status === "PENDENTE"
+                  )) ||
+                etapa.id !==
+                  ordem.ordem_producao_fluxo_setor.find(
+                    (e) => e.status !== "CONCLUIDA",
+                  )?.id ||
+                (etapa.id === ordem.ordem_producao_fluxo_setor.at(-1)?.id &&
+                  etapa.status === "EM_PRODUCAO" &&
+                  !podeConcluir)
+              }
+              onClick={() =>
+                enviar(
+                  `/api/ordens-producao/${ordem.id}/etapas/${etapa.status === "PENDENTE" ? "iniciar" : "concluir"}`,
+                  { etapaId: etapa.id },
+                )
+              }
+            >
+              {etapa.status === "PENDENTE"
+                ? "Iniciar etapa"
+                : etapa.id === ordem.ordem_producao_fluxo_setor.at(-1)?.id
+                  ? "Concluir última etapa e encerrar OP"
+                  : "Concluir etapa"}
+            </Button>
+          )}
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -1040,6 +1383,7 @@ function DetalheDocumento({
   opcoes,
   bloqueado,
   enviar,
+  comSnapshot,
 }: {
   requisitar: Api
   revisao: number
@@ -1049,6 +1393,7 @@ function DetalheDocumento({
   opcoes: Opcoes
   bloqueado: boolean
   enviar: Enviar
+  comSnapshot: boolean
 }) {
   const [item, setItem] = useState("")
   const [local, setLocal] = useState("")
@@ -1236,6 +1581,57 @@ function DetalheDocumento({
       <p className="font-semibold">
         {documento.numero} · {documento.status}
       </p>
+      {pedido && (
+        <section
+          className="space-y-2 rounded-lg border p-4"
+          aria-label="Endereço e contatos da entrega"
+        >
+          <h3 className="font-semibold">Entrega e contatos do cliente</h3>
+          <p className="text-sm">
+            {[
+              pedido.destinatario,
+              pedido.endereco_entrega,
+              pedido.numero_entrega,
+              pedido.complemento_entrega,
+              pedido.bairro_entrega,
+              pedido.cidade_entrega,
+              pedido.estado_entrega,
+              pedido.cep_entrega,
+            ]
+              .filter(Boolean)
+              .join(", ") || "Endereço não informado no pedido."}
+          </p>
+          {pedido.referencia_entrega && (
+            <p className="text-sm text-muted-foreground">
+              Referência: {pedido.referencia_entrega}
+            </p>
+          )}
+          <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            {(pedido.contatosCliente.length
+              ? pedido.contatosCliente
+              : pedido.telefone_entrega
+                ? [
+                    {
+                      tipo: "TELEFONE",
+                      valor: pedido.telefone_entrega,
+                      descricao: null,
+                      principal: false,
+                    },
+                  ]
+                : []
+            ).map((contato, index) => (
+              <li key={`${contato.tipo}-${index}`}>
+                {contato.tipo}: {contato.valor}
+                {contato.descricao ? ` · ${contato.descricao}` : ""}
+                {contato.principal ? " · principal" : ""}
+              </li>
+            ))}
+            {!pedido.contatosCliente.length && !pedido.telefone_entrega && (
+              <li>Nenhum contato cadastrado.</li>
+            )}
+          </ul>
+        </section>
+      )}
       {pedido && (
         <Table>
           <TableHeader>
@@ -1557,48 +1953,15 @@ function DetalheDocumento({
                 </fieldset>
               </form>
             )}
-          <div className="flex flex-wrap gap-2">
-            {ordem.status === "AGUARDANDO_MATERIAL" && (
-              <Button
-                variant="outline"
-                disabled={bloqueado || faltaDestino}
-                onClick={() =>
-                  enviar(`/api/ordens-producao/${ordem.id}/avancar`, {
-                    statusEsperado: ordem.status,
-                    setorEsperado: ordem.id_setor,
-                    statusDestino: "LIBERADA",
-                  })
-                }
-              >
-                Avançar OP para liberada
-              </Button>
-            )}
-            {(["liberar", "iniciar", "pausar", "retomar"] as const).map(
-              (acao) => (
-                <Button
-                  key={acao}
-                  variant="outline"
-                  disabled={
-                    bloqueado ||
-                    (faltaDestino &&
-                      (acao === "liberar" || acao === "iniciar")) ||
-                    ordem.status !==
-                      {
-                        liberar: "PLANEJADA",
-                        iniciar: "LIBERADA",
-                        pausar: "EM_PRODUCAO",
-                        retomar: "PAUSADA",
-                      }[acao]
-                  }
-                  onClick={() =>
-                    enviar(`/api/ordem_producao/${ordem.id}/${acao}`, {})
-                  }
-                >
-                  {acao[0].toUpperCase() + acao.slice(1)} OP
-                </Button>
-              ),
-            )}
-          </div>
+          <AcoesFluxoOrdem
+            ordem={ordem}
+            comSnapshot={comSnapshot}
+            faltaDestino={faltaDestino}
+            podeConcluir={podeConcluir}
+            bloqueado={bloqueado}
+            setores={opcoes.setores}
+            enviar={enviar}
+          />
           <h3 className="font-semibold">Consumo real dos materiais</h3>
           <p>
             Para encerrar um consumo integral já registrado, selecione a reserva
@@ -1695,44 +2058,6 @@ function DetalheDocumento({
               </Button>
             </fieldset>
           </form>
-          <h3 className="font-semibold">Etapas da produção</h3>
-          {ordem.ordem_producao_fluxo_setor.map((etapa) => (
-            <div key={etapa.id} className="flex flex-wrap items-center gap-3">
-              <span>
-                {etapa.ordem} ·{" "}
-                {opcoes.setores.find((s) => s.id === etapa.id_setor)?.nome ??
-                  "Setor"}{" "}
-                · {etapa.status}
-              </span>
-              {etapa.status !== "CONCLUIDA" && (
-                <Button
-                  variant="outline"
-                  disabled={
-                    bloqueado ||
-                    (faltaDestino && etapa.status === "PENDENTE") ||
-                    ordem.status !== "EM_PRODUCAO" ||
-                    etapa.id !==
-                      ordem.ordem_producao_fluxo_setor.find(
-                        (e) => e.status !== "CONCLUIDA",
-                      )?.id ||
-                    (etapa.id === ordem.ordem_producao_fluxo_setor.at(-1)?.id &&
-                      etapa.status === "EM_PRODUCAO" &&
-                      !podeConcluir)
-                  }
-                  onClick={() =>
-                    enviar(
-                      `/api/ordem_producao/${ordem.id}/etapas/${etapa.id}/${etapa.status === "PENDENTE" ? "iniciar" : "concluir"}`,
-                      {},
-                    )
-                  }
-                >
-                  {etapa.status === "PENDENTE"
-                    ? "Iniciar etapa"
-                    : "Concluir etapa"}
-                </Button>
-              )}
-            </div>
-          ))}
           <h3 className="font-semibold">
             Produção efetiva e entrada de produtos prontos
           </h3>
@@ -1764,7 +2089,7 @@ function DetalheDocumento({
                 disabled={
                   bloqueado ||
                   ordem.status !== "EM_PRODUCAO" ||
-                  (ordem.ordem_producao_fluxo_setor.length > 0 &&
+                  (comSnapshot &&
                     ordem.ordem_producao_fluxo_setor.at(-1)?.status !==
                       "EM_PRODUCAO")
                 }
@@ -1784,14 +2109,19 @@ function DetalheDocumento({
             produzidos entram no local da fábrica. Consumos pendentes impedem a
             confirmação.
           </p>
-          <Button
-            disabled={bloqueado || !podeConcluir}
-            onClick={() =>
-              enviar(`/api/ordem_producao/${ordem.id}/concluir`, {})
-            }
-          >
-            Concluir OP e registrar entrada na fábrica
-          </Button>
+          {!comSnapshot && (
+            <Button
+              disabled={bloqueado || !podeConcluir || temProximoSetor(ordem)}
+              onClick={() =>
+                enviar(`/api/ordens-producao/${ordem.id}/encerrar`, {
+                  statusEsperado: ordem.status,
+                  setorEsperado: ordem.id_setor,
+                })
+              }
+            >
+              Encerrar OP e registrar entrada na fábrica
+            </Button>
+          )}
         </>
       )}
     </div>

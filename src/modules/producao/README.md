@@ -29,15 +29,12 @@ Erros: `{ "success": false, "error": "mensagem" }`, com 400/401/403/404/409/429/
 
 Base: `/api/ordem_producao`.
 
-A tela `/producao/ordens` lista pela URL `GET /api/ordens-producao`, que
-compartilha o handler, os filtros, a paginação e o envelope de resposta da
-listagem abaixo. Abertura e complementação usam `FormularioPlanejamentoOP`
-da develop: destino obrigatório, OP e item criados na mesma transação, e
-complementação de ordens planejadas antigas sem item. `CadastroOpApi` é
-exclusivo de edição por PATCH do contrato legado, com estado esperado, e só
-aparece quando a ordem selecionada já possui item. `revisaoCadastro` recarrega
-a lista e o detalhe após salvar. Operações de etapas, consumo
-e conclusão continuam integradas ao estoque pela API operacional.
+`GET /api/ordens-producao` compartilha o handler, os filtros, a paginação e
+o envelope de resposta da listagem abaixo. A tela usa o resumo em
+`GET /api/ordens-producao/resumo` e mantém o formulário de planejamento
+para criar ou completar ordens planejadas antigas sem item, com destino,
+item e fluxo gravados na mesma transação. A edição por PATCH usa o estado
+esperado e a lista e os detalhes são recarregados após salvar.
 
 A edição envia somente campos alterados: mudar observação ou previsão não
 recalcula insumos. Previsão inalterada preserva o horário persistido; formulário
@@ -162,6 +159,45 @@ O modelo ordem_producao não contém `data_cadastro`, `data_atualizacao` nem rel
 
 ## Consulta
 
+A tela `/producao/ordens` consulta `GET /api/ordens-producao/resumo`. A rota
+usa o envelope paginado abaixo, exige leitura em `ORDENS_PRODUCAO` e
+aceita os filtros de cabeçalho da listagem, incluindo
+`status=AGUARDANDO_MATERIAL` para ordens legadas. A tela usa busca pelo
+número, situação e paginação. A empresa é aplicada antes da contagem e da
+seleção da página. Cada linha contém ID, número, situação, prioridade,
+quantidade planejada, datas, setor atual e primeira etapa pendente ou em
+execução do snapshot. Os itens trazem referências de produto, cor e
+tamanho e quantidade produzida por item. Quantidades decimais são
+strings. Uma página sem resultados retorna `rows: []`.
+
+`GET /api/ordens-producao/opcoes?busca=` exige criação em
+`ORDENS_PRODUCAO`. Retorna até 50 produtos vinculados à empresa, habilitados
+para produção e estoque e com fluxo ativo, as variações com dimensões ativas
+ou opcionais e os locais ativos da empresa. `temGrade` indica se o produto
+exige variação, inclusive quando nenhuma está disponível. A consulta usa a
+cota de leitura (120 por minuto) e a abertura usa a cota de escrita (30 por
+minuto). Na abertura, o servidor revalida a ficha vigente, o destino e a grade.
+
+O formulário usa `POST /api/ordens-producao` com `idProduto`,
+`quantidade`, `idLocal` e, para produtos com grade, `idVariacao`. Os
+campos novos são opcionais no contrato anterior. A abertura grava o item,
+consumo planejado e snapshot na mesma transação. A edição usa
+`PATCH /api/ordens-producao/{id}` com `statusEsperado`. Ambas aceitam
+`Idempotency-Key` e devolvem a mesma confirmação em uma repetição da
+operação original. A primeira abertura retorna 201 e a repetição retorna
+200. A chave pertence à empresa, ao usuário e ao conteúdo da operação.
+Valores decimais equivalentes, como `3` e `3.000`, preservam o planejamento.
+
+Para avançar, a tela envia situação e setor esperados e mantém a mesma chave
+ao recuperar uma tentativa inconclusiva. Ordens com snapshot
+iniciam e concluem etapas com o ID da etapa. Concluir a última etapa encerra a
+ordem. Ordens legadas sem snapshot usam `/encerrar`. Início de etapa,
+conclusão e encerramento aceitam `Idempotency-Key`. Repita a chave e o corpo originais
+para consultar a confirmação gravada depois de uma falha de comunicação.
+Reservas, consumo real,
+quantidade efetiva e entrada de acabado mantêm as regras operacionais e as
+permissões de estoque existentes.
+
 Listagens: `page=1`, `limit=20` por padrão, máximo 100, skip validado. Itens e etapas usam os mesmos parâmetros. Rows e count são consultados diretamente no Prisma com snapshot RepeatableRead; nenhuma listagem é filtrada em memória. Consulta individual retorna cabeçalho/contadores, sem carregar coleções; consulte sub-recursos paginados.
 
 Filtros: `id_empresa` (conferência do contexto), `id_pedido_cliente`, `id_local_estoque`, `id_setor`, `id_usuario`, `status`, `prioridade`, `numero`, `busca` por número; `data_inicio_de/ate`, `data_previsao_de/ate`, `data_conclusao_de/ate`. Datas finais YYYY-MM-DD incluem o dia UTC completo. Filtros combinados e empresa obrigatória são aplicados no banco. Parâmetros repetidos/desconhecidos são rejeitados.
@@ -175,6 +211,15 @@ usa o dia no fuso `America/Sao_Paulo`. Assim, uma previsão para hoje permite
 iniciar a OP ou a etapa até 23h59 em São Paulo, mesmo após a virada UTC.
 Previsão de dia anterior continua inválida; o horário
 real de início é preservado e datas de início futuras continuam bloqueadas.
+
+`tests/operacoes-integradas.integration.test.mjs` exercita a listagem e as
+ações da tela por HTTP com o Next compilado e MariaDB local. Além do
+preparador de [operações integradas](../../../docs/operacoes-integradas.md),
+a base de teste desta revisão precisa dos DDLs já existentes
+`20261031000000_eventos_apontamentos_producao`,
+`20261102000000_confirmacoes_producao`,
+`20261105000000_plano_pagamento_compra` e
+`20261110000000_revogacao_sessoes`.
 
 ```sh
 npm test -- tests/unit/ordem_producao tests/unit/api/rate-limit.test.ts
@@ -209,3 +254,24 @@ Exemplo de corpo.
 ```
 
 A interface envia uma única chamada na abertura. Para retomar uma OP vazia já existente, usa /{id}/completar, que continua exigindo criação e edição. O POST sem item preserva o contrato anterior de criação de cabeçalho para integrações existentes.
+
+
+## Lote fracionado entre setores
+
+`/producao/movimentacoes` usa dados persistidos e as APIs autenticadas:
+
+- `GET /api/ordens-producao/{id}/movimentacoes?pagina=1`: posições por item/unidade, etapas, envios e eventos de recebimento.
+- `POST` na mesma URL: `{idEtapaOrigem,idEtapaDestino,itens:[{idItem,quantidade}],observacao?}`.
+- `POST /api/ordens-producao/{id}/movimentacoes/{mov}/receber`: `{itens:[{idItem,quantidade}]}`.
+
+Escritas exigem `Idempotency-Key`, permissão de editar ORDENS_PRODUCAO e vínculo com o setor da origem ou do destino, respectivamente. ADMIN global e vínculo EMPRESA podem operar os setores da empresa. A autorização é relida na transação, inclusive antes de recuperar uma operação já confirmada. A mesma chave e conteúdo retornam o resultado anterior; conteúdo ou autor diferente retorna 409. Corpo JSON estrito de até 64 KiB, 1–200 itens, quantidades decimais positivas com até três casas, sem arredondamento.
+
+A primeira remessa ativa atomicamente o protocolo por OP. Exige snapshot correspondente às etapas, primeira etapa em produção, demais pendentes e ausência de produção, confirmação ou passagem legada entre setores posteriores. Ordens já avançadas continuam no protocolo anterior; o sistema não presume quantidades históricas.
+
+Disponível para envio = produção boa válida menos todos os envios. Entrada de uma etapa posterior = recebimentos efetivos. Trânsito = enviado menos recebido no destino. No setor = entrada menos perdas e envios. O recebimento parcial inicia o destino, permitindo produção em paralelo. O cabeçalho resume a primeira etapa não concluída; a posição real vem dos registros por item. Quantidades de unidades diferentes não são somadas no cabeçalho da remessa, cuja quantidade permanece nula.
+
+Apontamentos, correções, estornos e conclusão compartilham os locks de empresa/OP. Uma correção não pode reduzir produção boa abaixo do enviado nem produzir além do recebido. Para encerrar cada etapa: toda entrada deve estar classificada em boas/perdas; etapas anteriores concluídas; nas intermediárias, todas as boas enviadas e recebidas no destino. Uma etapa sem entrada após perdas integrais pode ser iniciada administrativamente quando a anterior terminar. O encerramento final conserva os bloqueios de consumo/reservas e a entrada única oficial de produto acabado.
+
+O transporte não movimenta estoque físico. O consumo real permanece em `/producao/ordens`, pelo serviço existente de reservas, incluindo encerramento administrativo com quantidade zero e motivo quando todo o material já foi consumido.
+
+Aplique o incremento SQL `20261118000000_producao_lotes_setores` pelo processo DB-first antes de instalar a aplicação. Ele conserva registros antigos com vínculo quantitativo nulo, amplia DECIMAL(15,2) para DECIMAL(16,3) mantendo os treze dígitos inteiros e acrescenta restrições de identidade e eventos de recebimento. Após a atualização controlada do banco, gere o Prisma Client a partir do schema versionado; uma introspecção deve preservar os complementos Prisma documentados do projeto.
