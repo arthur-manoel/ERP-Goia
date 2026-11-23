@@ -162,7 +162,18 @@ export async function movimentarNaTransacao(
     throw new ConflictError(
       "A saída comprometeria quantidades reservadas. Consuma a reserva no documento de origem.",
     )
-  await atualizarGradeEstoque(tx, ctx, estoque, dados.idVariacao, delta)
+  // Somente documentos de devolução usam a grade histórica do movimento original.
+  const retornoHistorico =
+    (operacao === "entrada" && documento?.nome === "DEVOLUCAO_PEDIDO") ||
+    (operacao === "saida" && documento?.nome === "DESCARTE_DEVOLUCAO")
+  await atualizarGradeEstoque(
+    tx,
+    ctx,
+    estoque,
+    dados.idVariacao,
+    delta,
+    retornoHistorico,
+  )
   // A condição também detecta escritores externos que alteraram a projeção.
   const resultado = await tx.estoque.updateMany({
     where: {

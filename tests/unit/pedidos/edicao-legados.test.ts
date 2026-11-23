@@ -7,6 +7,7 @@ import {
 import { db } from "../../helpers/prisma"
 
 const mocks = vi.hoisted(() => ({
+  bloquearEmpresa: vi.fn(),
   bloquearRascunho: vi.fn(),
   recalcular: vi.fn(),
   auditar: vi.fn(),

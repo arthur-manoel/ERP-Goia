@@ -50,6 +50,10 @@ novos recursos. As suítes próprias indicadas cobrem operações e regras adici
 | `/produtos`, `/produtos/{id}` | GET | PRODUTOS / L | C | A | I, M, B, unit/catalogos |
 | `/produtos` | POST | PRODUTOS / C | C | A | I, unit/catalogos |
 | `/produtos/{id}` | PUT, PATCH; DELETE | PRODUTOS / E; X | C | A | I, unit/catalogos |
+| `/produtos/{id}/variacoes` | GET; POST | PRODUTOS / L; C | C | A | produto-configuracao.integration.test.mjs |
+| `/produtos/{id}/variacoes/{idVariacao}` | PATCH | PRODUTOS / E (+ X em inativação) | C | A | produto-configuracao.integration.test.mjs |
+| `/produtos/{id}/fornecedores`, `/produtos/{id}/fornecedores/opcoes`, `/produtos/{id}/fornecedores/{idVinculo}` | GET | PRODUTOS / L | C | A | produto-configuracao.integration.test.mjs |
+| `/produtos/{id}/fornecedores`, `/produtos/{id}/fornecedores/{idVinculo}` | POST; PATCH | PRODUTOS / C; E (+ X em inativação) | C | A | produto-configuracao.integration.test.mjs |
 | `/cores`, `/cores/{id}` | GET | CORES / L | C | A | I, M, B, unit/catalogos |
 | `/cores` | POST | CORES / C | C | A | I, unit/catalogos |
 | `/cores/{id}` | PUT, PATCH; DELETE | CORES / E; X | C | A | I, unit/catalogos |

@@ -33,6 +33,7 @@ export async function atualizarGradeEstoque(
   },
   idVariacao: number | undefined,
   delta: Prisma.Decimal,
+  retornoHistorico = false,
 ) {
   const totais = await tx.estoque_variacao.aggregate({
     where: { id_estoque: estoque.id, id_empresa: ctx.idEmpresa },
@@ -65,11 +66,17 @@ export async function atualizarGradeEstoque(
       id: idVariacao,
       id_empresa: ctx.idEmpresa,
       id_produto: estoque.id_produto,
-      status: "ATIVO",
+      status: retornoHistorico ? undefined : "ATIVO",
     },
     include: { cores: true, tamanhos: true },
   })
-  if (!variacao || !variacaoAtivaNaEmpresa(variacao, ctx.idEmpresa))
+  if (
+    !variacao ||
+    (variacao.cores?.id_empresa != null &&
+      variacao.cores.id_empresa !== ctx.idEmpresa) ||
+    (variacao.tamanhos && variacao.tamanhos.id_empresa !== ctx.idEmpresa) ||
+    (!retornoHistorico && !variacaoAtivaNaEmpresa(variacao, ctx.idEmpresa))
+  )
     throw new NotFoundError(
       "Variação ativa não encontrada para o produto na empresa.",
     )

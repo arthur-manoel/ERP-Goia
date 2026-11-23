@@ -1,6 +1,6 @@
 # Produtos: variações e fornecedores — interface (#27)
 
-Entrega de frontend em `/produtos`, partindo da `develop`. A ação **Grade** reaproveita a geração e manutenção das combinações existentes. A ação **Fornecedores** abre as condições comerciais específicas do produto e da empresa. As rotas abaixo são o contrato esperado pela interface e **ainda precisam ser implementadas pelo responsável pela API**. Nenhum Route Handler, serviço de backend, schema de banco ou migration foi alterado nesta entrega.
+Entrega de frontend em `/produtos`, partindo da `develop`. A ação **Grade** reaproveita a geração e manutenção das combinações existentes. A ação **Fornecedores** abre as condições comerciais específicas do produto e da empresa. As rotas abaixo descrevem o contrato esperado pela interface. A implementação do backend está documentada na [API de variações e fornecedores](produtos-variacoes-fornecedores-api.md).
 
 ## Contrato comum
 
@@ -50,7 +50,7 @@ Registro devolvido pela listagem e pelas escritas:
 }
 ```
 
-Limites do schema atual: código até 100 caracteres; preço `Decimal(15,2)` e quantidade mínima `Decimal(15,3)`, ambos strings decimais ou null no JSON; prazo inteiro entre 0 e 2147483647 ou null. O formulário aceita vírgula ou ponto decimal sem agrupamento de milhares e valores não negativos. Campo vazio é null; zero é preservado. O backend deve validar os mesmos limites. O preço é uma condição comercial informada pelo operador, sem criar compra ou movimentação de estoque.
+Limites do schema atual: código até 100 caracteres; preço `Decimal(15,2)` e quantidade mínima `Decimal(15,3)`, ambos strings decimais ou null no JSON; prazo inteiro entre 0 e 2147483647 ou null. O formulário aceita vírgula ou ponto decimal sem agrupamento de milhares e valores não negativos. Campo vazio é null; zero é preservado. O backend deve validar os mesmos limites. O preço é o último preço de compra informado pelo operador. Informar esse valor não cria compra nem movimentação de estoque.
 
 PATCH de edição envia somente campos modificados, por exemplo `{ "codigo_produto_fornecedor": "AUR-002" }`; `{ "preco_ultima_compra": null }` limpa o valor, enquanto omissão o preserva. IDs são imutáveis. A situação é atualizada com `{ "status": "INATIVO" }` ou `{ "status": "ATIVO" }`, após confirmação.
 
