@@ -118,7 +118,11 @@ export function TelaHistoricoVendas() {
       titulo="Histórico de vendas"
       descricao="Vendas da empresa com itens, parcelas e mudanças de status."
       acoes={
-        <Button variant="outline" render={<Link href="/vendas" />}>
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={<Link href="/vendas" />}
+        >
           Ir para o PDV
         </Button>
       }
