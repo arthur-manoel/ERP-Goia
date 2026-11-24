@@ -91,7 +91,9 @@ A tela `/estoque/insumos` reúne as posições físicas reais de produtos marcad
 
 Usuários autorizados podem configurar o mínimo por empresa, localização e produto. A quantidade reservada não participa do alerta. As posições existentes herdaram o limite anterior de `produto_empresa`; novas posições sem mínimo aparecem explicitamente como não configuradas.
 
-**Status: saldos, mínimos locais e indicador do dashboard integrados ao Prisma.** Cadastro de produtos, movimentações e demais indicadores do dashboard continuam nas entregas próprias; este fluxo não usa o adaptador em memória.
+**Status: saldos, mínimos locais e indicador do dashboard integrados ao Prisma.** Cadastro de produtos e demais indicadores do dashboard continuam nas entregas próprias. O fluxo de insumos usa o Prisma.
+
+As telas de movimentações e Kardex consultam o estoque persistido, registram operações manuais pela API oficial e exportam CSV e PDF. [Contrato de estoque](src/modules/movimentacoes-estoque/README.md).
 
 ---
 
@@ -578,9 +580,6 @@ banco compartilhado/produção cabe ao responsável após conferência/aprovaç�
 Enviar ou incorporar a PR não executa DDL automaticamente.
 
 ## Histórico
-
-- Movimentações e Kardex consultam o estoque persistido, registram operações manuais pela API oficial e exportam CSV/PDF. [Contrato de estoque](src/modules/movimentacoes-estoque/README.md).
-
 
 - 11/11/2026: tela de auditoria em `/admin/auditoria`, filtros por período/usuário/tabela/registro, snapshots antes/depois e auditoria transacional dos catálogos. Contrato e cobertura em [src/modules/auditoria/README.md](src/modules/auditoria/README.md).
 
