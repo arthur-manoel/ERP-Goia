@@ -104,7 +104,12 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
   const rota = (id = p.id) => `/api/produtos/${id}`
   const grade = (id) => `${rota(id)}/variacoes`
   const fornecedores = (id) => `${rota(id)}/fornecedores`
-  const cor = await prisma.cores.create({ data: { nome: `Azul ${marca}` } })
+  const cor = await prisma.cores.create({
+    data: { nome: `Azul ${marca}`, id_empresa: a },
+  })
+  const corGlobal = await prisma.cores.create({
+    data: { nome: `Global ${marca}` },
+  })
   const cor2 = await prisma.cores.create({
     data: { nome: "Verde", id_empresa: a },
   })
@@ -481,7 +486,63 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
         where: { id: ordem.id },
         data: { status: "CANCELADA" },
       })
+      const compra = await prisma.compras.create({
+        data: {
+          id_empresa: a,
+          id_usuario: administradora.id,
+          id_fornecedor: especifico.id,
+          id_local_estoque: local.id,
+          codigo: `Pendente-${marca}`,
+          data_emissao: new Date(),
+          status: "EMITIDA",
+          compra_itens: { create: { id_produto: legado.id, quantidade: "1" } },
+        },
+      })
+      assert.match(
+        await gerar(legado.id, [{ id_cor: cor.id }], 409),
+        /compra em aberto/,
+      )
+      await prisma.compras.update({
+        where: { id: compra.id },
+        data: { status: "CANCELADA" },
+      })
+
+      const rascunho = (id_cor) =>
+        prisma.venda.create({
+          data: {
+            id_empresa: a,
+            id_usuario: administradora.id,
+            numero: `PDV-${marca}-${id_cor ?? "sem-grade"}`,
+            item_venda: {
+              create: {
+                id_produto: legado.id,
+                id_cor,
+                quantidade: "1",
+                valor_unitario: "1",
+                valor_total: "1",
+              },
+            },
+          },
+        })
+      const semClassificacao = await rascunho(null)
+      assert.match(
+        await gerar(legado.id, [{ id_cor: cor.id }], 409),
+        /venda em rascunho/,
+      )
+      await prisma.venda.update({
+        where: { id: semClassificacao.id },
+        data: { status: "CANCELADA" },
+      })
       const criada = (await gerar(legado.id, [{ id_cor: cor.id }])).rows[0]
+      const comClassificacao = await rascunho(cor.id)
+      assert.match(
+        await mudar(legado.id, criada.id, "INATIVO", 409),
+        /venda em rascunho/,
+      )
+      await prisma.venda.update({
+        where: { id: comClassificacao.id },
+        data: { status: "CONFIRMADA" },
+      })
       await prisma.estoque.update({
         where: { id: posicao.id },
         data: { quantidade: "1.250" },
@@ -765,7 +826,38 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
         pode_criar: true,
       })
       const tokenPendente = await login(pessoa)
-      const escopo = { id_empresa: a, id_produto: atomicidade.id }
+      const pendente = await produto("Fila de autorização")
+      const associacao = await produto("Editar principal")
+      const primeira = await vincular(
+        associacao.id,
+        {
+          id_fornecedor: especifico.id,
+          fornecedor_principal: true,
+        },
+        201,
+        { token: tokenPendente },
+      )
+      await vincular(
+        associacao.id,
+        {
+          id_fornecedor: global.id,
+          fornecedor_principal: true,
+        },
+        403,
+        { token: tokenPendente },
+      )
+      assert.equal(
+        await prisma.produto_fornecedor.count({
+          where: { id_produto: associacao.id, id_empresa: a },
+        }),
+        1,
+      )
+      assert.equal(
+        (await chamar(`${fornecedores(associacao.id)}/${primeira.id}`, 200))
+          .fornecedor_principal,
+        true,
+      )
+      const escopo = { id_empresa: a, id_produto: pendente.id }
       const executar = async (bearer, mudarAcesso, status) => {
         const transacaoPronta = Promise.withResolvers()
         const liberar = Promise.withResolvers()
@@ -780,7 +872,7 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
         )
         trava.catch(transacaoPronta.reject)
         const conexao = await transacaoPronta.promise
-        const requisicao = gerar(atomicidade.id, [{ id_cor: cor.id }], null, {
+        const requisicao = gerar(pendente.id, [{ id_cor: cor.id }], null, {
           token: bearer,
         })
         try {
@@ -788,9 +880,9 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
           const limite = Date.now() + 8_000
           while (!bloqueada && Date.now() < limite) {
             const waits = await prisma.$queryRaw`
-            SELECT 1 FROM information_schema.INNODB_LOCK_WAITS w
-            JOIN information_schema.INNODB_TRX t ON w.blocking_trx_id = t.trx_id
-            WHERE t.trx_mysql_thread_id = ${conexao}
+            SELECT ID FROM information_schema.PROCESSLIST
+            WHERE DB = DATABASE() AND ID <> ${conexao}
+              AND INFO LIKE ${"SELECT id FROM empresas WHERE id IN (%) AND status = 'ATIVA'%FOR UPDATE%"}
           `
             bloqueada = waits.length > 0
             if (!bloqueada) await delay(50)
@@ -802,7 +894,7 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
           await mudarAcesso()
         } finally {
           liberar.resolve()
-          await trava
+          await Promise.all([trava, requisicao])
         }
         assert.equal((await requisicao).status, status)
         assert.equal(await prisma.produto_variacoes.count({ where: escopo }), 0)
@@ -848,6 +940,41 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
     await chamar(grade(), 400, { selecao: false })
     await chamar(grade(), 403, { token: tokenLeitura, empresa: b })
     await chamar(grade(externo.id), 404)
+    await gerar(p.id, [{ id_cor: corGlobal.id }], 400, { token: tokenOperacao })
+    await prisma.produto_fornecedor.update({
+      where: { id: link.id },
+      data: {
+        preco_ultima_compra: "-1.20",
+        prazo_entrega_dias: -2,
+        quantidade_minima: "-3.100",
+      },
+    })
+    const legadoFornecedor = await chamar(`${fornecedores()}/${link.id}`, 200)
+    assert.deepEqual(legadoFornecedor.condicoes_legadas_invalidas, {
+      preco_ultima_compra: "-1.20",
+      prazo_entrega_dias: -2,
+      quantidade_minima: "-3.100",
+    })
+    assert.deepEqual(
+      [
+        legadoFornecedor.preco_ultima_compra,
+        legadoFornecedor.prazo_entrega_dias,
+        legadoFornecedor.quantidade_minima,
+      ],
+      [null, null, null],
+    )
+    const revisado = await editar(
+      p.id,
+      link.id,
+      {
+        preco_ultima_compra: "1.20",
+        prazo_entrega_dias: 2,
+        quantidade_minima: "3.100",
+      },
+      200,
+      { token: tokenOperacao },
+    )
+    assert.equal(revisado.condicoes_legadas_invalidas, undefined)
     await gerar(p.id, [{ id_cor: cor.id }], 403, { token: tokenLeitura })
     await vincular(p.id, { id_fornecedor: especifico.id }, 403, {
       token: tokenLeitura,
@@ -896,7 +1023,7 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
       await mudar(retorno.id, criada.id, "INATIVO")
       await prisma.cores.update({
         where: { id: cor3.id },
-        data: { status: "INATIVA" },
+        data: { status: "INATIVA", id_empresa: b },
       })
       const dados = {
         idProduto: retorno.id,
@@ -1019,6 +1146,45 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
       } finally {
         await prisma.$executeRawUnsafe(`DROP TRIGGER \`${trig}\``)
       }
+    },
+  )
+
+  await t.test(
+    "paginação completa das opções permite abrir, gravar e recarregar",
+    async () => {
+      await prisma.fornecedores.createMany({
+        data: Array.from({ length: 12_001 }, (_, i) => ({
+          id_empresa: b,
+          razao_social: `Fornecedor paginado ${i + 1}`,
+        })),
+      })
+      const caminho = fornecedores()
+      async function lerDialogo() {
+        const vinculos = await chamar(
+          caminho + "?page=1&limit=100",
+          200,
+          sessaoB,
+        )
+        let pagina = 1
+        let ids = []
+        let resultado
+        do {
+          resultado = await chamar(
+            caminho + `/opcoes?page=${pagina}&limit=100`,
+            200,
+            sessaoB,
+          )
+          ids = ids.concat(resultado.rows.map((r) => r.id))
+          pagina++
+        } while (pagina <= resultado.totalPages)
+        assert.equal(ids.length, resultado.count)
+        assert.ok(ids.length >= 12_001)
+        assert.equal(new Set(ids).size, ids.length)
+        return vinculos.count
+      }
+      const antes = await lerDialogo()
+      await vincular(p.id, { id_fornecedor: fornecedorB.id }, 201, sessaoB)
+      assert.equal(await lerDialogo(), antes + 1)
     },
   )
 })

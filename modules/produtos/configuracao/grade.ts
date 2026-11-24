@@ -55,7 +55,7 @@ async function verificarDimensoes(tx: Tx, ctx: Contexto, itens: Combinacao[]) {
     const rows = await tx.$queryRaw<{ id: number }[]>`
       SELECT id FROM cores
       WHERE id IN (${Prisma.join(cores)}) AND status = 'ATIVA'
-        AND (id_empresa IS NULL OR id_empresa = ${ctx.idEmpresa})
+        AND id_empresa = ${ctx.idEmpresa}
       ORDER BY id FOR UPDATE`
     if (rows.length !== cores.length)
       throw new ValidationError("Cor ativa não encontrada para a empresa.")
@@ -133,6 +133,37 @@ async function verificarOperacoes(
     throw new ConflictError(
       "Há um pedido ou cancelamento em aberto. Conclua o documento antes de alterar a grade.",
     )
+  const venda = await tx.item_venda.findFirst({
+    where: {
+      ...empresaProduto,
+      ...(variacao && {
+        id_cor: variacao.id_cor,
+        id_tamanho: variacao.id_tamanho,
+      }),
+      venda: { status: "RASCUNHO" },
+    },
+    select: { id: true },
+  })
+  if (venda)
+    throw new ConflictError(
+      "Conclua ou cancele a venda em rascunho antes de alterar a grade.",
+    )
+  if (!variacao) {
+    const compra = await tx.compra_itens.findFirst({
+      where: {
+        id_produto: ctx.idProduto,
+        compras: {
+          id_empresa: ctx.idEmpresa,
+          status: { in: ["RASCUNHO", "EMITIDA"] },
+        },
+      },
+      select: { id: true },
+    })
+    if (compra)
+      throw new ConflictError(
+        "Conclua ou cancele a compra em aberto antes de gerar as primeiras variações.",
+      )
+  }
   const producao = await tx.ordem_producao_item.findFirst({
     where: {
       id_produto: ctx.idProduto,

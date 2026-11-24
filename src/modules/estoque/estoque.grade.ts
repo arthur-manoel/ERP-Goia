@@ -72,9 +72,6 @@ export async function atualizarGradeEstoque(
   })
   if (
     !variacao ||
-    (variacao.cores?.id_empresa != null &&
-      variacao.cores.id_empresa !== ctx.idEmpresa) ||
-    (variacao.tamanhos && variacao.tamanhos.id_empresa !== ctx.idEmpresa) ||
     (!retornoHistorico && !variacaoAtivaNaEmpresa(variacao, ctx.idEmpresa))
   )
     throw new NotFoundError(

@@ -32,7 +32,17 @@ type Operacao = (
   body: unknown,
 ) => Promise<unknown>
 
-function rota(action: Action, operacao: Operacao, status = 200) {
+function rota(
+  action: Action,
+  operacao: Operacao,
+  {
+    status = 200,
+    consulta,
+  }: {
+    status?: number
+    consulta?: "grade" | "vinculos" | "opcoes" | "detalhe"
+  } = {},
+) {
   const leitura = action === "pode_ler"
   return (req: Request, { params }: Rota) =>
     catalogRequest(
@@ -56,10 +66,8 @@ function rota(action: Action, operacao: Operacao, status = 200) {
       },
       status,
       {
-        scope: leitura
-          ? "configuracao-produto:read"
-          : "configuracao-produto:write",
-        limit: leitura ? 120 : 30,
+        scope: `configuracao-produto:${consulta ?? "write"}`,
+        limit: consulta ? (consulta === "detalhe" ? 120 : 360) : 30,
         windowMs: 60_000,
       },
       undefined,
@@ -79,15 +87,17 @@ async function lerCorpo(req: Request) {
   return readLimitedJson(req)
 }
 
-export const listarVariacoesHandler = rota("pode_ler", (ctx, _path, req) =>
-  listarGrade(ctx, validate(paginaSchema, readQuery(req))),
+export const listarVariacoesHandler = rota(
+  "pode_ler",
+  (ctx, _path, req) => listarGrade(ctx, validate(paginaSchema, readQuery(req))),
+  { consulta: "grade" },
 )
 
 export const gerarVariacoesHandler = rota(
   "pode_criar",
   (ctx, _path, _req, body) =>
     gerarGrade(ctx, validate(gerarGradeSchema, body).variacoes),
-  201,
+  { status: 201 },
 )
 
 export const editarVariacaoHandler = rota(
@@ -100,24 +110,34 @@ export const editarVariacaoHandler = rota(
     ),
 )
 
-export const listarFornecedoresHandler = rota("pode_ler", (ctx, _path, req) =>
-  listarFornecedores(ctx, validate(paginaSchema, readQuery(req))),
+export const listarFornecedoresHandler = rota(
+  "pode_ler",
+  (ctx, _path, req) =>
+    listarFornecedores(ctx, validate(paginaSchema, readQuery(req))),
+  { consulta: "vinculos" },
 )
 
-export const opcoesFornecedoresHandler = rota("pode_ler", (ctx, _path, req) =>
-  listarOpcoes(ctx, validate(paginaSchema, readQuery(req))),
+export const opcoesFornecedoresHandler = rota(
+  "pode_ler",
+  (ctx, _path, req) =>
+    listarOpcoes(ctx, validate(paginaSchema, readQuery(req))),
+  { consulta: "opcoes" },
 )
 
-export const consultarFornecedorHandler = rota("pode_ler", (ctx, path, req) => {
-  semQuery(req)
-  return consultarFornecedor(ctx, validate(idRota, path.idVinculo))
-})
+export const consultarFornecedorHandler = rota(
+  "pode_ler",
+  (ctx, path, req) => {
+    semQuery(req)
+    return consultarFornecedor(ctx, validate(idRota, path.idVinculo))
+  },
+  { consulta: "detalhe" },
+)
 
 export const criarFornecedorHandler = rota(
   "pode_criar",
   (ctx, _path, _req, body) =>
     criarFornecedor(ctx, validate(criarFornecedorSchema, body)),
-  201,
+  { status: 201 },
 )
 
 export const editarFornecedorHandler = rota(

@@ -6,6 +6,7 @@ import { fornecedorDisponivel } from "@/modules/empresa-fornecedor/policy"
 import {
   auditar,
   escopo,
+  exigirAcoes,
   exigirProdutoAtivo,
   gravar,
   intervalo,
@@ -47,10 +48,24 @@ function representar(
     fornecedores.status === "ATIVO" &&
     (fornecedores.id_empresa === vinculo.id_empresa ||
       fornecedores.empresa_fornecedor.length > 0)
+  const { preco_ultima_compra, prazo_entrega_dias, quantidade_minima } = vinculo
+  const preco = preco_ultima_compra?.toFixed(2) ?? null
+  const minimo = quantidade_minima?.toFixed(3) ?? null
+  const invalidas = {
+    ...(preco_ultima_compra?.lt(0) && { preco_ultima_compra: preco }),
+    ...(prazo_entrega_dias !== null &&
+      prazo_entrega_dias < 0 && { prazo_entrega_dias }),
+    ...(quantidade_minima?.lt(0) && { quantidade_minima: minimo }),
+  }
   return {
     ...vinculo,
-    preco_ultima_compra: vinculo.preco_ultima_compra?.toFixed(2) ?? null,
-    quantidade_minima: vinculo.quantidade_minima?.toFixed(3) ?? null,
+    preco_ultima_compra: "preco_ultima_compra" in invalidas ? null : preco,
+    prazo_entrega_dias:
+      "prazo_entrega_dias" in invalidas ? null : prazo_entrega_dias,
+    quantidade_minima: "quantidade_minima" in invalidas ? null : minimo,
+    ...(Object.keys(invalidas).length && {
+      condicoes_legadas_invalidas: invalidas,
+    }),
     fornecedor_principal:
       vinculo.fornecedor_principal && vinculo.status === "ATIVO" && elegivel,
     fornecedores: visivel
@@ -120,7 +135,9 @@ async function exigirFornecedorElegivel(tx: Tx, ctx: Contexto, id: number) {
     select: { id: true },
   })
   if (!registro)
-    throw new NotFoundError("Fornecedor elegível não encontrado na empresa.")
+    throw new NotFoundError(
+      "Fornecedor indisponível na empresa. Se a lista estiver aberta, feche e reabra Fornecedores para atualizá-la.",
+    )
 }
 
 async function limparPrincipalAnterior(tx: Tx, ctx: Contexto, id?: number) {
@@ -131,6 +148,7 @@ async function limparPrincipalAnterior(tx: Tx, ctx: Contexto, id?: number) {
   }
   const anteriores = await tx.produto_fornecedor.findMany({ where })
   if (!anteriores.length) return
+  await exigirAcoes(tx, ctx, ["pode_editar"])
   await tx.produto_fornecedor.updateMany({
     where,
     data: { fornecedor_principal: false },
@@ -157,7 +175,7 @@ export function criarFornecedor(ctx: ContextoEscrita, dados: CriarFornecedor) {
     })
     if (existente)
       throw new ConflictError(
-        "Fornecedor já vinculado ao produto. Consulte o vínculo existente.",
+        "Fornecedor já vinculado ao produto. Feche e reabra Fornecedores para atualizar a lista.",
       )
     if (dados.fornecedor_principal) await limparPrincipalAnterior(tx, ctx)
     const depois = await tx.produto_fornecedor.create({

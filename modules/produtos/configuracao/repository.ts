@@ -62,6 +62,21 @@ export function ler<T>(ctx: Contexto, operacao: (tx: Tx) => Promise<T>) {
   )
 }
 
+export async function exigirAcoes(tx: Tx, ctx: Contexto, acoes: Action[]) {
+  const acesso = await tx.usuario_empresa.findFirst({
+    where: {
+      ...vinculoCatalogo(ctx.idUsuario, "PRODUTOS", acoes),
+      id_empresa: ctx.idEmpresa,
+    },
+    select: { id: true },
+  })
+  if (!acesso)
+    throw new HttpError(
+      403,
+      "Sem permissão para esta operação na empresa ativa.",
+    )
+}
+
 export async function gravar<T>(
   ctx: ContextoEscrita,
   acoes: Action[],
@@ -78,18 +93,7 @@ export async function gravar<T>(
       const sessao = await verifyAccessToken(ctx.token, tx)
       if (!sessao || Number(sessao.id) !== ctx.idUsuario)
         throw new HttpError(401, "Não autenticado.")
-      const acesso = await tx.usuario_empresa.findFirst({
-        where: {
-          ...vinculoCatalogo(ctx.idUsuario, "PRODUTOS", acoes),
-          id_empresa: ctx.idEmpresa,
-        },
-        select: { id: true },
-      })
-      if (!acesso)
-        throw new HttpError(
-          403,
-          "Sem permissão para esta operação na empresa ativa.",
-        )
+      await exigirAcoes(tx, ctx, acoes)
       return operacao(tx, await consultarProduto(tx, ctx))
     })
   } catch (error) {

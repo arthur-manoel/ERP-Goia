@@ -13,7 +13,7 @@ cadastros globais permanecem sob a política geral de produtos e fornecedores.
 | PATCH | `/variacoes/{idVariacao}` | Editar (+ Excluir para inativar) | Variação atualizada |
 | GET | `/fornecedores` | Ler | Página de vínculos, incluindo inativos |
 | GET | `/fornecedores/opcoes` | Ler | Página de opções elegíveis `{ id, nome }` |
-| POST | `/fornecedores` | Criar | 201 com o vínculo criado |
+| POST | `/fornecedores` | Criar (+ Editar para trocar o principal) | 201 com o vínculo criado |
 | GET | `/fornecedores/{idVinculo}` | Ler | Vínculo do produto com o fornecedor |
 | PATCH | `/fornecedores/{idVinculo}` | Editar (+ Excluir para inativar) | Vínculo atualizado |
 
@@ -30,8 +30,10 @@ Corpos de escrita aceitam JSON até 64 KiB. Erros seguem
 `{ "success": false, "error": "<mensagem>" }` com 400 para entrada inválida,
 401 para sessão inválida, 403 para falta de acesso, 404 para registros fora
 do escopo ou fornecedor inelegível, 409 para conflitos operacionais,
-de integridade ou concorrência, e 429 por excesso de requisições. As cotas são
-120 consultas e 30 escritas por minuto por usuário, independentes entre si.
+de integridade ou concorrência, e 429 por excesso de requisições. Por minuto
+e por usuário, cada listagem tem uma cota independente de 360 requisições.
+Detalhes têm cota de 120 e escritas de 30. A interface carrega todas as
+páginas. Catálogos muito grandes ou recargas repetidas podem atingir a cota.
 
 ## Grade
 
@@ -62,11 +64,18 @@ vínculo, dimensões ativas e ausência de outra combinação ativa igual.
 A primeira grade exige regularizar pelo módulo de estoque eventuais saldos
 sem classificação e concluir ou liberar documentos e reservas abertos.
 A inativação exige saldo físico e reservado zerados e que não haja
-transferências, reservas, pedidos ou ordens pendentes da variação. A grade
+transferências, reservas, pedidos ou ordens pendentes da variação. A primeira
+grade também espera o encerramento de compras em rascunho ou emitidas. A grade
 não distribui saldo nem altera documentos. Devoluções de pedidos rastreadas
 pelo movimento de origem preservam a variação histórica, mesmo inativa.
 Para usar esse saldo em novas operações, reative a variação com dimensões
-e produto elegíveis.
+e produto elegíveis. Cores e tamanhos de novas combinações e reativações
+precisam pertencer à empresa ativa. Se houver venda de balcão em rascunho,
+conclua ou cancele a operação antes de alterar a grade usada pela venda.
+
+Compras e recebimentos sem identificação de variação continuam registrando
+saldo agregado. Esse saldo não fica disponível para reserva de uma variação
+específica. O cadastro de grade não atribui esse saldo a uma cor ou tamanho.
 
 ## Fornecedores
 
@@ -97,10 +106,17 @@ externos removidos. No PATCH, omissão mantém o valor, e `null` limpa
 somente código, preço, prazo ou quantidade. A mudança de situação usa
 `{ "status": "INATIVO" }` ou `{ "status": "ATIVO" }`.
 
+Condições legadas negativas aparecem como indisponíveis nos campos de leitura.
+O objeto opcional `condicoes_legadas_invalidas` traz os valores originais.
+A leitura preserva o banco e uma edição explícita permite corrigir a condição.
+
 Aceitam-se fornecedores próprios ativos e fornecedores globais ativos com
 vínculo empresa–fornecedor ativo. Vínculos históricos locais ou globais
-continuam consultáveis se o fornecedor perder elegibilidade. Se o cadastro do fornecedor for transferido para outra empresa, o vínculo e as condições anteriores permanecem consultáveis. O nome passa a ser exibido como “Fornecedor indisponível”. O POST
-duplicado retorna 409. Use PATCH para reativar o vínculo com o mesmo ID.
+continuam consultáveis se o fornecedor perder elegibilidade. Se o cadastro
+for transferido para outra empresa, o vínculo e as condições anteriores
+permanecem consultáveis. O nome é exibido como “Fornecedor indisponível”.
+O POST duplicado retorna 409. Feche e reabra o diálogo para atualizar a lista.
+Use PATCH para reativar o vínculo com o mesmo ID.
 Reativar exige elegibilidade e conserva as condições. Inativar limpa a marca
 de principal, e reativar por situação mantém o vínculo sem essa marca.
 Marcar como principal limpa a marca anterior da mesma empresa e produto e
