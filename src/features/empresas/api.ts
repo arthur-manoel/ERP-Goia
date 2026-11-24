@@ -3,6 +3,9 @@ import type { ParametrosListagem, ResultadoPagina } from "@/lib/listagem/tipos"
 import { montarQuery } from "@/lib/listagem/parametros"
 import {
   resumoEmpresaSchema,
+  empresaSchema,
+  cadastroEmpresaSchema,
+  edicaoEmpresaSchema,
   type DadosEmpresa,
   type EdicaoEmpresa,
   type Empresa,
@@ -53,17 +56,68 @@ export function normalizarEmpresas(
     meta: undefined,
   }
 }
-async function indisponivel(): Promise<never> {
-  throw new Error(
-    "O cadastro de empresas aguarda a integração aprovada. Nenhum dado foi gravado.",
-  )
-}
-// Sem HTTP, fixtures ou persistência local: ligar o transporte após aprovação do PR #155.
-export const apiEmpresasPendente: ApiEmpresas = {
-  listar: indisponivel,
-  consultar: indisponivel,
-  criar: indisponivel,
-  editar: indisponivel,
-  inativar: indisponivel,
-  ativar: indisponivel,
+export type RequisitarEmpresas = (
+  url: string,
+  init?: RequestInit,
+) => Promise<Response>
+
+export function criarApiEmpresas(requisitar: RequisitarEmpresas): ApiEmpresas {
+  const idValido = z.number().int().positive().max(2_147_483_647)
+  async function ler(url: string, init?: RequestInit) {
+    const resposta = await requisitar(url, init)
+    const corpo: unknown = await resposta.json().catch(() => null)
+    if (!resposta.ok) {
+      const erro = z.object({ error: z.string() }).safeParse(corpo)
+      throw new Error(
+        erro.success
+          ? erro.data.error
+          : `Não foi possível concluir a operação (${resposta.status}).`,
+      )
+    }
+    return corpo
+  }
+  function rota(id: number) {
+    return `/api/empresas/${idValido.parse(id)}`
+  }
+  async function gravar(url: string, metodo: string, dados?: unknown) {
+    const corpo = await ler(url, {
+      method: metodo,
+      ...(dados === undefined
+        ? {}
+        : {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(dados),
+          }),
+    })
+    const resultado = z
+      .object({ success: z.literal(true), data: empresaSchema })
+      .safeParse(corpo)
+    if (!resultado.success)
+      throw new Error(
+        "A gravação pode ter sido concluída, mas a resposta não foi confirmada. Atualize a lista antes de tentar novamente.",
+      )
+  }
+  return {
+    listar: async (parametros, signal) =>
+      normalizarEmpresas(
+        await ler(`/api/empresas?${queryEmpresas(parametros)}`, { signal }),
+      ),
+    consultar: async (id, signal) => {
+      const resultado = z
+        .object({ success: z.literal(true), data: empresaSchema })
+        .parse(await ler(rota(id), { signal }))
+      if (resultado.data.id !== id)
+        throw new Error("Empresa retornada fora do cadastro consultado.")
+      return resultado.data
+    },
+    criar: (dados) =>
+      gravar("/api/empresas", "POST", cadastroEmpresaSchema.parse(dados)),
+    editar: async (id, dados) => {
+      const validados = edicaoEmpresaSchema.parse(dados)
+      if (Object.keys(validados).length)
+        await gravar(rota(id), "PATCH", validados)
+    },
+    inativar: (id) => gravar(rota(id), "DELETE"),
+    ativar: (id) => gravar(rota(id), "PATCH", { status: "ATIVA" }),
+  }
 }

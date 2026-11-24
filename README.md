@@ -579,6 +579,8 @@ Enviar ou incorporar a PR não executa DDL automaticamente.
 
 ## Histórico
 
+- 23/11/2026: tela de Empresas integrada à API do PR #155, com gestão global autenticada, edição parcial e revalidação da sessão. Validação com banco local e revisão de segurança em [docs/revisao-empresas.md](docs/revisao-empresas.md).
+
 - 20/11/2026: interface de fornecedores do produto em `/produtos`, com condições comerciais, principal, edição parcial e situação; grade existente reaproveitada. APIs de variações e produto-fornecedor pendentes de implementação pelo backend. Contrato em [docs/produtos-variacoes-fornecedores-ui.md](docs/produtos-variacoes-fornecedores-ui.md).
 
 - 11/11/2026: tela de auditoria em `/admin/auditoria`, filtros por período/usuário/tabela/registro, snapshots antes/depois e auditoria transacional dos catálogos. Contrato e cobertura em [src/modules/auditoria/README.md](src/modules/auditoria/README.md).

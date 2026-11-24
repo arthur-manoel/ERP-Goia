@@ -7,7 +7,7 @@ import {
   empresaSchema,
 } from "@/features/empresas/schemas"
 import {
-  apiEmpresasPendente,
+  criarApiEmpresas,
   normalizarEmpresas,
   queryEmpresas,
 } from "@/features/empresas/api"
@@ -145,15 +145,9 @@ it("normaliza o envelope real de paginação e rejeita respostas incompatíveis"
     normalizarEmpresas({ success: true, data: { rows: [] } }),
   ).toThrow()
 })
-it("transporte pendente não faz requisições nem simula sucesso", async () => {
-  const fetch = vi.fn()
-  vi.stubGlobal("fetch", fetch)
-  try {
-    await expect(apiEmpresasPendente.criar(dados)).rejects.toThrow(
-      "Nenhum dado foi gravado",
-    )
-    expect(fetch).not.toHaveBeenCalled()
-  } finally {
-    vi.unstubAllGlobals()
-  }
+it("recusa payloads inválidos antes de enviar à API", async () => {
+  const request = vi.fn()
+  const api = criarApiEmpresas(request)
+  expect(() => api.criar({ ...dados, cnpj: "00000000000000" })).toThrow()
+  expect(request).not.toHaveBeenCalled()
 })

@@ -3,8 +3,8 @@ import { act, createElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { beforeEach, afterEach, expect, it, vi } from "vitest"
 import { FormularioEmpresa } from "@/features/empresas/components/formulario-empresa"
-import { TelaEmpresas } from "@/features/empresas/components/tela-empresas"
-import { apiEmpresasPendente } from "@/features/empresas/api"
+import { ConteudoEmpresas as TelaEmpresas } from "@/features/empresas/components/tela-empresas"
+import { apiEmpresasTeste as apiEmpresasPendente } from "./fixtures"
 import {
   cadastroEmpresaSchema,
   empresaSchema,
@@ -256,16 +256,14 @@ it("inativa somente após confirmar e recarrega a situação recebida do serviç
   const api = {
     ...apiEmpresasPendente,
     inativar,
-    listar: vi
-      .fn()
-      .mockImplementation(async () => ({
-        itens: [{ ...empresa }],
-        pagina: 1,
-        limite: 10,
-        total: 1,
-        totalPaginas: 1,
-        meta: undefined,
-      })),
+    listar: vi.fn().mockImplementation(async () => ({
+      itens: [{ ...empresa }],
+      pagina: 1,
+      limite: 10,
+      total: 1,
+      totalPaginas: 1,
+      meta: undefined,
+    })),
   }
   await act(async () => root.render(createElement(TelaEmpresas, { api })))
   await act(async () =>
@@ -293,4 +291,66 @@ it("inativa somente após confirmar e recarrega a situação recebida do serviç
   expect(inativar).toHaveBeenCalledExactlyOnceWith(10)
   expect(document.body.textContent).toContain("Inativa")
   expect(api.listar).toHaveBeenCalledTimes(2)
+})
+
+it("mantém formulário ocupado até concluir a atualização da sessão posterior à escrita", async () => {
+  let concluir!: () => void
+  const criar = vi.fn().mockResolvedValue(undefined),
+    aoFechar = vi.fn()
+  const aoSalvar = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        concluir = resolve
+      }),
+  )
+  await act(async () =>
+    root.render(
+      createElement(FormularioEmpresa, {
+        empresa: null,
+        api: { ...apiEmpresasPendente, criar },
+        aoFechar,
+        aoSalvar,
+      }),
+    ),
+  )
+  await preencher("razao_social", "Goia")
+  await preencher("cnpj", "11222333000181")
+  await enviar()
+  expect(criar).toHaveBeenCalledOnce()
+  expect(aoFechar).not.toHaveBeenCalled()
+  expect(document.querySelector("fieldset")!.disabled).toBe(true)
+  await act(async () => concluir())
+  expect(aoFechar).toHaveBeenCalledOnce()
+})
+
+it("falha na revalidação após escrita confirmada não reenvia cadastro nem mantém formulário para novo POST", async () => {
+  const criar = vi.fn().mockResolvedValue(undefined)
+  const api = {
+    ...apiEmpresasPendente,
+    criar,
+    listar: vi.fn().mockResolvedValue({
+      itens: [],
+      pagina: 1,
+      limite: 10,
+      total: 0,
+      totalPaginas: 1,
+      meta: undefined,
+    }),
+  }
+  const aoAtualizarSessao = vi.fn().mockRejectedValue(new Error("Sem conexão"))
+  await act(async () =>
+    root.render(createElement(TelaEmpresas, { api, aoAtualizarSessao })),
+  )
+  await act(async () =>
+    Array.from(document.querySelectorAll("button"))
+      .find((item) => item.textContent?.trim() === "Nova empresa")!
+      .click(),
+  )
+  await preencher("razao_social", "Goia")
+  await preencher("cnpj", "11222333000181")
+  await enviar()
+  expect(criar).toHaveBeenCalledOnce()
+  expect(aoAtualizarSessao).toHaveBeenCalledOnce()
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  expect(document.body.textContent).toContain("Os dados foram salvos")
 })

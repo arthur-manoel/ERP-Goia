@@ -1,5 +1,6 @@
 "use client"
 
+import { toast } from "sonner"
 import { useMemo } from "react"
 import { CampoSelecao, CampoTexto } from "@/components/formulario/campos"
 import { FormularioDialogo } from "@/components/formulario/formulario-dialogo"
@@ -61,7 +62,7 @@ export function FormularioEmpresa({
   empresa: Empresa | null
   api: ApiEmpresas
   aoFechar: () => void
-  aoSalvar: () => void
+  aoSalvar: () => void | Promise<void>
 }) {
   const iniciais = formularioEmpresa(empresa ?? undefined)
   const resolver = useMemo(
@@ -86,9 +87,9 @@ export function FormularioEmpresa({
         if (empresa && !Object.keys(dados).length) return
         if (empresa) await api.editar(empresa.id, dados)
         else await api.criar(dados as DadosEmpresa)
-        aoSalvar()
+        toast.success(empresa ? "Empresa atualizada." : "Empresa cadastrada.")
+        await aoSalvar()
       }}
-      mensagemSucesso={empresa ? "Empresa atualizada." : "Empresa cadastrada."}
       className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"
     >
       {(form) => (

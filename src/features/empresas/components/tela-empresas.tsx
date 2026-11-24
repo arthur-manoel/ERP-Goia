@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Building2, Pencil, Plus, Power, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { ConfirmarAcao } from "@/components/dialogos/confirmar-acao"
@@ -10,15 +10,30 @@ import { Listagem } from "@/components/listagem/listagem"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useAutenticacao } from "@/features/autenticacao/provedor-autenticacao"
 import { useListagem } from "@/hooks/use-listagem"
-import { apiEmpresasPendente, type ApiEmpresas } from "../api"
+import { criarApiEmpresas, type ApiEmpresas } from "../api"
 import { empresaSchema, type Empresa, type ResumoEmpresa } from "../schemas"
 import { FormularioEmpresa } from "./formulario-empresa"
 
-export function TelaEmpresas({
-  api = apiEmpresasPendente,
+export function TelaEmpresas() {
+  const { requisitarEmpresas, recarregarAcesso } = useAutenticacao()
+  const api = useMemo(
+    () => criarApiEmpresas(requisitarEmpresas),
+    [requisitarEmpresas],
+  )
+  const atualizarAcesso = useCallback(
+    () => recarregarAcesso(true),
+    [recarregarAcesso],
+  )
+  return <ConteudoEmpresas api={api} aoAtualizarSessao={atualizarAcesso} />
+}
+export function ConteudoEmpresas({
+  api,
+  aoAtualizarSessao,
 }: {
-  api?: ApiEmpresas
+  api: ApiEmpresas
+  aoAtualizarSessao?: () => Promise<void>
 }) {
   const fonte = useMemo(() => ({ buscar: api.listar }), [api])
   const listagem = useListagem({ fonte, limite: 10 })
@@ -37,6 +52,15 @@ export function TelaEmpresas({
     }
   }, [])
 
+  async function atualizarSessao() {
+    // Uma falha na descoberta posterior não transforma a escrita confirmada em erro.
+    await aoAtualizarSessao?.().catch(() => {
+      if (montado.current)
+        setErro(
+          "Os dados foram salvos. Atualize a sessão para conferir a lista de empresas disponíveis.",
+        )
+    })
+  }
   async function editar(item: ResumoEmpresa) {
     consulta.current?.abort()
     const controller = new AbortController()
@@ -74,6 +98,7 @@ export function TelaEmpresas({
       setConfirmacao(null)
       listagem.recarregar()
       toast.success("Situação da empresa atualizada.")
+      await atualizarSessao()
     } catch (causa) {
       if (montado.current)
         setErro(
@@ -105,12 +130,6 @@ export function TelaEmpresas({
           na empresa.
         </AlertDescription>
       </Alert>
-      {api === apiEmpresasPendente && (
-        <p role="status" className="text-sm text-muted-foreground">
-          Tela preparada para integração. O serviço de empresas ainda está
-          indisponível.
-        </p>
-      )}
       {erro && (
         <Alert variant="destructive" role="alert">
           <AlertDescription>{erro}</AlertDescription>
@@ -209,7 +228,10 @@ export function TelaEmpresas({
           api={api}
           empresa={formulario === "novo" ? null : formulario}
           aoFechar={() => setFormulario(null)}
-          aoSalvar={listagem.recarregar}
+          aoSalvar={async () => {
+            listagem.recarregar()
+            await atualizarSessao()
+          }}
         />
       )}
       <ConfirmarAcao

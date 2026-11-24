@@ -1,53 +1,37 @@
-# Tela de Empresas — preparação da integração
+# Empresas: interface integrada à API
 
-Branch local `feature/16-tela-empresas`, baseada em `origin/develop` (`179b0e8`). Contrato consultado: PR #155 (`7784ea6`), ainda aberto na análise de 21/11/2026. Sem incorporar código do backend, publicar branch ou abrir PR nesta etapa, conforme solicitado.
+A tela em `/admin/empresas` usa a API do PR #155, incorporado à develop em `8529a60`. A feature `feature/16-tela-empresas` foi atualizada com essa base. A entrega abrange somente Empresas; a feature de Cargos continua separada.
 
-## Entrega
+## Fluxo e contrato
 
-- Rota `/admin/empresas`, com carregamento, busca, filtros por cidade/situação, ordenação, paginação, estados vazio/erro e tentativa novamente.
-- Cadastro e edição em diálogo, com identificação fiscal, contato, endereço, URL da logo e cor do tema. Reutiliza `PageHeader`, `Listagem`, `BarraFiltros`, `FormularioDialogo`, campos compartilhados, `ConfirmarAcao` e componentes do tema.
-- CNPJ numérico com verificação dos dígitos, UF válida, telefone com DDD, CEP, e-mail, limites dos textos, logo HTTPS sem credenciais e cor hexadecimal. Logo não é baixada automaticamente; a cor aparece somente como prévia do cadastro.
-- PATCH preparado para enviar apenas mudanças e null para limpeza de opcionais. Dados legados não alterados não bloqueiam a edição de outro campo.
-- Ativação/inativação confirmada, proteção contra duplo envio, preservação dos campos após falha e descarte de consultas encerradas. O ID consultado é validado antes de abrir a edição.
+- Listagem paginada, busca, filtros por cidade/situação e ordenação remotos; carregamento, lista vazia, erro e tentativa novamente.
+- Cadastro e edição com identificação fiscal, contato, endereço, logo por URL HTTPS e cor de tema. Reutiliza os componentes existentes de listagem, formulário e confirmação.
+- API autenticada pelo provider, com renovação de token, cache no-store e descarte de respostas de sessões encerradas. `requisitarEmpresas` aceita apenas as rotas internas de Empresas e recusa X-Empresa-Id: a API administra o escopo autorizado pelo banco, sem ficar restrita à empresa operacional do cabeçalho.
+- `/admin/empresas` pode ser acessada por sessão autenticada sem empresa ativa. A consulta e as ações continuam sujeitas às permissões no servidor. Os demais módulos mantêm a exigência de empresa selecionada. O estado global é isolado por usuário.
+- Revalidação da descoberta de empresas após gravações, incluindo nome no cabeçalho e inativação da empresa selecionada. O formulário aguarda essa etapa sem desmontar a tela; falha posterior à confirmação da escrita não causa repetição automática do cadastro.
 
-O contrato `ApiEmpresas` em `src/features/empresas/api.ts` separa a tela do transporte. A rota usa `apiEmpresasPendente`, que recusa operações com mensagem explícita, sem HTTP, fixtures na aplicação ou persistência local. As implementações simuladas ficam nos testes. Portanto, este estágio não cadastra ou altera empresas no banco.
-
-## Integração após aprovação
-
-| Operação da tela | Endpoint previsto no PR #155 |
+| Ação | Chamada |
 | --- | --- |
-| Listar | GET `/api/empresas?page=1&limit=10&search=...&cidade=...&status=ATIVA&sortBy=razao_social&sortOrder=asc` |
-| Abrir edição | GET `/api/empresas/{id}` |
+| Listar | GET `/api/empresas?page=1&limit=10&search=...&cidade=...&status=...&sortBy=...&sortOrder=...` |
+| Consultar | GET `/api/empresas/{id}` |
 | Criar | POST `/api/empresas` |
-| Editar | PATCH `/api/empresas/{id}` |
+| Editar | PATCH `/api/empresas/{id}` apenas com mudanças |
 | Inativar | DELETE `/api/empresas/{id}` |
-| Reativar | PATCH `/api/empresas/{id}` com `{ "status": "ATIVA" }` |
+| Reativar | PATCH `/api/empresas/{id}` com status ATIVA |
 
-O servidor também oferece PUT, mas a edição da tela será parcial. Cadastro usa razão social e CNPJ obrigatórios, opcionais como null e cor padrão `#22c55e`; sem IDs, usuário ou status no corpo. Decisões de autorização pertencem ao servidor: criar, mudar CNPJ/situação exigem ADMIN global; editar outros dados exige permissão de Empresas no vínculo.
+A listagem normaliza o envelope `success/data/data`, com page, limit, total e totalPages. Consulta e gravação validam o envelope retornado; erros HTTP exibem a mensagem da API. Escritas não são repetidas em erro 409/429/500 ou resposta inválida.
 
-A listagem do PR tem envelope `{ success: true, data: { data: [...], page, limit, total, totalPages, hasNextPage, hasPreviousPage } }`. Não confundir `data.data` com `data.rows`. `normalizarEmpresas` e `queryEmpresas` já estão testados contra esse formato.
+Os schemas de negócio do formulário vêm de `modules/empresas/schema.ts`. Campos opcionais vazios viram null, campos omitidos no PATCH são preservados e valores legados não alterados não bloqueiam outra edição. Status e IDs ficam fora do formulário cadastral. A logo não é baixada automaticamente e a cor tem apenas prévia local; este PR não aplica identidade visual global à sessão.
 
-Passos restantes da integração:
+Criar, mudar CNPJ e alterar situação exigem ADMIN global, validado pelo backend. Edição dos demais campos requer permissão em Empresas no vínculo. A interface não concede administração pelo nome de cargo nem confia em dados do navegador para autorizar.
 
-1. Atualizar a feature com a `develop` que contenha o backend aprovado. Rever alterações no contrato e compartilhar os schemas puros aprovados quando compatíveis.
-2. Implementar `ApiEmpresas` com o transporte autenticado. **A gestão é global:** o provider atual exige empresa ativa e injeta `X-Empresa-Id`, que no PR #155 restringe a lista e precisa corresponder ao ID de cada registro. Preparar uma operação autenticada global no provider, preservando renovação, logout e cancelamento; não copiar tokens ou usar um fetch sem gestão da sessão. Não conectar a listagem global ao helper atual sem tratar isso.
-3. Conferir com o fluxo de autenticação o acesso de ADMIN global sem vínculo/empresa ativa: o layout atual exige seleção de empresa antes de mostrar as telas. Esse caso depende da integração do contexto global e não foi alterado nesta entrega.
-4. Validar sucesso e erro dos envelopes, inclusive 403, 404, 409 e 429. Após confirmação da escrita, atualizar lista e descoberta da sessão (`recarregarAcesso`), inclusive após mudança de nome ou inativação da empresa selecionada. Falha na recarga após escrita não deve induzir novo POST.
-5. Exercitar permissões reais, isolamento, unicidade do CNPJ, reativação e persistência com a API aprovada. Verificar a implantação das novas colunas pelo responsável pelo banco. Nenhuma migration foi executada aqui.
-6. Publicar a feature e abrir o PR integrado somente após a aprovação das duas APIs e a validação da integração.
+## Validação de 23/11/2026
 
-## Validação deste estágio
+- Suite completa: 116 arquivos e 2.186 testes passaram.
+- ESLint, TypeScript, Prettier e validação do Prisma passaram. Build de produção Webpack aprovado com NODE_OPTIONS=--use-system-ca. Os cenários de navegador também passaram na aplicação compilada (next start), com API e banco reais.
+- Testes reais com MariaDB local descartável: unicidade e criações concorrentes, escopo/permissões, paginação e rollback quando a auditoria falha (4 testes do script de integração, incluindo subtestes).
+- Navegador com UI, API e banco reais: administrador sem vínculo ativo; cadastro com submissão duplicada; conferência de persistência; PATCH parcial com null; nome no cabeçalho; inativação da empresa ativa; reativação; usuário comum com escopo restrito e erro 403 preservando formulário; API anônima 401, outro ID 404, alteração indevida de status 403 e ID no payload 400.
+- Capturas inspecionadas em tema claro, escuro e celular de 390 px. Dados fictícios; nenhuma credencial nas capturas.
+- O banco compartilhado não foi acessado ou alterado. O schema atual foi criado do zero em um banco local com sufixo _test. A implantação do PR #155 em outros ambientes continua a cargo da equipe responsável.
 
-Testes em `tests/unit/empresas/{interface,formulario}.test.ts`: limites/formato, CNPJ, URL segura, normalização, PATCH parcial/null, legado, query/paginação, transporte desconectado, formulário React real, erro preservando valores, duplo envio, consulta com ID incorreto, erro/vazio/retry e inativação confirmada com recarga. Serviços nos testes são simulados; nenhum teste desta etapa comprova o futuro backend.
-
-Navegador Chromium: rota real, validação, aviso de serviço indisponível, dados preservados, ausência de chamadas à API pendente, teclado, troca de empresa e capturas claras/escuras/celular (390 px). Autenticação simulada apenas pelo teste externo; nenhuma fixture foi adicionada à aplicação. Capturas usam dados fictícios.
-
-
-## Resultado da verificação local — 21/11/2026
-
-- Suite completa: 111 arquivos, 2.068 testes passando; 33 testes novos da interface.
-- ESLint, TypeScript e Prettier passaram.
-- Build de produção Webpack passou com a opção de certificados do Windows (NODE_OPTIONS=--use-system-ca) e npm run build -- --webpack.
-- Prisma Client gerado com URL fictícia em localhost:1, sem conectar a banco ou executar DDL. Não houve escrita em banco nesta etapa.
-- Capturas inspecionadas: [claro](imagens/empresas/tela-claro.png), [escuro](imagens/empresas/tela-escuro.png) e [celular](imagens/empresas/tela-celular.png).
-- Branch e commits permanecem locais; integração, testes contra APIs reais e publicação ficam para após aprovação das duas APIs.
+Detalhes da revisão e pendências de dependências: [revisao-empresas.md](revisao-empresas.md).
