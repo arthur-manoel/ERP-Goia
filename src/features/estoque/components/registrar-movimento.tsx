@@ -110,14 +110,17 @@ export function RegistrarMovimento({
   )
   const grade = consultaGrade?.dados
   const variacoes = (grade?.variacoes ?? []).filter((v) => v.ativo)
+  const temIdVariacao = !!variacao && variacao !== semVariacao
+  const selecionada = variacoes.some((v) => v.id === Number(variacao))
   const gradePrecisaEscolha =
-    variacoes.length > 0 || !!grade?.excedeu.variacao || !!buscaGrade
+    variacoes.length > 0 ||
+    !!grade?.excedeu.variacao ||
+    !!buscaGrade ||
+    temIdVariacao
   const gradeDisponivel =
     !exigeCatalogoGrade ||
     (!!grade &&
-      (!gradePrecisaEscolha ||
-        variacao === semVariacao ||
-        variacoes.some((v) => v.id === Number(variacao))))
+      (!gradePrecisaEscolha || variacao === semVariacao || selecionada))
   const posicaoSetor = saldo?.idSetor ? String(saldo.idSetor) : setor
   const dadosPendentes = pendente && dadosDaTentativa(pendente)
 
@@ -241,9 +244,7 @@ export function RegistrarMovimento({
         : movimentoSchema.safeParse({
             ...base,
             quantidade: q,
-            ...(variacao && variacao !== semVariacao
-              ? { idVariacao: Number(variacao) }
-              : {}),
+            ...(temIdVariacao ? { idVariacao: Number(variacao) } : {}),
           })
     if (!v.success) {
       setCampos(
@@ -471,6 +472,15 @@ export function RegistrarMovimento({
                 {exigeCatalogoGrade && !consultaGrade && (
                   <p role="status">Carregando variações do produto…</p>
                 )}
+                {exigeCatalogoGrade &&
+                  grade &&
+                  temIdVariacao &&
+                  !selecionada && (
+                    <p role="alert">
+                      A variação selecionada ficou indisponível. Escolha outra
+                      opção.
+                    </p>
+                  )}
                 {consultaGrade?.erro && (
                   <p role="alert" className="text-destructive">
                     {consultaGrade.erro} Atualize o saldo e as variações.

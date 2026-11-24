@@ -144,10 +144,7 @@ export function consultarCatalogo(
                 OR: [
                   { id_tamanho: null },
                   {
-                    tamanhos: {
-                      status: "ATIVO",
-                      OR: [escopo, { id_empresa: null }],
-                    },
+                    tamanhos: { ...escopo, status: "ATIVO" },
                   },
                 ],
               },
@@ -157,7 +154,7 @@ export function consultarCatalogo(
             ? {
                 OR: [
                   { cores: nomesAutorizados },
-                  { tamanhos: nomesAutorizados },
+                  { tamanhos: { ...escopo, nome: nomesAutorizados.nome } },
                 ],
               }
             : {}),
