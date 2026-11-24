@@ -382,6 +382,14 @@ try {
   })
   await test("Recebimento documental permite completar o cabeçalho antes do processamento", async () => {
     const f = await fixture()
+    const pedido = await prisma.pedido_compra.create({
+      data: {
+        id_empresa: f.empresa,
+        id_fornecedor: f.fornecedor,
+        id_usuario: f.usuario,
+        numero: "PEDIDO-" + randomUUID(),
+      },
+    })
     const cabecalho = {
       numero: String(BigInt("0x" + randomBytes(5).toString("hex"))),
       serie: "1",
@@ -393,18 +401,29 @@ try {
       f,
       "/api/compras/notas-fiscais",
       "POST",
-      cabecalho,
+      {
+        ...cabecalho,
+        idPedidoCompra: pedido.id,
+      },
       201,
     )
     const url = `/api/compras/notas-fiscais/${criada.nota.id}`
     const recebida = await call(f, url + "/acao", "POST", { acao: "receber" })
     assert.equal(recebida.nota.status, "RECEBIDA")
     assert.equal(recebida.nota.entradaProcessada, false)
+    const documental = await call(f, url, "PATCH", {
+      ...cabecalho,
+      valorTotal: "60.00",
+      dataRecebimento: recebida.nota.dataRecebimento.slice(0, 10),
+      versaoEsperada: recebida.nota.versao,
+    })
+    assert.equal(documental.nota.pedido.id, pedido.id)
+    assert.equal(documental.nota.dataRecebimento, recebida.nota.dataRecebimento)
     const corrigido = {
       ...cabecalho,
       idCompra: f.compra,
       valorTotal: "60.00",
-      versaoEsperada: recebida.nota.versao,
+      versaoEsperada: documental.nota.versao,
     }
     const editada = await call(f, url, "PATCH", corrigido)
     assert.equal(editada.nota.status, "RECEBIDA")
@@ -429,18 +448,24 @@ try {
     )
   })
   await test("Identidades físicas de compra direta e nota fiscal são distintas", async () => {
-    const f = await fixture()
-    const inicial = await nova(f, [6])
-    await prisma.nota_fiscal.update({
-      where: { id: inicial.id },
-      data: { versao: 123 },
-    })
-    const n = (await call(f, `/api/compras/notas-fiscais/${inicial.id}`)).nota
-    await receber(f, 4, `nf-${n.id}-${n.versao}`)
-    await processar(f, n)
-    const estado = await fisico(f)
-    assert.equal(estado.total, "10.000")
-    assert.equal(estado.movimentos.length, 2)
+    for (const fiscalPrimeiro of [false, true]) {
+      const f = await fixture()
+      const inicial = await nova(f, [6])
+      await prisma.nota_fiscal.update({
+        where: { id: inicial.id },
+        data: { versao: 123 },
+      })
+      const n = (await call(f, `/api/compras/notas-fiscais/${inicial.id}`)).nota
+      const key = `nf-${n.id}-${n.versao}`
+      if (fiscalPrimeiro) await processar(f, n)
+      await receber(f, 4, key)
+      if (!fiscalPrimeiro) await processar(f, n)
+      const estado = await fisico(f)
+      assert.equal(estado.total, "10.000")
+      assert.equal(estado.movimentos.length, 2)
+      const detalhe = await call(f, `/api/compras/compras/${f.compra}`)
+      assert.equal(detalhe.compra.recebimentos.length, 2)
+    }
   })
   await test("Recebimento parcial anterior, várias linhas do mesmo produto e variação", async () => {
     const f = await fixture(true)

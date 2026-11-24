@@ -607,7 +607,7 @@ export async function processarEntrada(
       const novas = planos.filter((p) =>
         new Prisma.Decimal(p.plano.novaQuantidade).gt(0),
       )
-      const chaveInterna = `nf-${id}-${n.versao}`
+      const chaveInterna = `nf:${id}:${n.versao}`
       const criados = novas.length
         ? await receberFisico(
             tx,

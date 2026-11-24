@@ -81,7 +81,7 @@ const contar = (linhas: Array<{ status: string; _count: { _all: number } }>) =>
  * Quantidade recebida = soma dessas entradas; cada recebimento (etapa) é identificado por [rec:<chave>] na observação.
  */
 const ORIGEM_RECEBIMENTO = "COMPRA_RECEBIMENTO"
-const TOKEN_RECEBIMENTO = /\[rec:([A-Za-z0-9_-]+)\]/
+const TOKEN_RECEBIMENTO = /\[rec:([A-Za-z0-9_:-]+)\]\s*$/
 type Recebido = Map<number, string> // ID do item da compra → quantidade recebida
 
 type Movimento = {
@@ -860,7 +860,8 @@ function historicoRecebimentos(movimentos: Movimento[]) {
     }
   >()
   for (const m of movimentos) {
-    const chave = TOKEN_RECEBIMENTO.exec(m.observacao ?? "")?.[1] ?? `m${m.id}`
+    const token = TOKEN_RECEBIMENTO.exec(m.observacao ?? "")?.[1]
+    const chave = token ? `rec:${token}` : `mov:${m.id}`
     const texto =
       (m.observacao ?? "").replace(TOKEN_RECEBIMENTO, "").trim() || null
     const etapa = etapas.get(chave) ?? {
@@ -1136,7 +1137,9 @@ export function receberCompra(
           const historico = await carregarFisico(tx, ctx, id)
           if (
             historico.movimentos.some(
-              (m) => TOKEN_RECEBIMENTO.exec(m.observacao ?? "")?.[1] === chave,
+              (m) =>
+                m.chave_operacao == null &&
+                TOKEN_RECEBIMENTO.exec(m.observacao ?? "")?.[1] === chave,
             )
           )
             throw conflito(
@@ -1534,15 +1537,32 @@ export function editarNota(ctx: Contexto, id: number, input: EditarNotaInput) {
       throw conflito(
         "Notas canceladas ou com entrada processada não podem ser editadas.",
       )
+    const idCompra =
+      input.idCompra === undefined ? (antes.compra?.id ?? null) : input.idCompra
     if (
       antes.compra !== null &&
-      (antes.compra?.id ?? null) !== (input.idCompra ?? null) &&
+      antes.compra.id !== idCompra &&
       (await tx.item_nota_fiscal.count({ where: { id_nota_fiscal: id } }))
     )
       throw conflito(
         "Remova ou confira os itens antes de trocar a compra vinculada.",
       )
-    const dados = await resolverNota(tx, ctx, input, id)
+    const idPedidoCompra =
+      input.idPedidoCompra === undefined &&
+      idCompra === null &&
+      input.idFornecedor === antes.fornecedor.id
+        ? antes.pedido?.id
+        : input.idPedidoCompra
+    const dados = await resolverNota(
+      tx,
+      ctx,
+      { ...input, idCompra, idPedidoCompra },
+      id,
+    )
+    const preservarRecebimento =
+      antes.status === "RECEBIDA" &&
+      (!input.dataRecebimento ||
+        input.dataRecebimento === antes.dataRecebimento?.slice(0, 10))
     const r = await tx.nota_fiscal.updateMany({
       where: {
         id,
@@ -1553,10 +1573,9 @@ export function editarNota(ctx: Contexto, id: number, input: EditarNotaInput) {
       },
       data: {
         ...dados,
-        data_recebimento:
-          antes.status === "RECEBIDA"
-            ? (dados.data_recebimento ?? undefined)
-            : dados.data_recebimento,
+        data_recebimento: preservarRecebimento
+          ? undefined
+          : dados.data_recebimento,
         versao: { increment: 1 },
       },
     })

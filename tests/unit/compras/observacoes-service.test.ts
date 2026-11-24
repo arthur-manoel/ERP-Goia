@@ -348,7 +348,7 @@ describe("compras rejeitam observação composta antes da primeira escrita", () 
         id: 1,
         id_produto: 1,
         quantidade: new Prisma.Decimal(1),
-        observacao: `Recebimento anterior [rec:${chave}]`,
+        observacao: `Recebimento anterior [rec:marcador-da-observacao] [rec:${chave}]`,
         data_movimentacao: new Date("2026-10-28T12:00:00Z"),
         usuarios: { id: 1, nome: "Usuário" },
         produtos: { codigo: "P1", nome: "Produto" },
