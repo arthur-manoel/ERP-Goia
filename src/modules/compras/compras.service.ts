@@ -1530,9 +1530,9 @@ export function editarNota(ctx: Contexto, id: number, input: EditarNotaInput) {
       input.versaoEsperada !== antes.versao
     )
       throw conflito("A nota foi alterada. Recarregue o cadastro.")
-    if (antes.status !== "PENDENTE" || antes.entradaProcessada)
+    if (antes.status === "CANCELADA" || antes.entradaProcessada)
       throw conflito(
-        "Somente notas pendentes e sem entrada processada podem ser editadas.",
+        "Notas canceladas ou com entrada processada não podem ser editadas.",
       )
     if (
       antes.compra !== null &&
@@ -1547,7 +1547,8 @@ export function editarNota(ctx: Contexto, id: number, input: EditarNotaInput) {
       where: {
         id,
         id_empresa: ctx.idEmpresa,
-        status: "PENDENTE",
+        status: antes.status,
+        versao: antes.versao,
         entrada_processada: false,
       },
       data: { ...dados, versao: { increment: 1 } },

@@ -211,6 +211,7 @@ export async function receberFisico(
   setor?: number | null,
   observacao?: string | null,
   valores?: Prisma.Decimal[],
+  origemChave: "compra" | "nota-fiscal" = "compra",
 ) {
   await tx.$queryRaw`SELECT id FROM compras WHERE id=${id} AND id_empresa=${ctx.idEmpresa} FOR UPDATE`
   const estado = await carregarFisico(tx, ctx, id),
@@ -312,7 +313,7 @@ export async function receberFisico(
         tipo: "ENTRADA_NF",
         nome: ORIGEM_COMPRA,
         id,
-        chave: chaveMovimento("compra", `${chave}:${index}`),
+        chave: chaveMovimento(origemChave, `${chave}:${index}`),
         valorTotal:
           valores?.[index] ??
           new Prisma.Decimal(

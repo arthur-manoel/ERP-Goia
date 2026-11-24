@@ -219,6 +219,24 @@ model compras {
   compra_recebimento_linha compra_recebimento_linha[]
 }
 
+model compra_recebimento_linha {
+  id_movimentacao      Int                  @id
+  id_empresa           Int
+  id_compra            Int
+  id_compra_item       Int
+  id_produto           Int
+  quantidade           Decimal              @db.Decimal(15, 3)
+  compras              compras              @relation(fields: [id_compra, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_recebimento_linha_compra")
+  compra_itens         compra_itens         @relation(fields: [id_compra, id_compra_item, id_produto], references: [id_compra, id, id_produto], onUpdate: Restrict, map: "fk_recebimento_linha_item")
+  movimentacao_estoque movimentacao_estoque @relation(fields: [id_movimentacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onUpdate: Restrict, map: "fk_recebimento_linha_mov")
+  nota_item_entrada    nota_item_entrada[]
+
+  @@unique([id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], map: "uk_recebimento_linha_identidade")
+  @@unique([id_movimentacao, id_empresa, id_produto], map: "uk_recebimento_linha_mov")
+  @@index([id_compra, id_empresa], map: "fk_recebimento_linha_compra")
+  @@index([id_compra, id_compra_item, id_produto], map: "fk_recebimento_linha_item")
+}
+
 model condicoes_pagamento {
   id                   Int                        @id @default(autoincrement())
   id_empresa           Int
@@ -816,6 +834,23 @@ model necessidade_producao {
 
   @@unique([id_ordem_producao, id_produto], map: "uk_necessidade_op_produto")
   @@index([id_produto], map: "fk_necessidade_produto")
+}
+
+model nota_item_entrada {
+  id_item_nota             Int
+  id_nota                  Int
+  id_empresa               Int
+  id_compra                Int
+  id_compra_item           Int
+  id_produto               Int
+  id_movimentacao          Int
+  quantidade               Decimal                  @db.Decimal(15, 3)
+  item_nota_fiscal         item_nota_fiscal         @relation(fields: [id_item_nota, id_nota, id_empresa, id_compra, id_compra_item, id_produto], references: [id, id_nota_fiscal, id_empresa, id_compra, id_compra_item, id_produto], onUpdate: Restrict, map: "fk_nf_entrada_linha")
+  compra_recebimento_linha compra_recebimento_linha @relation(fields: [id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], references: [id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], onUpdate: Restrict, map: "fk_nf_entrada_recebimento")
+
+  @@id([id_item_nota, id_movimentacao])
+  @@index([id_item_nota, id_nota, id_empresa, id_compra, id_compra_item, id_produto], map: "fk_nf_entrada_linha")
+  @@index([id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], map: "fk_nf_entrada_recebimento")
 }
 
 model nota_fiscal {
@@ -2598,40 +2633,4 @@ enum producao_confirmacao_tipo {
   REGISTRO
   CONFIRMACAO
   LEGADO
-}
-
-
-model compra_recebimento_linha {
-  id_movimentacao      Int                  @id
-  id_empresa           Int
-  id_compra            Int
-  id_compra_item       Int
-  id_produto           Int
-  quantidade           Decimal              @db.Decimal(15, 3)
-  compras              compras              @relation(fields: [id_compra, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_recebimento_linha_compra")
-  compra_itens         compra_itens         @relation(fields: [id_compra, id_compra_item, id_produto], references: [id_compra, id, id_produto], onUpdate: Restrict, map: "fk_recebimento_linha_item")
-  movimentacao_estoque movimentacao_estoque @relation(fields: [id_movimentacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onUpdate: Restrict, map: "fk_recebimento_linha_mov")
-  nota_item_entrada    nota_item_entrada[]
-
-  @@unique([id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], map: "uk_recebimento_linha_identidade")
-  @@unique([id_movimentacao, id_empresa, id_produto], map: "uk_recebimento_linha_mov")
-  @@index([id_compra, id_empresa], map: "fk_recebimento_linha_compra")
-  @@index([id_compra, id_compra_item, id_produto], map: "fk_recebimento_linha_item")
-}
-
-model nota_item_entrada {
-  id_item_nota             Int
-  id_nota                  Int
-  id_empresa               Int
-  id_compra                Int
-  id_compra_item           Int
-  id_produto               Int
-  id_movimentacao          Int
-  quantidade               Decimal                  @db.Decimal(15, 3)
-  item_nota_fiscal         item_nota_fiscal         @relation(fields: [id_item_nota, id_nota, id_empresa, id_compra, id_compra_item, id_produto], references: [id, id_nota_fiscal, id_empresa, id_compra, id_compra_item, id_produto], onUpdate: Restrict, map: "fk_nf_entrada_linha")
-  compra_recebimento_linha compra_recebimento_linha @relation(fields: [id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], references: [id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], onUpdate: Restrict, map: "fk_nf_entrada_recebimento")
-
-  @@id([id_item_nota, id_movimentacao])
-  @@index([id_item_nota, id_nota, id_empresa, id_compra, id_compra_item, id_produto], map: "fk_nf_entrada_linha")
-  @@index([id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], map: "fk_nf_entrada_recebimento")
 }

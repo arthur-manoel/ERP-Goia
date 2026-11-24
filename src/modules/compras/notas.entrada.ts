@@ -628,6 +628,7 @@ export async function processarEntrada(
                 .div(p.item.quantidade)
                 .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
             ),
+            "nota-fiscal",
           )
         : []
       const atualizado = await carregarFisico(tx, ctx, n.id_compra)
@@ -667,14 +668,15 @@ export async function processarEntrada(
             fail(
               "O recebimento já foi associado a outras linhas fiscais ou sua quantidade livre foi excedida.",
             )
+          if (!utilizados.has(m.id))
+            await vincularMovimento(
+              tx,
+              ctx,
+              atualizado,
+              m.id,
+              item.id_compra_item!,
+            )
           utilizados.set(m.id, total)
-          await vincularMovimento(
-            tx,
-            ctx,
-            atualizado,
-            m.id,
-            item.id_compra_item!,
-          )
           const vinculo = await tx.nota_item_entrada.create({
             data: {
               id_item_nota: item.id,

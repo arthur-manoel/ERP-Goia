@@ -354,36 +354,36 @@ function Detalhe({
               {podeEditar &&
                 n.status !== "CANCELADA" &&
                 !n.entradaProcessada && (
-                  <Button
-                    variant="outline"
-                    disabled={ocupado}
-                    onClick={() => setCancelando(true)}
-                  >
-                    Cancelar nota
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      disabled={ocupado}
+                      onClick={() => setCancelando(true)}
+                    >
+                      Cancelar nota
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={ocupado}
+                      onClick={() => onEditar(n)}
+                    >
+                      Editar
+                    </Button>
+                    {n.status === "PENDENTE" && (
+                      <Button
+                        disabled={ocupado}
+                        onClick={() =>
+                          void acao(
+                            "receber",
+                            "Recebimento documental registrado; confira e processe os itens para vincular o estoque.",
+                          )
+                        }
+                      >
+                        Marcar como recebida
+                      </Button>
+                    )}
+                  </>
                 )}
-              {podeEditar && n.status === "PENDENTE" && (
-                <>
-                  <Button
-                    variant="secondary"
-                    disabled={ocupado}
-                    onClick={() => onEditar(n)}
-                  >
-                    Editar
-                  </Button>
-                  <Button
-                    disabled={ocupado}
-                    onClick={() =>
-                      void acao(
-                        "receber",
-                        "Recebimento documental registrado; confira e processe os itens para vincular o estoque.",
-                      )
-                    }
-                  >
-                    Marcar como recebida
-                  </Button>
-                </>
-              )}
             </DialogFooter>
             <ConfirmarAcao
               aberto={cancelando}
