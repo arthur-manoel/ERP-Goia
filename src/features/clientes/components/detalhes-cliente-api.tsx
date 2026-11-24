@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatarData, formatarMoeda } from "@/lib/formatacao"
+import { GestaoVinculosCliente } from "./gestao-vinculos-cliente"
 import { consultarCliente, historicoCliente } from "../api"
 import { useConsultaCliente } from "../use-consulta"
 
@@ -114,6 +115,10 @@ export function DetalhesClienteApi({
                 ))}
               </dl>
               <HistoricoClienteApi
+                idCliente={idCliente}
+                idEmpresa={idEmpresa}
+              />
+              <GestaoVinculosCliente
                 idCliente={idCliente}
                 idEmpresa={idEmpresa}
               />
