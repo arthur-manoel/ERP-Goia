@@ -1,4 +1,5 @@
 import { test } from "node:test"
+import { setTimeout as delay } from "node:timers/promises"
 import assert from "node:assert/strict"
 import { randomBytes, randomUUID } from "node:crypto"
 import {
@@ -713,6 +714,127 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
     },
   )
 
+  await t.test(
+    "fornecedor transferido mantém o vínculo com dados cadastrais ocultos",
+    async () => {
+      const origem = await fornecedor("Origem da transferência", a)
+      const produtoHistorico = await produto("Histórico de fornecedor")
+      const vinculo = await vincular(produtoHistorico.id, {
+        id_fornecedor: origem.id,
+        codigo_produto_fornecedor: "HIST-07",
+        prazo_entrega_dias: 7,
+        fornecedor_principal: true,
+      })
+      await prisma.fornecedores.update({
+        where: { id: origem.id },
+        data: { id_empresa: b, razao_social: "Nome reservado da empresa B" },
+      })
+      const path = fornecedores(produtoHistorico.id)
+      const lista = await chamar(path, 200)
+      const detalhe = await chamar(`${path}/${vinculo.id}`, 200)
+      assert.deepEqual(lista.rows, [detalhe])
+      assert.equal(detalhe.id, vinculo.id)
+      assert.equal(detalhe.codigo_produto_fornecedor, "HIST-07")
+      assert.equal(detalhe.prazo_entrega_dias, 7)
+      assert.deepEqual(detalhe.fornecedores, {
+        razao_social: "Fornecedor indisponível",
+        nome_fantasia: null,
+      })
+      assert.equal(detalhe.fornecedor_principal, false)
+      assert.equal(
+        (await editar(produtoHistorico.id, vinculo.id, { status: "INATIVO" }))
+          .status,
+        "INATIVO",
+      )
+      await editar(produtoHistorico.id, vinculo.id, { status: "ATIVO" }, 404)
+      assert.equal(
+        (
+          await prisma.fornecedores.findUniqueOrThrow({
+            where: { id: origem.id },
+          })
+        ).id_empresa,
+        b,
+      )
+    },
+  )
+
+  await t.test(
+    "a escrita aguardando a empresa revalida a sessão e as permissões",
+    async () => {
+      const pessoa = await usuario("permissao-alterada", [empresas[0]], {
+        pode_criar: true,
+      })
+      const tokenPendente = await login(pessoa)
+      const escopo = { id_empresa: a, id_produto: atomicidade.id }
+      const executar = async (bearer, mudarAcesso, status) => {
+        const transacaoPronta = Promise.withResolvers()
+        const liberar = Promise.withResolvers()
+        const trava = prisma.$transaction(
+          async (tx) => {
+            await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${a} FOR UPDATE`
+            const [conexao] = await tx.$queryRaw`SELECT CONNECTION_ID() AS id`
+            transacaoPronta.resolve(conexao.id)
+            await liberar.promise
+          },
+          { timeout: 15_000 },
+        )
+        trava.catch(transacaoPronta.reject)
+        const conexao = await transacaoPronta.promise
+        const requisicao = gerar(atomicidade.id, [{ id_cor: cor.id }], null, {
+          token: bearer,
+        })
+        try {
+          let bloqueada = false
+          const limite = Date.now() + 8_000
+          while (!bloqueada && Date.now() < limite) {
+            const waits = await prisma.$queryRaw`
+            SELECT 1 FROM information_schema.INNODB_LOCK_WAITS w
+            JOIN information_schema.INNODB_TRX t ON w.blocking_trx_id = t.trx_id
+            WHERE t.trx_mysql_thread_id = ${conexao}
+          `
+            bloqueada = waits.length > 0
+            if (!bloqueada) await delay(50)
+          }
+          assert.ok(
+            bloqueada,
+            "A requisição deve ter sido autenticada e aguardar o lock da empresa.",
+          )
+          await mudarAcesso()
+        } finally {
+          liberar.resolve()
+          await trava
+        }
+        assert.equal((await requisicao).status, status)
+        assert.equal(await prisma.produto_variacoes.count({ where: escopo }), 0)
+      }
+      await executar(
+        tokenPendente,
+        async () => {
+          await prisma.permissoes_usuario.updateMany({
+            where: {
+              recurso: "PRODUTOS",
+              usuario_empresa: { id_empresa: a, id_usuario: pessoa.id },
+            },
+            data: { pode_criar: false },
+          })
+        },
+        403,
+      )
+      const tokenRevogando = await login(operadora)
+      await executar(
+        tokenRevogando,
+        async () => {
+          const res = await fetch(http.base + "/api/auth/logout", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${tokenRevogando}` },
+          })
+          assert.ok(res.ok, `Logout ${res.status}`)
+        },
+        401,
+      )
+    },
+  )
+
   await t.test("isolamento, identidade, autorização e revogação", async () => {
     assert.match(
       await chamar(grade(), 400, { method: "POST", json: "{" }),
@@ -735,6 +857,9 @@ test("Configuração de produtos por HTTP e MariaDB local", async (t) => {
     for (const chave of ["id", "id_empresa", "id_produto", "id_fornecedor"])
       await editar(p.id, link.id, { [chave]: b }, 400, { token: tokenOperacao })
     await editar(p.id, link.id, {}, 400, { token: tokenOperacao })
+    await editar(p.id, link.id, { status: { toString: "invalido" } }, 400, {
+      token: tokenOperacao,
+    })
     await mudar(outro.id, variacoes[0].id, "ATIVO", 404)
     await mudar(p.id, variacoes[0].id, "ATIVO", 404, sessaoB)
     const naEmpresaB = await gerar(p.id, [{ id_tamanho: tamB.id }], 201, {

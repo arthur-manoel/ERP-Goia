@@ -12,16 +12,10 @@ import {
   ler,
   pagina,
   type Contexto,
+  type ContextoEscrita,
   type Tx,
 } from "./repository"
 import type { CriarFornecedor, EditarFornecedor, Pagina } from "./schema"
-
-function visiveis(ctx: Contexto) {
-  return {
-    ...escopo(ctx),
-    fornecedores: { OR: [{ id_empresa: ctx.idEmpresa }, { id_empresa: null }] },
-  } satisfies Prisma.produto_fornecedorWhereInput
-}
 
 function incluirFornecedor(ctx: Contexto) {
   return {
@@ -46,8 +40,10 @@ function representar(
   }>,
 ) {
   const { fornecedores, ...vinculo } = registro
-  const { razao_social, nome_fantasia } = fornecedores
+  const { id_empresa, razao_social, nome_fantasia } = fornecedores
+  const visivel = id_empresa === null || id_empresa === vinculo.id_empresa
   const elegivel =
+    visivel &&
     fornecedores.status === "ATIVO" &&
     (fornecedores.id_empresa === vinculo.id_empresa ||
       fornecedores.empresa_fornecedor.length > 0)
@@ -57,13 +53,15 @@ function representar(
     quantidade_minima: vinculo.quantidade_minima?.toFixed(3) ?? null,
     fornecedor_principal:
       vinculo.fornecedor_principal && vinculo.status === "ATIVO" && elegivel,
-    fornecedores: { razao_social, nome_fantasia },
+    fornecedores: visivel
+      ? { razao_social, nome_fantasia }
+      : { razao_social: "Fornecedor indisponível", nome_fantasia: null },
   }
 }
 
 export function listarFornecedores(ctx: Contexto, filtros: Pagina) {
   return ler(ctx, async (tx) => {
-    const where = visiveis(ctx)
+    const where = escopo(ctx)
     const [rows, count] = await Promise.all([
       tx.produto_fornecedor.findMany({
         where,
@@ -102,7 +100,7 @@ export function listarOpcoes(ctx: Contexto, filtros: Pagina) {
 
 async function obter(tx: Tx, ctx: Contexto, id: number) {
   const registro = await tx.produto_fornecedor.findFirst({
-    where: { ...visiveis(ctx), id },
+    where: { ...escopo(ctx), id },
     include: incluirFornecedor(ctx),
   })
   if (!registro)
@@ -144,8 +142,8 @@ async function limparPrincipalAnterior(tx: Tx, ctx: Contexto, id?: number) {
     })
 }
 
-export function criarFornecedor(ctx: Contexto, dados: CriarFornecedor) {
-  return gravar(ctx, async (tx, produto) => {
+export function criarFornecedor(ctx: ContextoEscrita, dados: CriarFornecedor) {
+  return gravar(ctx, ["pode_criar"], async (tx, produto) => {
     exigirProdutoAtivo(produto)
     await exigirFornecedorElegivel(tx, ctx, dados.id_fornecedor)
     const existente = await tx.produto_fornecedor.findUnique({
@@ -171,42 +169,48 @@ export function criarFornecedor(ctx: Contexto, dados: CriarFornecedor) {
 }
 
 export function editarFornecedor(
-  ctx: Contexto,
+  ctx: ContextoEscrita,
   id: number,
   dados: EditarFornecedor,
 ) {
-  return gravar(ctx, async (tx, produto) => {
-    const where = { ...visiveis(ctx), id }
-    const antes = await tx.produto_fornecedor.findFirst({ where })
-    if (!antes)
-      throw new NotFoundError(
-        "Vínculo de fornecedor não encontrado no produto.",
-      )
-    const { status, ...condicoes } = dados
-    const novasCondicoes = Object.keys(condicoes).length > 0
-    const reativando = status === "ATIVO" && antes.status !== "ATIVO"
-    if (status !== "INATIVO" || novasCondicoes) exigirProdutoAtivo(produto)
-    if (novasCondicoes && antes.status === "INATIVO" && !reativando)
-      throw new ConflictError(
-        "Reative o vínculo antes de editar suas condições.",
-      )
-    if (reativando || condicoes.fornecedor_principal === true)
-      await exigirFornecedorElegivel(tx, ctx, antes.id_fornecedor)
-    if (condicoes.fornecedor_principal === true)
-      await limparPrincipalAnterior(tx, ctx, id)
-    const depois = await tx.produto_fornecedor.update({
-      where,
-      data: {
-        ...condicoes,
-        status,
-        fornecedor_principal:
-          status === "INATIVO"
-            ? false
-            : (condicoes.fornecedor_principal ??
-              (reativando ? false : undefined)),
-      },
-    })
-    await auditar(tx, ctx, "produto_fornecedor", antes, depois)
-    return obter(tx, ctx, depois.id)
-  })
+  return gravar(
+    ctx,
+    dados.status === "INATIVO"
+      ? ["pode_editar", "pode_excluir"]
+      : ["pode_editar"],
+    async (tx, produto) => {
+      const where = { ...escopo(ctx), id }
+      const antes = await tx.produto_fornecedor.findFirst({ where })
+      if (!antes)
+        throw new NotFoundError(
+          "Vínculo de fornecedor não encontrado no produto.",
+        )
+      const { status, ...condicoes } = dados
+      const novasCondicoes = Object.keys(condicoes).length > 0
+      const reativando = status === "ATIVO" && antes.status !== "ATIVO"
+      if (status !== "INATIVO" || novasCondicoes) exigirProdutoAtivo(produto)
+      if (novasCondicoes && antes.status === "INATIVO" && !reativando)
+        throw new ConflictError(
+          "Reative o vínculo antes de editar suas condições.",
+        )
+      if (reativando || condicoes.fornecedor_principal === true)
+        await exigirFornecedorElegivel(tx, ctx, antes.id_fornecedor)
+      if (condicoes.fornecedor_principal === true)
+        await limparPrincipalAnterior(tx, ctx, id)
+      const depois = await tx.produto_fornecedor.update({
+        where,
+        data: {
+          ...condicoes,
+          status,
+          fornecedor_principal:
+            status === "INATIVO"
+              ? false
+              : (condicoes.fornecedor_principal ??
+                (reativando ? false : undefined)),
+        },
+      })
+      await auditar(tx, ctx, "produto_fornecedor", antes, depois)
+      return obter(tx, ctx, depois.id)
+    },
+  )
 }

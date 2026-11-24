@@ -67,7 +67,7 @@ export function catalogRequest<T>(
         body &&
         typeof body === "object" &&
         "status" in body &&
-        ["INATIVO", "INATIVA"].includes(String(body.status))
+        (body.status === "INATIVO" || body.status === "INATIVA")
       ) {
         const exclusao = await allowedCompanies(id, resource, "pode_excluir")
         empresasAutorizadas = empresasAutorizadas.filter((company) =>

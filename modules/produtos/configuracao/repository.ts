@@ -1,7 +1,15 @@
 import "server-only"
 
 import { Prisma } from "@/generated/prisma/client"
-import { ConflictError, NotFoundError, ValidationError } from "@/lib/api/errors"
+import {
+  ConflictError,
+  HttpError,
+  NotFoundError,
+  ValidationError,
+} from "@/lib/api/errors"
+import { verifyAccessToken } from "@/lib/jwt"
+import { lockUsers } from "@/modules/auth/auth.repository"
+import { vinculoCatalogo, type Action } from "../../catalogos/repository"
 import { serializarJsonTextMysql } from "@/lib/limites-texto"
 import { prisma } from "@/lib/prisma"
 import { disputaPersistencia } from "@/lib/prisma-concorrencia"
@@ -15,6 +23,8 @@ export type Contexto = {
   idUsuario: number
   idProduto: number
 }
+
+export type ContextoEscrita = Contexto & { token: string }
 
 export const escopo = (ctx: Contexto) => ({
   id_empresa: ctx.idEmpresa,
@@ -53,7 +63,8 @@ export function ler<T>(ctx: Contexto, operacao: (tx: Tx) => Promise<T>) {
 }
 
 export async function gravar<T>(
-  ctx: Contexto,
+  ctx: ContextoEscrita,
+  acoes: Action[],
   operacao: (
     tx: Tx,
     produto: Awaited<ReturnType<typeof consultarProduto>>,
@@ -62,6 +73,23 @@ export async function gravar<T>(
   try {
     return await withCompanyWriteLock([ctx.idEmpresa], async (tx) => {
       await bloquearProdutoEstoque(tx, ctx, ctx.idProduto)
+      // A revogação e as alterações de perfil usam o mesmo lock do usuário.
+      await lockUsers(tx, [ctx.idUsuario])
+      const sessao = await verifyAccessToken(ctx.token, tx)
+      if (!sessao || Number(sessao.id) !== ctx.idUsuario)
+        throw new HttpError(401, "Não autenticado.")
+      const acesso = await tx.usuario_empresa.findFirst({
+        where: {
+          ...vinculoCatalogo(ctx.idUsuario, "PRODUTOS", acoes),
+          id_empresa: ctx.idEmpresa,
+        },
+        select: { id: true },
+      })
+      if (!acesso)
+        throw new HttpError(
+          403,
+          "Sem permissão para esta operação na empresa ativa.",
+        )
       return operacao(tx, await consultarProduto(tx, ctx))
     })
   } catch (error) {

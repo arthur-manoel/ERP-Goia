@@ -1,5 +1,6 @@
 import "server-only"
 
+import { readBearer } from "@/lib/authorize"
 import { ValidationError } from "@/lib/api/errors"
 import { readLimitedJson, readQuery, validate } from "@/lib/api/http"
 import { catalogRequest } from "../../catalogos/access"
@@ -12,7 +13,7 @@ import {
   listarOpcoes,
 } from "./fornecedores"
 import { alterarGrade, gerarGrade, listarGrade } from "./grade"
-import type { Contexto } from "./repository"
+import type { ContextoEscrita } from "./repository"
 import {
   criarFornecedorSchema,
   editarFornecedorSchema,
@@ -25,7 +26,7 @@ import {
 type Params = { id: string; idVariacao?: string; idVinculo?: string }
 type Rota = { params: Promise<Params> }
 type Operacao = (
-  ctx: Contexto,
+  ctx: ContextoEscrita,
   params: Params,
   request: Request,
   body: unknown,
@@ -49,6 +50,7 @@ function rota(action: Action, operacao: Operacao, status = 200) {
           idEmpresa: validate(idRota, empresa),
           idProduto: validate(idRota, path.id),
           idUsuario: actor.idUsuario,
+          token: readBearer(req) ?? "",
         }
         return operacao(ctx, path, req, body)
       },

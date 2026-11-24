@@ -11,6 +11,7 @@ import {
   ler,
   pagina,
   type Contexto,
+  type ContextoEscrita,
   type Tx,
 } from "./repository"
 import type { Combinacao, Pagina } from "./schema"
@@ -152,8 +153,8 @@ async function verificarOperacoes(
     )
 }
 
-export function gerarGrade(ctx: Contexto, itens: Combinacao[]) {
-  return gravar(ctx, async (tx, produto) => {
+export function gerarGrade(ctx: ContextoEscrita, itens: Combinacao[]) {
+  return gravar(ctx, ["pode_criar"], async (tx, produto) => {
     exigirProdutoAtivo(produto)
     const unicas = [
       ...new Map(itens.map((item) => [chave(item), item])).values(),
@@ -213,40 +214,44 @@ export function gerarGrade(ctx: Contexto, itens: Combinacao[]) {
 }
 
 export function alterarGrade(
-  ctx: Contexto,
+  ctx: ContextoEscrita,
   id: number,
   status: "ATIVO" | "INATIVO",
 ) {
-  return gravar(ctx, async (tx, produto) => {
-    const where = { ...escopo(ctx), id }
-    const antes = await tx.produto_variacoes.findFirst({ where })
-    if (!antes) throw new NotFoundError("Variação não encontrada no produto.")
-    if (antes.status === status) return antes
-    if (status === "ATIVO") {
-      exigirProdutoAtivo(produto)
-      await verificarDimensoes(tx, ctx, [antes])
-      const duplicada = await tx.produto_variacoes.findFirst({
-        where: {
-          ...escopo(ctx),
-          id: { not: id },
-          id_cor: antes.id_cor,
-          id_tamanho: antes.id_tamanho,
-          status: "ATIVO",
-        },
-        select: { id: true },
+  return gravar(
+    ctx,
+    status === "INATIVO" ? ["pode_editar", "pode_excluir"] : ["pode_editar"],
+    async (tx, produto) => {
+      const where = { ...escopo(ctx), id }
+      const antes = await tx.produto_variacoes.findFirst({ where })
+      if (!antes) throw new NotFoundError("Variação não encontrada no produto.")
+      if (antes.status === status) return antes
+      if (status === "ATIVO") {
+        exigirProdutoAtivo(produto)
+        await verificarDimensoes(tx, ctx, [antes])
+        const duplicada = await tx.produto_variacoes.findFirst({
+          where: {
+            ...escopo(ctx),
+            id: { not: id },
+            id_cor: antes.id_cor,
+            id_tamanho: antes.id_tamanho,
+            status: "ATIVO",
+          },
+          select: { id: true },
+        })
+        if (duplicada)
+          throw new ConflictError(
+            "Outra variação ativa já possui esta combinação.",
+          )
+      } else {
+        await verificarOperacoes(tx, ctx, antes)
+      }
+      const depois = await tx.produto_variacoes.update({
+        where,
+        data: { status },
       })
-      if (duplicada)
-        throw new ConflictError(
-          "Outra variação ativa já possui esta combinação.",
-        )
-    } else {
-      await verificarOperacoes(tx, ctx, antes)
-    }
-    const depois = await tx.produto_variacoes.update({
-      where,
-      data: { status },
-    })
-    await auditar(tx, ctx, "produto_variacoes", antes, depois)
-    return depois
-  })
+      await auditar(tx, ctx, "produto_variacoes", antes, depois)
+      return depois
+    },
+  )
 }

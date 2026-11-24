@@ -99,7 +99,7 @@ somente código, preço, prazo ou quantidade. A mudança de situação usa
 
 Aceitam-se fornecedores próprios ativos e fornecedores globais ativos com
 vínculo empresa–fornecedor ativo. Vínculos históricos locais ou globais
-continuam consultáveis se o fornecedor perder elegibilidade. O POST
+continuam consultáveis se o fornecedor perder elegibilidade. Se o cadastro do fornecedor for transferido para outra empresa, o vínculo e as condições anteriores permanecem consultáveis. O nome passa a ser exibido como “Fornecedor indisponível”. O POST
 duplicado retorna 409. Use PATCH para reativar o vínculo com o mesmo ID.
 Reativar exige elegibilidade e conserva as condições. Inativar limpa a marca
 de principal, e reativar por situação mantém o vínculo sem essa marca.

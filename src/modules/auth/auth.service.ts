@@ -92,10 +92,15 @@ function readAccessToken(
 
 export async function verifyAccessToken(
   token: string,
+  database?: Parameters<typeof repository.findSessionUser>[2],
 ): Promise<AccessTokenPayload | null> {
   const claims = readAccessToken(token)
   if (!claims) return null
-  const user = await repository.findSessionUser(Number(claims.id), claims.sid)
+  const user = await repository.findSessionUser(
+    Number(claims.id),
+    claims.sid,
+    database,
+  )
   return user?.role === claims.role ? claims : null
 }
 
