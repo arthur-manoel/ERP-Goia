@@ -363,10 +363,7 @@ try {
     await processar(f, n, p, key)
     const estado = await fisico(f)
     assert.equal(estado.total, "10.000")
-    assert.deepEqual(
-      estado.movimentos.map((m) => m.id),
-      [mov.id],
-    )
+    assert.deepEqual(estado.movimentos.map((m) => m.id), [mov.id])
     const vinculo = await prisma.compra_recebimento_linha.findUniqueOrThrow({
       where: { id_movimentacao: mov.id },
     })
@@ -389,13 +386,7 @@ try {
       idFornecedor: f.fornecedor,
       valorTotal: "61.00",
     }
-    const criada = await call(
-      f,
-      "/api/compras/notas-fiscais",
-      "POST",
-      cabecalho,
-      201,
-    )
+    const criada = await call(f, "/api/compras/notas-fiscais", "POST", cabecalho, 201)
     const url = `/api/compras/notas-fiscais/${criada.nota.id}`
     const recebida = await call(f, url + "/acao", "POST", { acao: "receber" })
     assert.equal(recebida.nota.status, "RECEBIDA")
@@ -406,7 +397,7 @@ try {
       valorTotal: "60.00",
       versaoEsperada: recebida.nota.versao,
     }
-    const editada = await call(f, url, "PUT", corrigido)
+    const editada = await call(f, url, "PATCH", corrigido)
     assert.equal(editada.nota.status, "RECEBIDA")
     assert.equal(editada.nota.entradaProcessada, false)
     assert.equal(editada.nota.dataRecebimento, recebida.nota.dataRecebimento)
@@ -423,7 +414,7 @@ try {
     await call(
       f,
       url,
-      "PUT",
+      "PATCH",
       { ...corrigido, versaoEsperada: processada.versao },
       409,
     )
