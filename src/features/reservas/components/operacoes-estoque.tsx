@@ -451,6 +451,19 @@ function Conteudo({
     !pendenteTransferencia &&
     pendenteOperacoes !== null &&
     rotaDeTransferencia(pendenteOperacoes.url)
+  const retomandoTransferencia =
+    pendente !== null && rotaDeTransferencia(pendente.url)
+  const acessoRetomada = useConsulta<{ podeMovimentar: boolean }>(
+    retomandoTransferencia && !ocupado
+      ? "/api/estoque/transferencias?limite=1"
+      : null,
+    requisitar,
+    revisao,
+  )
+  const acessoRetomadaNegado =
+    !acessoRetomada.carregando &&
+    (acessoRetomada.status === 403 ||
+      acessoRetomada.dados?.podeMovimentar === false)
   const [buscaProduto, setBuscaProduto] = useState("")
   const {
     dados: opcoes,
@@ -526,6 +539,8 @@ function Conteudo({
         body: JSON.stringify(tentativa.body),
       })
       if (controller.signal.aborted) return
+      if ((despacho || recebimento) && resposta.status === 403)
+        setRevisao((r) => r + 1)
       const value = await lerRespostaOperacao(
         resposta,
         () => {
@@ -613,16 +628,30 @@ function Conteudo({
           <AlertDescription>
             Uma confirmação ficou sem resposta conclusiva. Os dados dessa
             tentativa foram preservados.{" "}
-            <Button
-              disabled={ocupado}
-              onClick={() =>
-                enviar(pendente.url, pendente.body, pendente.metodo)
-              }
-            >
-              {transferenciaLegada
-                ? "Consultar confirmação antiga"
-                : "Repetir a mesma confirmação"}
-            </Button>
+            {acessoRetomadaNegado ? (
+              "A edição de estoque é necessária para recuperar essa transferência."
+            ) : (
+              <Button
+                disabled={
+                  ocupado ||
+                  (retomandoTransferencia &&
+                    (acessoRetomada.carregando ||
+                      !acessoRetomada.dados?.podeMovimentar))
+                }
+                onClick={() =>
+                  enviar(pendente.url, pendente.body, pendente.metodo)
+                }
+              >
+                {transferenciaLegada
+                  ? "Consultar confirmação antiga"
+                  : "Repetir a mesma confirmação"}
+              </Button>
+            )}
+            {acessoRetomada.erro && !acessoRetomadaNegado && (
+              <p role="alert">
+                {acessoRetomada.erro} Atualize os dados e tente novamente.
+              </p>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -2364,9 +2393,11 @@ function Transferencias({
     dados: Transferencia[]
     totalPaginas: number
     podeMovimentar: boolean
-  }>(`/api/estoque/transferencias?${params}`, requisitar, revisao)
+  }>(`/api/estoque/transferencias?${params}`, requisitar, revisao, true)
+  const historico =
+    !consulta.carregando && !consulta.erro ? consulta.dados : null
   const podeMovimentar = consulta.dados?.podeMovimentar === true
-  const indisponivel = bloqueado || consulta.carregando || !podeMovimentar
+  const indisponivel = bloqueado || !historico?.podeMovimentar
   const contada = receberTransferenciaSchema.safeParse({
     quantidade: contagem.trim().replace(",", "."),
   })
@@ -2389,7 +2420,7 @@ function Transferencias({
           enviar={enviar}
         />
       )}
-      {consulta.dados && !podeMovimentar && (
+      {historico && !historico.podeMovimentar && (
         <p>
           Você pode consultar as transferências. Enviar e receber exigem edição
           de estoque.
@@ -2398,10 +2429,9 @@ function Transferencias({
       {confirmacao && (
         <Alert>
           <AlertDescription>
-            Transferência #{confirmacao.id}{" "}
             {confirmacao.recebida
-              ? "recebida no destino"
-              : "enviada e em trânsito"}
+              ? `Transferência #${confirmacao.id} recebida no destino`
+              : `Envio da transferência #${confirmacao.id} confirmado`}
             .
             <Button
               type="button"
@@ -2472,9 +2502,8 @@ function Transferencias({
       )}
       {consulta.carregando && <p role="status">Carregando transferências…</p>}
       {consulta.erro && <p role="alert">{consulta.erro}</p>}
-      {!consulta.carregando &&
-        consulta.dados &&
-        (consulta.dados.dados.length === 0 ? (
+      {historico &&
+        (historico.dados.length === 0 ? (
           <p>Nenhuma transferência encontrada para os filtros selecionados.</p>
         ) : (
           <Table>
@@ -2487,7 +2516,7 @@ function Transferencias({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {consulta.dados.dados.map((r) => (
+              {historico.dados.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
                     <p>
@@ -2537,29 +2566,27 @@ function Transferencias({
             </TableBody>
           </Table>
         ))}
-      {!consulta.carregando &&
-        consulta.dados &&
-        (pagina > 1 || consulta.dados.totalPaginas > 1) && (
-          <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pagina <= 1}
-              onClick={() => setPagina((p) => p - 1)}
-            >
-              Anterior
-            </Button>
-            <span>Página {pagina}</span>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pagina >= consulta.dados.totalPaginas}
-              onClick={() => setPagina((p) => p + 1)}
-            >
-              Próxima
-            </Button>
-          </div>
-        )}
+      {historico && (pagina > 1 || historico.totalPaginas > 1) && (
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={pagina <= 1}
+            onClick={() => setPagina((p) => p - 1)}
+          >
+            Anterior
+          </Button>
+          <span>Página {pagina}</span>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={pagina >= historico.totalPaginas}
+            onClick={() => setPagina((p) => p + 1)}
+          >
+            Próxima
+          </Button>
+        </div>
+      )}
       <Dialog
         open={conferencia !== null}
         onOpenChange={(aberto) => {
