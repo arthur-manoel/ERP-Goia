@@ -528,6 +528,28 @@ export async function enviarTransferencia(
     throw new NotFoundError(
       "Local e setor de destino ativos não encontrados na empresa.",
     )
+  const posicoesDestino = await tx.estoque.findMany({
+    where: {
+      id_empresa: ctx.idEmpresa,
+      id_produto: input.idProduto,
+      OR: [
+        { id_local_estoque: input.idLocalDestino },
+        { id_setor: input.idSetorDestino },
+      ],
+    },
+    select: { id_local_estoque: true, id_setor: true },
+  })
+  if (
+    posicoesDestino.some(
+      (p) =>
+        p.id_local_estoque !== input.idLocalDestino ||
+        p.id_setor !== input.idSetorDestino,
+    )
+  )
+    throw new ConflictError(
+      "Local e setor de destino não correspondem à posição de estoque deste produto.",
+    )
+
   const mov = await movimentarNaTransacao(
     tx,
     ctx,
@@ -579,17 +601,52 @@ export async function enviarTransferencia(
     idMovimentoSaida: mov.idMovimentacao,
   }
 }
-export async function receberTransferencia(tx: Tx, ctx: Contexto, id: number) {
+export async function receberTransferencia(
+  tx: Tx,
+  ctx: Contexto,
+  id: number,
+  quantidadeConferida: string,
+) {
   const row = await tx.transferencia_estoque.findFirst({
     where: { id, id_empresa: ctx.idEmpresa },
   })
   if (!row) throw new NotFoundError("Transferência não encontrada na empresa.")
-  if (row.status === "RECEBIDA")
+  const contada = new Prisma.Decimal(quantidadeConferida)
+  if (!contada.eq(row.quantidade))
+    throw new ConflictError(
+      `Conferência divergente. Esperado: ${row.quantidade.toFixed(3)}. Contado: ${contada.toFixed(3)}. Confira novamente antes de receber.`,
+    )
+  if (row.status === "RECEBIDA") {
+    const entrada =
+      row.id_movimento_entrada &&
+      (await tx.movimentacao_estoque.findFirst({
+        where: {
+          id: row.id_movimento_entrada,
+          id_empresa: ctx.idEmpresa,
+          id_produto: row.id_produto,
+          id_variacao: row.id_variacao,
+          id_local_estoque: row.id_local_destino,
+          id_setor: row.id_setor_destino,
+          tipo: "TRANSFERENCIA_ENTRADA",
+          origem_id: id,
+          quantidade: row.quantidade,
+        },
+        select: { id: true },
+      }))
+    if (!entrada)
+      throw new ConflictError(
+        "Recebimento sem movimento de entrada válido para esta transferência.",
+      )
     return {
       idTransferencia: id,
       status: row.status,
-      idMovimentoEntrada: row.id_movimento_entrada,
+      idMovimentoEntrada: entrada.id,
     }
+  }
+  if (row.id_movimento_entrada !== null)
+    throw new ConflictError(
+      "A transferência em trânsito já possui entrada vinculada.",
+    )
   const mov = await movimentarNaTransacao(
     tx,
     ctx,
@@ -598,8 +655,8 @@ export async function receberTransferencia(tx: Tx, ctx: Contexto, id: number) {
       idVariacao: row.id_variacao ?? undefined,
       idLocalEstoque: row.id_local_destino,
       idSetor: row.id_setor_destino,
-      quantidade: row.quantidade.toFixed(3),
-      observacao: `Recebimento físico da transferência ${id}`,
+      quantidade: contada.toFixed(3),
+      observacao: `Conferência integral da transferência ${id}`,
     },
     "entrada",
     {
@@ -609,18 +666,32 @@ export async function receberTransferencia(tx: Tx, ctx: Contexto, id: number) {
       chave: `transferencia:${id}:receber`,
     },
   )
-  const depois = await tx.transferencia_estoque.update({
-    where: { id },
-    data: {
-      status: "RECEBIDA",
-      data_recebimento: new Date(),
-      id_movimento_entrada: mov.idMovimentacao,
+  const mudancas = {
+    status: "RECEBIDA" as const,
+    data_recebimento: new Date(),
+    id_movimento_entrada: mov.idMovimentacao,
+  }
+  const atualizacao = await tx.transferencia_estoque.updateMany({
+    where: {
+      id,
+      id_empresa: ctx.idEmpresa,
+      status: "ENVIADA",
+      id_movimento_entrada: null,
     },
+    data: mudancas,
   })
-  await auditar(tx, ctx, "transferencia_estoque", id, row, depois)
+  if (atualizacao.count !== 1)
+    throw new ConflictError(
+      "A situação da transferência mudou durante a conferência.",
+    )
+  await auditar(tx, ctx, "transferencia_estoque", id, row, {
+    ...row,
+    ...mudancas,
+    quantidadeConferida: contada.toFixed(3),
+  })
   return {
     idTransferencia: id,
-    status: depois.status,
+    status: mudancas.status,
     idMovimentoEntrada: mov.idMovimentacao,
   }
 }

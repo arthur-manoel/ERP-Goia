@@ -317,6 +317,7 @@ export async function ambienteRecebiveis() {
     assert.equal(
       response.headers.get("Cache-Control"),
       rota.startsWith("/api/clientes/") ||
+        rota.startsWith("/api/auth/") ||
         /^\/api\/ordens-producao(?:\?|$|\/(?:opcoes|resumo)(?:\?|$)|\/\d+(?:$|\/(?:avancar|encerrar|etapas\/(?:iniciar|concluir))$))/.test(
           rota,
         ) ||

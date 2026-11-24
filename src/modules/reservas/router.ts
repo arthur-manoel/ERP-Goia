@@ -32,8 +32,16 @@ import {
   receberTransferencia,
 } from "./fluxo.service"
 
-class EntregaRecusada extends HttpError {
-  readonly code = "ENTREGA_RECUSADA"
+import { listarTransferencias } from "./transferencias.consulta"
+
+class OperacaoRecusada extends HttpError {
+  constructor(
+    status: number,
+    mensagem: string,
+    readonly code: string,
+  ) {
+    super(status, mensagem)
+  }
 }
 
 type Operacao =
@@ -487,25 +495,18 @@ export async function operacoesHandler(
               pagina: pag.pagina,
             })
           }
+          if (op === "transferencias")
+            return textoJson(
+              await listarTransferencias(
+                tx,
+                ctx,
+                validate(
+                  schemas.listarTransferenciasSchema,
+                  readQuery(request),
+                ),
+              ),
+            )
           const filtro = validate(schemas.listarSchema, readQuery(request))
-          if (op === "transferencias") {
-            const where = { id_empresa: ctx.idEmpresa }
-            const [dados, total] = await Promise.all([
-              tx.transferencia_estoque.findMany({
-                where,
-                orderBy: { id: "desc" },
-                skip: (filtro.pagina - 1) * filtro.limite,
-                take: filtro.limite,
-              }),
-              tx.transferencia_estoque.count({ where }),
-            ])
-            return textoJson({
-              dados,
-              total,
-              pagina: filtro.pagina,
-              totalPaginas: Math.ceil(total / filtro.limite),
-            })
-          }
           const where: Prisma.reserva_estoqueWhereInput = {
             id_empresa: ctx.idEmpresa,
             ...(filtro.status ? { status: filtro.status } : {}),
@@ -569,7 +570,11 @@ export async function operacoesHandler(
       entregar: schemas.entregaSchema,
       consumir: schemas.consumoSchema,
       transferir: schemas.transferenciaSchema,
-      receberTransferencia: z.strictObject({}),
+      // O corpo vazio só pode recuperar o resultado de uma chave legada já gravada.
+      receberTransferencia: z.union([
+        schemas.receberTransferenciaSchema,
+        z.strictObject({}),
+      ]),
     }
     const contrato = contratos[op]
     if (!contrato) throw new ValidationError("Operação indisponível.")
@@ -688,7 +693,11 @@ export async function operacoesHandler(
               [400, 404, 409].includes(erro.status) &&
               !(erro instanceof ConflitoTransitorio)
             )
-              throw new EntregaRecusada(erro.status, erro.message)
+              throw new OperacaoRecusada(
+                erro.status,
+                erro.message,
+                "ENTREGA_RECUSADA",
+              )
             throw erro
           }
         }
@@ -700,16 +709,31 @@ export async function operacoesHandler(
             validate(schemas.consumoSchema, body),
             chave,
           )
-        if (op === "transferir")
-          return enviarTransferencia(
-            tx,
-            ctx,
-            validate(schemas.transferenciaSchema, body),
-            chave,
-          )
-        if (op === "receberTransferencia") {
-          validate(z.strictObject({}), body)
-          return receberTransferencia(tx, ctx, id!)
+        if (op === "transferir" || op === "receberTransferencia") {
+          try {
+            if (op === "transferir")
+              return await enviarTransferencia(
+                tx,
+                ctx,
+                validate(schemas.transferenciaSchema, body),
+                chave,
+              )
+            const entrada = validate(schemas.receberTransferenciaSchema, body)
+            return await receberTransferencia(tx, ctx, id!, entrada.quantidade)
+          } catch (erro) {
+            // A recusa é conclusiva porque a chave já foi consultada nesta transação.
+            if (
+              erro instanceof HttpError &&
+              [400, 404, 409].includes(erro.status) &&
+              !(erro instanceof ConflitoTransitorio)
+            )
+              throw new OperacaoRecusada(
+                erro.status,
+                erro.message,
+                "TRANSFERENCIA_RECUSADA",
+              )
+            throw erro
+          }
         }
         throw new ValidationError("Operação indisponível.")
       },
@@ -752,7 +776,7 @@ export async function operacoesHandler(
       {
         success: false,
         ...(erro instanceof ConflitoTransitorio ||
-        erro instanceof EntregaRecusada
+        erro instanceof OperacaoRecusada
           ? { code: erro.code }
           : {}),
         error:

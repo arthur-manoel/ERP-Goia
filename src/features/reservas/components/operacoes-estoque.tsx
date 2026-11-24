@@ -19,6 +19,14 @@ import { PageHeader } from "@/components/layout/page-header"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
@@ -46,6 +54,7 @@ import {
   quantidade as quantidadeOperacional,
   entregaSchema,
   consumoSchema,
+  receberTransferenciaSchema,
 } from "@/modules/reservas/reservas.schema"
 
 import { reservasParaConsumo } from "../consumo"
@@ -53,6 +62,7 @@ import {
   formatarMilesimos,
   milesimos,
   quantidadeDaEntrega,
+  saldoTransferivel,
   zero,
 } from "../quantidades"
 
@@ -354,6 +364,7 @@ export function OperacoesEstoque({ origem = "RESERVAS" }: { origem?: Origem }) {
           key={`${usuario?.email}:${empresa.id}:${origem}`}
           origem={origem}
           identidade={`${usuario?.email}:${empresa.id}`}
+          idEmpresa={empresa.id}
         />
       )}
     </>
@@ -363,13 +374,26 @@ export function OperacoesEstoque({ origem = "RESERVAS" }: { origem?: Origem }) {
 function Conteudo({
   origem,
   identidade,
+  idEmpresa,
 }: {
   origem: Origem
   identidade: string
+  idEmpresa: number
 }) {
-  const { requisitar } = useAutenticacao()
+  const { requisitar: executarRequisicao } = useAutenticacao()
+  const requisitar = useCallback<Api>(
+    (url, init) => {
+      const headers = new Headers(init?.headers)
+      headers.set("X-Empresa-Id", String(idEmpresa))
+      return executarRequisicao(url, { ...init, headers })
+    },
+    [executarRequisicao, idEmpresa],
+  )
   const [revisao, setRevisao] = useState(0)
   const [revisaoEntrega, setRevisaoEntrega] = useState(0)
+  const [confirmacaoTransferencia, setConfirmacaoTransferencia] =
+    useState<ConfirmacaoTransferencia | null>(null)
+  const [versaoEnvio, setVersaoEnvio] = useState(0)
   const [erro, setErro] = useState("")
   const [ocupado, setOcupado] = useState(false)
   const [ordemCriada, setOrdemCriada] = useState<number>()
@@ -403,7 +427,11 @@ function Conteudo({
     }
   }, [armazenado])
   const [buscaProduto, setBuscaProduto] = useState("")
-  const { dados: opcoes, erro: erroOpcoes } = useConsulta<Opcoes>(
+  const {
+    dados: opcoes,
+    erro: erroOpcoes,
+    carregando: atualizandoOpcoes,
+  } = useConsulta<Opcoes>(
     `/api/estoque/reservas/opcoes?busca=${encodeURIComponent(buscaProduto)}`,
     requisitar,
     revisao,
@@ -427,6 +455,10 @@ function Conteudo({
     }
     const registro = JSON.stringify(tentativa)
     const entrega = /^\/api\/pedidos\/\d+\/entregas$/.test(tentativa.url)
+    const despacho = tentativa.url === "/api/estoque/transferencias/enviar"
+    const recebimento = /^\/api\/estoque\/transferencias\/\d+\/receber$/.test(
+      tentativa.url,
+    )
     const limparTentativa = () => {
       if (sessionStorage.getItem(chaveStorage) !== registro) return
       sessionStorage.removeItem(chaveStorage)
@@ -465,7 +497,9 @@ function Conteudo({
           limparTentativa()
           setRevisao((r) => r + 1)
         },
-        entrega && retomada,
+        retomada && (despacho || recebimento)
+          ? "TRANSFERENCIA_RECUSADA"
+          : entrega && retomada,
       )
       if (!resposta.ok) {
         throw new Error(
@@ -476,6 +510,15 @@ function Conteudo({
       if (controller.signal.aborted) return
       if (tentativa.url === "/api/ordens-producao" && value.ordem?.id)
         setOrdemCriada(value.ordem.id)
+      if (despacho) setVersaoEnvio((r) => r + 1)
+      if (
+        (despacho || recebimento) &&
+        Number.isInteger(value.data?.idTransferencia)
+      )
+        setConfirmacaoTransferencia({
+          id: value.data.idTransferencia,
+          recebida: recebimento,
+        })
       toast.success("Operação confirmada no banco.")
       if (entrega) setRevisaoEntrega((r) => r + 1)
       setRevisao((r) => r + 1)
@@ -599,8 +642,11 @@ function Conteudo({
               requisitar={requisitar}
               revisao={revisao}
               opcoes={opcoes}
+              atualizandoOpcoes={atualizandoOpcoes}
               bloqueado={bloqueado}
               enviar={enviar}
+              confirmacao={confirmacaoTransferencia}
+              versaoEnvio={versaoEnvio}
             />
           )}
         </>
@@ -2212,15 +2258,359 @@ function FecharPedido({
   )
 }
 
+type Transferencia = {
+  id: number
+  id_produto: number
+  id_variacao: number | null
+  quantidade: string
+  status: "ENVIADA" | "RECEBIDA"
+  produto: { nome: string; unidade: string } | null
+  variacao: { cor: string | null; tamanho: string | null } | null
+  origem: { local: string; setor: string | null }
+  destino: { local: string; setor: string | null }
+  data_envio: string
+  data_recebimento: string | null
+  enviadoPor: string
+  recebidoPor: string | null
+}
+
+type ConfirmacaoTransferencia = { id: number; recebida: boolean }
+
+function identificacaoVariacao(r: Transferencia) {
+  if (r.id_variacao === null) return "Sem variação"
+  const dimensoes = [r.variacao?.cor, r.variacao?.tamanho].filter(Boolean)
+  return dimensoes.join(" / ") || `Variação #${r.id_variacao}`
+}
+
+function localESetor(posicao: Transferencia["origem"]) {
+  return [posicao.local, posicao.setor].filter(Boolean).join(" · ")
+}
+
 function Transferencias({
   requisitar,
   revisao,
   opcoes,
+  atualizandoOpcoes,
   bloqueado,
   enviar,
+  confirmacao,
+  versaoEnvio,
 }: {
   requisitar: Api
   revisao: number
+  opcoes: Opcoes
+  atualizandoOpcoes: boolean
+  bloqueado: boolean
+  enviar: Enviar
+  confirmacao: ConfirmacaoTransferencia | null
+  versaoEnvio: number
+}) {
+  const [pagina, setPagina] = useState(1)
+  const [status, setStatus] = useState("")
+  const [destino, setDestino] = useState("")
+  const [idFiltro, setIdFiltro] = useState<number | null>(null)
+  const [conferencia, setConferencia] = useState<Transferencia | null>(null)
+  const [contagem, setContagem] = useState("")
+  const params = new URLSearchParams({
+    pagina: String(pagina),
+    limite: "25",
+    ...(idFiltro
+      ? { idTransferencia: String(idFiltro) }
+      : {
+          ...(status && { status }),
+          ...(destino && { idLocalDestino: destino }),
+        }),
+  })
+  const consulta = useConsulta<{
+    dados: Transferencia[]
+    totalPaginas: number
+    podeMovimentar: boolean
+  }>(`/api/estoque/transferencias?${params}`, requisitar, revisao)
+  const podeMovimentar = consulta.dados?.podeMovimentar === true
+  const indisponivel = bloqueado || consulta.carregando || !podeMovimentar
+  const contada = receberTransferenciaSchema.safeParse({
+    quantidade: contagem.trim().replace(",", "."),
+  })
+  const diferenca =
+    conferencia && contada.success
+      ? milesimos(contada.data.quantidade) - milesimos(conferencia.quantidade)
+      : null
+
+  return (
+    <Caixa titulo="Transferência física entre fábrica e loja">
+      <p className="text-sm text-muted-foreground">
+        O envio baixa a origem. As peças entram na loja após a conferência
+        integral.
+      </p>
+      {podeMovimentar && (
+        <FormularioTransferencia
+          key={versaoEnvio}
+          opcoes={opcoes}
+          bloqueado={indisponivel || atualizandoOpcoes}
+          enviar={enviar}
+        />
+      )}
+      {consulta.dados && !podeMovimentar && (
+        <p>
+          Você pode consultar as transferências. Enviar e receber exigem edição
+          de estoque.
+        </p>
+      )}
+      {confirmacao && (
+        <Alert>
+          <AlertDescription>
+            Transferência #{confirmacao.id}{" "}
+            {confirmacao.recebida
+              ? "recebida no destino"
+              : "enviada e em trânsito"}
+            .
+            <Button
+              type="button"
+              variant="link"
+              onClick={() => {
+                setIdFiltro(confirmacao.id)
+                setPagina(1)
+              }}
+            >
+              Ver transferência #{confirmacao.id}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      <h3 className="text-base font-semibold">Histórico de transferências</h3>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor="transferencias-situacao">Situação</FieldLabel>
+          <NativeSelect
+            id="transferencias-situacao"
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value)
+              setIdFiltro(null)
+              setPagina(1)
+            }}
+          >
+            <NativeSelectOption value="">Todas</NativeSelectOption>
+            <NativeSelectOption value="ENVIADA">Em trânsito</NativeSelectOption>
+            <NativeSelectOption value="RECEBIDA">Recebidas</NativeSelectOption>
+          </NativeSelect>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="transferencias-destino">
+            Filtrar por destino
+          </FieldLabel>
+          <NativeSelect
+            id="transferencias-destino"
+            value={destino}
+            onChange={(e) => {
+              setDestino(e.target.value)
+              setIdFiltro(null)
+              setPagina(1)
+            }}
+          >
+            <NativeSelectOption value="">Todos os destinos</NativeSelectOption>
+            {opcoes.locais.map((p) => (
+              <NativeSelectOption key={p.id} value={p.id}>
+                {p.nome}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </Field>
+      </div>
+      {idFiltro !== null && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setIdFiltro(null)
+            setDestino("")
+            setStatus("")
+            setPagina(1)
+          }}
+        >
+          Limpar filtro de transferência #{idFiltro}
+        </Button>
+      )}
+      {consulta.carregando && <p role="status">Carregando transferências…</p>}
+      {consulta.erro && <p role="alert">{consulta.erro}</p>}
+      {!consulta.carregando &&
+        consulta.dados &&
+        (consulta.dados.dados.length === 0 ? (
+          <p>Nenhuma transferência encontrada para os filtros selecionados.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produto e variação</TableHead>
+                <TableHead>Origem → destino</TableHead>
+                <TableHead>Quantidade e situação</TableHead>
+                <TableHead>Conferência</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {consulta.dados.dados.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell>
+                    <p>
+                      #{r.id} · {r.produto?.nome ?? `Produto #${r.id_produto}`}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {identificacaoVariacao(r)}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    {localESetor(r.origem)} → {localESetor(r.destino)}
+                  </TableCell>
+                  <TableCell>
+                    <p>
+                      {formatarMilesimos(milesimos(r.quantidade))}{" "}
+                      {r.produto?.unidade} ·{" "}
+                      {r.status === "ENVIADA" ? "Em trânsito" : "Recebida"}
+                    </p>
+                    <p className="text-muted-foreground">
+                      Enviada por {r.enviadoPor} em{" "}
+                      {formatarDataHora(new Date(r.data_envio))}
+                    </p>
+                    {r.data_recebimento && (
+                      <p className="text-muted-foreground">
+                        Entrada em{" "}
+                        {formatarDataHora(new Date(r.data_recebimento))}
+                        {r.recebidoPor && ` · ${r.recebidoPor}`}
+                      </p>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {r.status === "ENVIADA" && podeMovimentar && (
+                      <Button
+                        type="button"
+                        disabled={indisponivel}
+                        onClick={() => {
+                          setConferencia(r)
+                          setContagem("")
+                        }}
+                      >
+                        Conferir chegada
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ))}
+      {!consulta.carregando &&
+        consulta.dados &&
+        (pagina > 1 || consulta.dados.totalPaginas > 1) && (
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pagina <= 1}
+              onClick={() => setPagina((p) => p - 1)}
+            >
+              Anterior
+            </Button>
+            <span>Página {pagina}</span>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pagina >= consulta.dados.totalPaginas}
+              onClick={() => setPagina((p) => p + 1)}
+            >
+              Próxima
+            </Button>
+          </div>
+        )}
+      <Dialog
+        open={conferencia !== null}
+        onOpenChange={(aberto) => {
+          if (!aberto) setConferencia(null)
+        }}
+      >
+        {conferencia && (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                Conferir transferência #{conferencia.id}
+              </DialogTitle>
+              <DialogDescription>
+                Informe a quantidade que chegou fisicamente ao destino.
+              </DialogDescription>
+            </DialogHeader>
+            <p>
+              {conferencia.produto?.nome ??
+                `Produto #${conferencia.id_produto}`}{" "}
+              · {identificacaoVariacao(conferencia)}
+            </p>
+            <p>
+              {localESetor(conferencia.origem)} →{" "}
+              {localESetor(conferencia.destino)}
+            </p>
+            <p>
+              Esperado: {formatarMilesimos(milesimos(conferencia.quantidade))}{" "}
+              {conferencia.produto?.unidade}
+            </p>
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (indisponivel || diferenca !== zero || !contada.success)
+                  return
+                const id = conferencia.id
+                setConferencia(null)
+                void enviar(
+                  `/api/estoque/transferencias/${id}/receber`,
+                  contada.data,
+                )
+              }}
+            >
+              <Field>
+                <FieldLabel htmlFor="transferencia-contagem">
+                  Quantidade contada
+                </FieldLabel>
+                <Input
+                  id="transferencia-contagem"
+                  inputMode="decimal"
+                  value={contagem}
+                  onChange={(e) => setContagem(e.target.value)}
+                  disabled={indisponivel}
+                  required
+                />
+              </Field>
+              {contagem && !contada.success && (
+                <p role="alert">
+                  Informe uma quantidade válida com até três casas decimais.
+                </p>
+              )}
+              {diferenca !== null && diferenca !== zero && (
+                <p role="alert">
+                  Diferença: {formatarMilesimos(diferenca)}{" "}
+                  {conferencia.produto?.unidade}. A transferência continua em
+                  trânsito. Confira novamente ou siga o procedimento de
+                  regularização da equipe.
+                </p>
+              )}
+              <DialogFooter>
+                <Button
+                  type="submit"
+                  disabled={indisponivel || diferenca !== zero}
+                >
+                  Confirmar recebimento no destino
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        )}
+      </Dialog>
+    </Caixa>
+  )
+}
+
+function FormularioTransferencia({
+  opcoes,
+  bloqueado,
+  enviar,
+}: {
   opcoes: Opcoes
   bloqueado: boolean
   enviar: Enviar
@@ -2230,89 +2620,130 @@ function Transferencias({
   const [origem, setOrigem] = useState("")
   const [destino, setDestino] = useState("")
   const [setor, setSetor] = useState("")
-  const [pagina, setPagina] = useState(1)
+  const [quantidade, setQuantidade] = useState("")
+  const [observacao, setObservacao] = useState("")
+  const [confirmar, setConfirmar] = useState(false)
   const item = opcoes.produtos.find((p) => p.id === Number(produto))
-  const posicao = item?.estoque.find(
-    (p) => p.id_local_estoque === Number(origem),
+  const variante = item?.produto_variacoes.find(
+    (v) => v.id === Number(variacao),
   )
-  const consulta = useConsulta<{
-    dados: {
-      id: number
-      id_produto: number
-      id_variacao: number | null
-      id_local_origem: number
-      id_local_destino: number
-      quantidade: string
-      status: string
-    }[]
-    totalPaginas: number
-  }>(
-    `/api/estoque/transferencias?pagina=${pagina}&limite=25`,
-    requisitar,
-    revisao,
+  const posicoes = (item?.estoque ?? []).filter(
+    (p) =>
+      opcoes.locais.some((l) => l.id === p.id_local_estoque) &&
+      opcoes.setores.some((s) => s.id === p.id_setor),
   )
+  const chavePosicao = (p: Produto["estoque"][number]) =>
+    `${p.id_local_estoque}:${p.id_setor}`
+  const posicao = posicoes.find((p) => chavePosicao(p) === origem)
+  const localOrigem = opcoes.locais.find(
+    (p) => p.id === posicao?.id_local_estoque,
+  )
+  const setorOrigem = opcoes.setores.find((s) => s.id === posicao?.id_setor)
+  const destinos = opcoes.locais.filter(
+    (p) => p.id !== posicao?.id_local_estoque,
+  )
+  const localDestino = destinos.find((p) => p.id === Number(destino))
+  const setoresDestino = opcoes.setores.filter(
+    (s) =>
+      localDestino &&
+      !(item?.estoque ?? []).some(
+        (p) =>
+          (p.id_setor === s.id) !== (p.id_local_estoque === localDestino.id),
+      ),
+  )
+  const setorDestino = setoresDestino.find((s) => s.id === Number(setor))
+  const saldo = posicao && saldoTransferivel(posicao, variante?.id)
+  const qtd = quantidadeOperacional.safeParse(
+    quantidade.trim().replace(",", "."),
+  )
+  const permiteVariacao =
+    !item?.possui_grade || !!variante || variacao === "sem-variacao"
+  const input =
+    item &&
+    posicao &&
+    localDestino &&
+    setorDestino &&
+    permiteVariacao &&
+    saldo &&
+    qtd.success &&
+    milesimos(qtd.data) <= saldo.disponivel &&
+    observacao.trim()
+      ? {
+          idProduto: item.id,
+          ...(variante && { idVariacao: variante.id }),
+          idLocalOrigem: posicao.id_local_estoque,
+          idSetorOrigem: posicao.id_setor,
+          idLocalDestino: localDestino.id,
+          idSetorDestino: setorDestino.id,
+          quantidade: qtd.data,
+          observacao: observacao.trim(),
+        }
+      : null
+
   return (
-    <Caixa titulo="Transferência física entre fábrica e loja">
+    <>
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          const fd = new FormData(e.currentTarget)
-          void enviar("/api/estoque/transferencias/enviar", {
-            idProduto: Number(produto),
-            ...(variacao ? { idVariacao: Number(variacao) } : {}),
-            idLocalOrigem: Number(origem),
-            idSetorOrigem: posicao?.id_setor,
-            idLocalDestino: Number(destino),
-            idSetorDestino: Number(setor),
-            quantidade: String(fd.get("transferir-quantidade")).replace(
-              ",",
-              ".",
-            ),
-            observacao: fd.get("transferir-observacao"),
-          })
+          if (input && !bloqueado) setConfirmar(true)
         }}
       >
         <fieldset disabled={bloqueado} className="grid gap-3 sm:grid-cols-2">
           <Seletor
-            titulo="Produto"
+            titulo="Produto para enviar"
             valor={produto}
             alterar={(v) => {
               setProduto(v)
-              setOrigem("")
               setVariacao("")
+              setOrigem("")
+              setDestino("")
+              setSetor("")
             }}
             opcoes={opcoes.produtos.map((p) => ({
               value: String(p.id),
               label: `${p.nome} · ${p.unidade}`,
             }))}
           />
-          {item?.produto_variacoes.length ? (
+          {item?.possui_grade && (
             <Seletor
-              titulo="Variação"
+              titulo="Variação do envio"
               valor={variacao}
-              alterar={setVariacao}
-              opcoes={item.produto_variacoes.map((v) => ({
-                value: String(v.id),
-                label: grade(v),
-              }))}
+              alterar={(v) => {
+                setVariacao(v)
+                setOrigem("")
+              }}
+              opcoes={[
+                ...item.produto_variacoes.map((v) => ({
+                  value: String(v.id),
+                  label: grade(v),
+                })),
+                { value: "sem-variacao", label: "Saldo sem variação" },
+              ]}
             />
-          ) : null}
+          )}
           <Seletor
-            titulo="Local de origem"
+            titulo="Posição de origem"
             valor={origem}
-            alterar={setOrigem}
-            opcoes={(item?.estoque ?? []).map((p) => ({
-              value: String(p.id_local_estoque),
-              label:
-                opcoes.locais.find((l) => l.id === p.id_local_estoque)?.nome ??
-                String(p.id_local_estoque),
+            alterar={(v) => {
+              setOrigem(v)
+              if (v.split(":")[0] === destino) {
+                setDestino("")
+                setSetor("")
+              }
+            }}
+            opcoes={posicoes.map((p) => ({
+              value: chavePosicao(p),
+              label: `${opcoes.locais.find((l) => l.id === p.id_local_estoque)?.nome} · ${opcoes.setores.find((s) => s.id === p.id_setor)?.nome}`,
             }))}
           />
           <Seletor
             titulo="Local de destino"
             valor={destino}
-            alterar={setDestino}
-            opcoes={opcoes.locais.map((p) => ({
+            alterar={(v) => {
+              setDestino(v)
+              setSetor("")
+            }}
+            opcoes={destinos.map((p) => ({
               value: String(p.id),
               label: p.nome,
             }))}
@@ -2321,94 +2752,98 @@ function Transferencias({
             titulo="Setor de destino"
             valor={setor}
             alterar={setSetor}
-            opcoes={opcoes.setores.map((p) => ({
+            opcoes={setoresDestino.map((p) => ({
               value: String(p.id),
               label: p.nome,
             }))}
           />
-          <Campo nome="transferir-quantidade" titulo="Quantidade enviada" />
-          <Campo nome="transferir-observacao" titulo="Motivo do envio" />
-          <p>
-            A saída ocorre no envio. O destino recebe saldo somente após a
-            confirmação física abaixo.
-          </p>
-          <Button type="submit" disabled={!posicao || !destino || !setor}>
-            Confirmar envio físico
+          {saldo && permiteVariacao && (
+            <p className="self-end">
+              Físico: {formatarMilesimos(saldo.fisico)} · Reservado:{" "}
+              {formatarMilesimos(saldo.reservado)} · Disponível:{" "}
+              {formatarMilesimos(saldo.disponivel)} {item?.unidade}
+            </p>
+          )}
+          <Field>
+            <FieldLabel htmlFor="transferir-quantidade">
+              Quantidade enviada
+            </FieldLabel>
+            <Input
+              id="transferir-quantidade"
+              inputMode="decimal"
+              value={quantidade}
+              required
+              onChange={(e) => setQuantidade(e.target.value)}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="transferir-observacao">
+              Motivo do envio
+            </FieldLabel>
+            <Input
+              id="transferir-observacao"
+              maxLength={255}
+              value={observacao}
+              required
+              onChange={(e) => setObservacao(e.target.value)}
+            />
+          </Field>
+          {quantidade && !qtd.success && (
+            <p role="alert">
+              Informe uma quantidade positiva com até três casas decimais.
+            </p>
+          )}
+          {saldo &&
+            qtd.success &&
+            permiteVariacao &&
+            milesimos(qtd.data) > saldo.disponivel && (
+              <p role="alert">
+                Quantidade maior que o saldo disponível dessa posição e
+                variação.
+              </p>
+            )}
+          <Button type="submit" disabled={!input || bloqueado}>
+            Revisar envio
           </Button>
         </fieldset>
       </form>
-      {consulta.erro && <p role="alert">{consulta.erro}</p>}
-      {consulta.dados && (
-        <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Produto / transferência</TableHead>
-                <TableHead>Origem → destino</TableHead>
-                <TableHead>Quantidade / situação</TableHead>
-                <TableHead>Confirmação física</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {consulta.dados.dados.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>
-                    {opcoes.produtos.find((p) => p.id === r.id_produto)?.nome ??
-                      `Produto ${r.id_produto}`}{" "}
-                    · #{r.id}
-                  </TableCell>
-                  <TableCell>
-                    {
-                      opcoes.locais.find((l) => l.id === r.id_local_origem)
-                        ?.nome
-                    }{" "}
-                    →{" "}
-                    {
-                      opcoes.locais.find((l) => l.id === r.id_local_destino)
-                        ?.nome
-                    }
-                  </TableCell>
-                  <TableCell>
-                    {formatarQuantidade(r.quantidade)} · {r.status}
-                  </TableCell>
-                  <TableCell>
-                    {r.status === "ENVIADA" && (
-                      <Button
-                        disabled={bloqueado}
-                        onClick={() =>
-                          enviar(
-                            `/api/estoque/transferencias/${r.id}/receber`,
-                            {},
-                          )
-                        }
-                      >
-                        Confirmar recebimento no destino
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <div className="flex gap-3">
+      <Dialog open={confirmar} onOpenChange={setConfirmar}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar envio físico</DialogTitle>
+            <DialogDescription>
+              Confira os dados antes de baixar as peças da fábrica.
+            </DialogDescription>
+          </DialogHeader>
+          {input && (
+            <>
+              <p>
+                {item?.nome} · {variante ? grade(variante) : "Sem variação"}
+              </p>
+              <p>
+                {localOrigem?.nome} · {setorOrigem?.nome} → {localDestino?.nome}{" "}
+                · {setorDestino?.nome}
+              </p>
+              <p>
+                {formatarMilesimos(milesimos(input.quantidade))} {item?.unidade}
+              </p>
+            </>
+          )}
+          <DialogFooter>
             <Button
-              variant="outline"
-              disabled={pagina <= 1}
-              onClick={() => setPagina((p) => p - 1)}
+              type="button"
+              disabled={!input || bloqueado}
+              onClick={() => {
+                if (!input || bloqueado) return
+                setConfirmar(false)
+                void enviar("/api/estoque/transferencias/enviar", input)
+              }}
             >
-              Anterior
+              Confirmar envio físico
             </Button>
-            <span>Página {pagina}</span>
-            <Button
-              variant="outline"
-              disabled={pagina >= consulta.dados.totalPaginas}
-              onClick={() => setPagina((p) => p + 1)}
-            >
-              Próxima
-            </Button>
-          </div>
-        </>
-      )}
-    </Caixa>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

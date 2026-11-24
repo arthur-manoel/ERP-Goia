@@ -59,6 +59,19 @@ export const transferenciaSchema = z.strictObject({
   quantidade,
   observacao: z.string().trim().min(1).max(255),
 })
+export const receberTransferenciaSchema = z.strictObject({
+  quantidade: z.union([quantidade, z.string().regex(/^0(?:\.0{1,3})?$/)]),
+})
+
+export const listarTransferenciasSchema = z.strictObject({
+  pagina: z.coerce.number().int().min(1).max(1_000_000).default(1),
+  limite: z.coerce.number().int().min(1).max(100).default(25),
+  status: z.enum(["ENVIADA", "RECEBIDA"]).optional(),
+  idLocalDestino: z.coerce.number().pipe(id).optional(),
+  idTransferencia: z.coerce.number().pipe(id).optional(),
+})
+export type FiltroTransferencias = z.infer<typeof listarTransferenciasSchema>
+
 export const listarSchema = z.strictObject({
   pagina: z.coerce.number().int().min(1).max(1000000).default(1),
   limite: z.coerce.number().int().min(1).max(100).default(25),
