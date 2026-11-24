@@ -126,11 +126,38 @@ export function consultarCatalogo(
           ...(termo
             ? { produtos: filtroProduto }
             : { id_produto: { in: ids } }),
+          ...(busca.idProduto && {
+            status: "ATIVO",
+            AND: [
+              {
+                OR: [
+                  { id_cor: null },
+                  {
+                    cores: {
+                      status: "ATIVA",
+                      OR: [escopo, { id_empresa: null }],
+                    },
+                  },
+                ],
+              },
+              {
+                OR: [
+                  { id_tamanho: null },
+                  {
+                    tamanhos: {
+                      status: "ATIVO",
+                      OR: [escopo, { id_empresa: null }],
+                    },
+                  },
+                ],
+              },
+            ],
+          }),
           ...(nomesAutorizados
             ? {
                 OR: [
                   { cores: nomesAutorizados },
-                  { tamanhos: { ...escopo, nome: nomesAutorizados.nome } },
+                  { tamanhos: nomesAutorizados },
                 ],
               }
             : {}),

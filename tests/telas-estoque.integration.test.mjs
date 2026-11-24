@@ -253,6 +253,17 @@ test("Movimentos manuais, Kardex e exportações autorizadas por HTTP", async (t
         const corRara = await prisma.cores.create({
           data: { id_empresa: empresa.id, nome: `Ocre ${uid}` },
         })
+        const corLegada = await prisma.cores.create({
+          data: { id_empresa: empresa.id, nome: `Oliva ${uid}` },
+        })
+        await prisma.produto_variacoes.createMany({
+          data: Array.from({ length: 500 }, () => ({
+            id_empresa: empresa.id,
+            id_produto: alvo.id,
+            id_cor: corLegada.id,
+            status: "INATIVO",
+          })),
+        })
         const grade = await prisma.produto_variacoes.create({
           data: {
             id_empresa: empresa.id,
@@ -272,6 +283,12 @@ test("Movimentos manuais, Kardex e exportações autorizadas por HTTP", async (t
           encontrado.variacoes.map((v) => v.id),
           [grade.id],
         )
+        const soAtivas = await (await req(`${url}?idProduto=${alvo.id}`)).json()
+        assert.deepEqual(
+          soAtivas.variacoes.map((v) => v.id),
+          [grade.id],
+        )
+        assert.equal(soAtivas.excedeu.variacao, false)
         const opcoesDoFormulario = await req(`${url}?idProduto=${produto.id}`)
         assert.equal(opcoesDoFormulario.status, 200)
         const gradeDoFormulario = await opcoesDoFormulario.json()

@@ -34,6 +34,7 @@ const operacoes = {
 } as const
 type Rota = keyof typeof operacoes
 type Tentativa = { rota: Rota; chave: string; body: string }
+const semVariacao = "sem-variacao"
 function lerPendente(key: string) {
   try {
     const value = JSON.parse(sessionStorage.getItem(key) ?? "null")
@@ -80,6 +81,8 @@ export function RegistrarMovimento({
   const [local, setLocal] = useState("")
   const [setor, setSetor] = useState("")
   const [variacao, setVariacao] = useState("")
+  const [termoGrade, setTermoGrade] = useState("")
+  const [buscaGrade, setBuscaGrade] = useState("")
   const [quantidade, setQuantidade] = useState("")
   const [observacao, setObservacao] = useState("")
   const [revisao, setRevisao] = useState(0)
@@ -95,19 +98,33 @@ export function RegistrarMovimento({
   )
   const saldo = consulta?.dados
   const exigeCatalogoGrade = rota !== "ajustes" && !!produto
+  const filtrosGrade = new URLSearchParams({
+    idProduto: produto,
+    ...(buscaGrade && { variacao: buscaGrade }),
+  })
   const consultaGrade = useConsultaEstoque<Catalogo>(
     aberto && exigeCatalogoGrade && !pendente
-      ? `/api/estoque/movimentacoes/catalogo?idProduto=${produto}`
+      ? `/api/estoque/movimentacoes/catalogo?${filtrosGrade}`
       : null,
     revisao,
   )
   const grade = consultaGrade?.dados
   const variacoes = (grade?.variacoes ?? []).filter((v) => v.ativo)
+  const gradePrecisaEscolha =
+    variacoes.length > 0 || !!grade?.excedeu.variacao || !!buscaGrade
   const gradeDisponivel =
     !exigeCatalogoGrade ||
-    (!!grade && (!variacao || variacoes.some((v) => v.id === Number(variacao))))
+    (!!grade &&
+      (!gradePrecisaEscolha ||
+        variacao === semVariacao ||
+        variacoes.some((v) => v.id === Number(variacao))))
   const posicaoSetor = saldo?.idSetor ? String(saldo.idSetor) : setor
   const dadosPendentes = pendente && dadosDaTentativa(pendente)
+
+  function buscarVariacoes() {
+    setVariacao("")
+    setBuscaGrade(termoGrade.trim())
+  }
 
   function descartar(tentativa: Tentativa) {
     if (lerPendente(storage)?.chave === tentativa.chave)
@@ -179,6 +196,8 @@ export function RegistrarMovimento({
       setLocal("")
       setSetor("")
       setVariacao("")
+      setTermoGrade("")
+      setBuscaGrade("")
       setQuantidade("")
       setObservacao("")
       setCampos({})
@@ -222,7 +241,9 @@ export function RegistrarMovimento({
         : movimentoSchema.safeParse({
             ...base,
             quantidade: q,
-            ...(variacao ? { idVariacao: Number(variacao) } : {}),
+            ...(variacao && variacao !== semVariacao
+              ? { idVariacao: Number(variacao) }
+              : {}),
           })
     if (!v.success) {
       setCampos(
@@ -340,6 +361,8 @@ export function RegistrarMovimento({
                     onChange={(e) => {
                       setProduto(e.target.value)
                       setVariacao("")
+                      setTermoGrade("")
+                      setBuscaGrade("")
                       setSetor("")
                     }}
                   >
@@ -393,15 +416,54 @@ export function RegistrarMovimento({
                     <span className="text-destructive">{campos.idSetor}</span>
                   )}
                 </label>
-                {rota !== "ajustes" && variacoes.length > 0 && (
+                {exigeCatalogoGrade && (gradePrecisaEscolha || termoGrade) && (
+                  <div className="space-y-2">
+                    <label className="grid gap-1 text-sm">
+                      Buscar cor ou tamanho da movimentação
+                      <Input
+                        value={termoGrade}
+                        maxLength={100}
+                        onChange={(e) => setTermoGrade(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            buscarVariacoes()
+                          }
+                        }}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={buscarVariacoes}
+                    >
+                      Buscar variações
+                    </Button>
+                    {grade?.excedeu.variacao && (
+                      <p role="status">
+                        Há mais de 500 variações. Refine a busca.
+                      </p>
+                    )}
+                    {grade && buscaGrade && variacoes.length === 0 && (
+                      <p role="status">
+                        Nenhuma variação encontrada para a busca.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {exigeCatalogoGrade && gradePrecisaEscolha && (
                   <label className="grid gap-1 text-sm">
                     Variação da movimentação
                     <NativeSelect
                       aria-label="Variação da movimentação"
                       value={variacao}
+                      disabled={!grade}
                       onChange={(e) => setVariacao(e.target.value)}
                     >
-                      <option value="">Sem classificação por variação</option>
+                      <option value="">Selecione</option>
+                      <option value={semVariacao}>
+                        Sem classificação por variação
+                      </option>
                       {opcoes(variacoes)}
                     </NativeSelect>
                   </label>
@@ -464,7 +526,7 @@ export function RegistrarMovimento({
                 disabled={!produto}
                 onClick={() => setRevisao((v) => v + 1)}
               >
-                Atualizar saldo
+                Atualizar saldo e variações
               </Button>
               <label className="grid gap-1 text-sm">
                 Motivo da movimentação
