@@ -48,6 +48,17 @@ function lerPendente(key: string) {
   }
 }
 
+function dadosDaTentativa(tentativa: Tentativa) {
+  try {
+    const body: unknown = JSON.parse(tentativa.body)
+    const schema = tentativa.rota === "ajustes" ? ajusteSchema : movimentoSchema
+    const resultado = schema.safeParse(body)
+    return resultado.success ? resultado.data : null
+  } catch {
+    return null
+  }
+}
+
 export function RegistrarMovimento({
   catalogo,
   atualizar,
@@ -83,10 +94,20 @@ export function RegistrarMovimento({
     revisao,
   )
   const saldo = consulta?.dados
-  const variacoes = catalogo.variacoes.filter(
-    (v) => v.idProduto === Number(produto) && v.ativo,
+  const exigeCatalogoGrade = rota !== "ajustes" && !!produto
+  const consultaGrade = useConsultaEstoque<Catalogo>(
+    aberto && exigeCatalogoGrade && !pendente
+      ? `/api/estoque/movimentacoes/catalogo?idProduto=${produto}`
+      : null,
+    revisao,
   )
+  const grade = consultaGrade?.dados
+  const variacoes = (grade?.variacoes ?? []).filter((v) => v.ativo)
+  const gradeDisponivel =
+    !exigeCatalogoGrade ||
+    (!!grade && (!variacao || variacoes.some((v) => v.id === Number(variacao))))
   const posicaoSetor = saldo?.idSetor ? String(saldo.idSetor) : setor
+  const dadosPendentes = pendente && dadosDaTentativa(pendente)
 
   function descartar(tentativa: Tentativa) {
     if (lerPendente(storage)?.chave === tentativa.chave)
@@ -183,7 +204,7 @@ export function RegistrarMovimento({
 
   function confirmar(e: FormEvent) {
     e.preventDefault()
-    if (!saldo || pendente || trava.current) return
+    if (!saldo || !gradeDisponivel || pendente || trava.current) return
     const base = {
       idProduto: Number(produto),
       idLocalEstoque: Number(local),
@@ -255,6 +276,25 @@ export function RegistrarMovimento({
           {pendente ? (
             <div className="space-y-3">
               <p>{operacoes[pendente.rota]} aguardando confirmação.</p>
+              {dadosPendentes && (
+                <p>
+                  Produto #{dadosPendentes.idProduto} · Local #
+                  {dadosPendentes.idLocalEstoque} · Setor #
+                  {dadosPendentes.idSetor}
+                  {" · "}
+                  {"saldoNovo" in dadosPendentes
+                    ? `Novo saldo ${formatarQuantidade(dadosPendentes.saldoNovo)}`
+                    : `Quantidade ${formatarQuantidade(dadosPendentes.quantidade)}`}
+                  {dadosPendentes.idVariacao &&
+                    ` · Variação #${dadosPendentes.idVariacao}`}
+                  {" · "}
+                  {dadosPendentes.observacao}
+                </p>
+              )}
+              <p>
+                A recuperação reenvia a mesma operação. Se ela já foi gravada, o
+                servidor devolve o resultado anterior.
+              </p>
               {erro && (
                 <p role="alert" className="text-destructive">
                   {erro}
@@ -366,6 +406,14 @@ export function RegistrarMovimento({
                     </NativeSelect>
                   </label>
                 )}
+                {exigeCatalogoGrade && !consultaGrade && (
+                  <p role="status">Carregando variações do produto…</p>
+                )}
+                {consultaGrade?.erro && (
+                  <p role="alert" className="text-destructive">
+                    {consultaGrade.erro} Atualize o saldo e as variações.
+                  </p>
+                )}
                 <label className="grid gap-1 text-sm">
                   {rota === "ajustes" ? "Novo saldo físico" : "Quantidade"}
                   <Input
@@ -413,7 +461,7 @@ export function RegistrarMovimento({
               <Button
                 type="button"
                 variant="outline"
-                disabled={!produto || !local}
+                disabled={!produto}
                 onClick={() => setRevisao((v) => v + 1)}
               >
                 Atualizar saldo
@@ -441,6 +489,7 @@ export function RegistrarMovimento({
                   type="submit"
                   disabled={
                     !saldo ||
+                    !gradeDisponivel ||
                     ocupado ||
                     (rota === "ajustes"
                       ? !catalogo.permissoes.editar

@@ -176,7 +176,10 @@ paginação. O catálogo real autorizado está em
 `GET /api/estoque/movimentacoes/catalogo`. A tela usa somente cadastros ativos para
 novas operações e permite consultar catálogos inativos em filtros históricos.
 O catálogo retorna até 500 opções de cada tipo, sinaliza quando há mais e aceita
-busca por produto/código, nome de local ou setor e cor/tamanho.
+busca por produto/código, nome de local ou setor e cor/tamanho. A busca de
+variações por cor ou tamanho considera todo o conjunto autorizado que
+corresponde ao filtro de produto. O formulário consulta a grade do produto
+selecionado por `idProduto`, independentemente dos filtros do histórico.
 
 Nas duas telas, `GET /api/estoque/{movimentacoes|kardex}/exportar?formato=csv|pdf`
 aceita os mesmos filtros da consulta (sem paginação). Exige leitura de ESTOQUE e

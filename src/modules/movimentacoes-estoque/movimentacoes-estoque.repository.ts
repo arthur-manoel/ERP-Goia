@@ -16,6 +16,7 @@ import type {
 } from "./movimentacoes-estoque.schema"
 import { calcularSaldo } from "./movimentacoes-estoque.service"
 import { atualizarGradeEstoque } from "@/modules/estoque/estoque.grade"
+import { conferir } from "@/modules/reservas/operacoes"
 
 type Tx = Prisma.TransactionClient
 type Origem = {
@@ -122,6 +123,16 @@ export async function movimentarNaTransacao(
   // Existe mesmo antes da primeira posição. Todas as escritas deste produto
   // aguardam o mesmo lock, inclusive quando locais diferentes são usados.
   await bloquearProdutoEstoque(tx, ctx, dados.idProduto)
+  return movimentarPosicao(tx, ctx, dados, operacao, documento)
+}
+
+async function movimentarPosicao(
+  tx: Tx,
+  ctx: Contexto,
+  dados: MovimentoInput | AjusteInput,
+  operacao: "entrada" | "saida" | "ajuste",
+  documento?: Origem,
+) {
   await validarPosicao(tx, ctx, dados)
   const setor = await tx.setores.findFirst({
     where: {
@@ -220,7 +231,14 @@ export async function movimentar(
 ) {
   try {
     return await prisma.$transaction(
-      (tx) => movimentarNaTransacao(tx, ctx, dados, operacao),
+      async (tx) => {
+        await bloquearProdutoEstoque(tx, ctx, dados.idProduto)
+        await conferir(tx, ctx, [
+          ["ESTOQUE", "ler"],
+          ["ESTOQUE", operacao === "ajuste" ? "editar" : "criar"],
+        ])
+        return movimentarPosicao(tx, ctx, dados, operacao)
+      },
       { isolationLevel: "Serializable", maxWait: 10000, timeout: 15000 },
     )
   } catch (error) {
@@ -241,8 +259,8 @@ export async function consultarSaldo(
 ) {
   return prisma.$transaction(
     async (tx) => {
+      await conferir(tx, ctx, [["ESTOQUE", "ler"]])
       await validarPosicao(tx, ctx, pos)
-      const historico = await apurarSaldoEstoque(tx, ctx, pos)
       const estoque = await tx.estoque.findUnique({
         where: {
           id_empresa_id_local_estoque_id_produto: {
@@ -251,7 +269,18 @@ export async function consultarSaldo(
             id_produto: pos.idProduto,
           },
         },
+        select: {
+          id_setor: true,
+          quantidade: true,
+          quantidade_reservada: true,
+          setores: { select: { id_empresa: true } },
+        },
       })
+      if (estoque && estoque.setores.id_empresa !== ctx.idEmpresa)
+        throw new ConflictError(
+          "A posição de estoque precisa de regularização.",
+        )
+      const historico = await apurarSaldoEstoque(tx, ctx, pos)
       return {
         ...pos,
         idSetor: estoque?.id_setor ?? null,

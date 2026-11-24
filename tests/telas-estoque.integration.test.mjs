@@ -228,6 +228,64 @@ test("Movimentos manuais, Kardex e exportações autorizadas por HTTP", async (t
     assert.ok(cat.locais.some((l) => l.id === local.id))
     assert.ok(!cat.locais.some((l) => l.id === externo.id))
     await t.test(
+      "busca de grade considera todo o catálogo autorizado",
+      async () => {
+        const prefixo = `RECORTE-${uid}-`
+        const lote = Array.from({ length: 501 }, (_, i) => ({
+          id_tipo_produto: tipo.id,
+          codigo: prefixo + i,
+          nome: i === 500 ? "ZZ Produto do recorte" : "AA Produto do recorte",
+          unidade: "M",
+        }))
+        await prisma.produtos.createMany({ data: lote })
+        const itens = await prisma.produtos.findMany({
+          where: { codigo: { startsWith: prefixo } },
+          select: { id: true, codigo: true },
+        })
+        await prisma.produto_empresa.createMany({
+          data: itens.map((item) => ({
+            id_produto: item.id,
+            id_empresa: empresa.id,
+          })),
+        })
+        const alvo = itens.find((item) => item.codigo === prefixo + "500")
+        assert.ok(alvo)
+        const corRara = await prisma.cores.create({
+          data: { id_empresa: empresa.id, nome: `Ocre ${uid}` },
+        })
+        const grade = await prisma.produto_variacoes.create({
+          data: {
+            id_empresa: empresa.id,
+            id_produto: alvo.id,
+            id_cor: corRara.id,
+          },
+        })
+        const url = "/api/estoque/movimentacoes/catalogo"
+        const resultado = await req(
+          `${url}?variacao=${encodeURIComponent(corRara.nome)}`,
+        )
+        assert.equal(resultado.status, 200)
+        const encontrado = await resultado.json()
+        assert.equal(encontrado.excedeu.produto, true)
+        assert.ok(!encontrado.produtos.some((p) => p.id === alvo.id))
+        assert.deepEqual(
+          encontrado.variacoes.map((v) => v.id),
+          [grade.id],
+        )
+        const opcoesDoFormulario = await req(`${url}?idProduto=${produto.id}`)
+        assert.equal(opcoesDoFormulario.status, 200)
+        const gradeDoFormulario = await opcoesDoFormulario.json()
+        assert.deepEqual(
+          gradeDoFormulario.produtos.map((p) => p.id),
+          [produto.id],
+        )
+        assert.deepEqual(
+          gradeDoFormulario.variacoes.map((v) => v.id),
+          [variacao.id],
+        )
+      },
+    )
+    await t.test(
       "Produto legado e identidades que diferem por caixa",
       async () => {
         const historico = await prisma.produtos.create({

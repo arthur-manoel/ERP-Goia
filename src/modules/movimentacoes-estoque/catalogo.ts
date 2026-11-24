@@ -1,5 +1,6 @@
 import "server-only"
 import { z } from "zod"
+import type { Prisma } from "@/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { conferir, type Contexto } from "@/modules/reservas/operacoes"
 import { variacaoAtivaNaEmpresa } from "@/modules/estoque/estoque.grade"
@@ -7,6 +8,7 @@ import { variacaoAtivaNaEmpresa } from "@/modules/estoque/estoque.grade"
 const textoBusca = z.string().trim().min(1).max(100).optional()
 export const buscaCatalogoSchema = z.strictObject({
   escopo: z.enum(["movimentacoes", "kardex"]).optional(),
+  idProduto: z.coerce.number().int().positive().max(2147483647).optional(),
   produto: textoBusca,
   local: textoBusca,
   setor: textoBusca,
@@ -22,45 +24,47 @@ export function consultarCatalogo(
     async (tx) => {
       await conferir(tx, ctx, [["ESTOQUE", "ler"]])
       const escopo = { id_empresa: ctx.idEmpresa }
-      const [produtos, locais, setores, vinculo] = await Promise.all([
-        tx.produtos.findMany({
-          where: {
-            AND: [
+      const filtroProduto: Prisma.produtosWhereInput = {
+        ...(busca.idProduto && { id: busca.idProduto }),
+        AND: [
+          {
+            OR: [
+              { produto_empresa: { some: escopo } },
               {
-                OR: [
-                  { produto_empresa: { some: escopo } },
-                  {
-                    movimentacao_estoque: {
-                      some: {
-                        ...escopo,
-                        ...(busca.escopo === "kardex"
-                          ? { kardex: { is: { ...escopo } } }
-                          : {}),
-                      },
-                    },
+                movimentacao_estoque: {
+                  some: {
+                    ...escopo,
+                    ...(busca.escopo === "kardex"
+                      ? { kardex: { is: { ...escopo } } }
+                      : {}),
                   },
-                ],
+                },
               },
-              ...(busca.produto
-                ? [
-                    {
-                      OR: [
-                        { nome: { contains: busca.produto } },
-                        { codigo: { contains: busca.produto } },
-                        {
-                          produto_empresa: {
-                            some: {
-                              ...escopo,
-                              codigo_interno: { contains: busca.produto },
-                            },
-                          },
-                        },
-                      ],
-                    },
-                  ]
-                : []),
             ],
           },
+          ...(busca.produto
+            ? [
+                {
+                  OR: [
+                    { nome: { contains: busca.produto } },
+                    { codigo: { contains: busca.produto } },
+                    {
+                      produto_empresa: {
+                        some: {
+                          ...escopo,
+                          codigo_interno: { contains: busca.produto },
+                        },
+                      },
+                    },
+                  ],
+                },
+              ]
+            : []),
+        ],
+      }
+      const [produtos, locais, setores, vinculo] = await Promise.all([
+        tx.produtos.findMany({
+          where: filtroProduto,
           orderBy: [{ nome: "asc" }, { id: "asc" }],
           take: limite + 1,
           select: {
@@ -119,7 +123,9 @@ export function consultarCatalogo(
       const variacoes = await tx.produto_variacoes.findMany({
         where: {
           ...escopo,
-          id_produto: { in: ids },
+          ...(termo
+            ? { produtos: filtroProduto }
+            : { id_produto: { in: ids } }),
           ...(nomesAutorizados
             ? {
                 OR: [

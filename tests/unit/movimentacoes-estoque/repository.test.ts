@@ -9,6 +9,7 @@ import {
 vi.mock("server-only", () => ({}))
 const tx = {
   $queryRaw: vi.fn(),
+  usuario_empresa: { findFirst: vi.fn() },
   produto_empresa: { findFirst: vi.fn() },
   locais_estoque: { findFirst: vi.fn() },
   setores: { findFirst: vi.fn() },
@@ -29,6 +30,7 @@ const dados = {
 const estoque = {
   id: 4,
   id_setor: 3,
+  setores: { id_empresa: ctx.idEmpresa },
   quantidade: new Prisma.Decimal(10),
   quantidade_reservada: new Prisma.Decimal(1),
 }
@@ -37,6 +39,11 @@ beforeEach(() => {
     _sum: { quantidade: null },
   })
   db.$transaction.mockImplementation(async (run) => run(tx))
+  tx.usuario_empresa.findFirst.mockResolvedValue({
+    nivel_acesso: "EMPRESA",
+    usuarios: { nivel_acesso: "USUARIO" },
+    permissoes_usuario: [],
+  })
   tx.$queryRaw.mockResolvedValue([{ id: 1 }])
   tx.produto_empresa.findFirst.mockResolvedValue({ id: 1 })
   tx.locais_estoque.findFirst.mockResolvedValue({ id: 2 })
@@ -68,6 +75,9 @@ it("bloqueia chave parametrizada antes das leituras e mantém todos os registros
   expect(values).toEqual([10, 1])
   expect(tx.$queryRaw.mock.calls[2][0].join("?")).toContain("FROM produtos")
   expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    tx.usuario_empresa.findFirst.mock.invocationCallOrder[0],
+  )
+  expect(tx.usuario_empresa.findFirst.mock.invocationCallOrder[0]).toBeLessThan(
     tx.estoque.findUnique.mock.invocationCallOrder[0],
   )
   expect(tx.estoque.updateMany).toHaveBeenCalledWith({
@@ -93,6 +103,14 @@ it("bloqueia chave parametrizada antes das leituras e mantém todos os registros
     }),
   })
   expect(tx.auditoria.create).toHaveBeenCalledTimes(1)
+})
+it("recusa a escrita quando a autorização já não é válida na transação", async () => {
+  tx.usuario_empresa.findFirst.mockResolvedValue(null)
+  await expect(movimentar(ctx, dados, "saida")).rejects.toMatchObject({
+    status: 403,
+  })
+  expect(tx.estoque.updateMany).not.toHaveBeenCalled()
+  expect(tx.movimentacao_estoque.create).not.toHaveBeenCalled()
 })
 it("propaga falha de auditoria para o rollback em vez de retornar sucesso parcial", async () => {
   tx.auditoria.create.mockRejectedValue(new Error("auditoria indisponível"))
@@ -151,4 +169,14 @@ it("consulta soma os oito tipos no snapshot e filtra empresa/local/produto", asy
   })
   expect(tx.$queryRaw).not.toHaveBeenCalled()
   expect(tx.estoque.updateMany).not.toHaveBeenCalled()
+})
+it("saldo recusa a posição legada que referencia setor alheio", async () => {
+  tx.estoque.findUnique.mockResolvedValue({
+    ...estoque,
+    setores: { id_empresa: ctx.idEmpresa + 1 },
+  })
+  await expect(consultarSaldo(ctx, dados)).rejects.toMatchObject({
+    status: 409,
+  })
+  expect(tx.movimentacao_estoque.groupBy).not.toHaveBeenCalled()
 })
