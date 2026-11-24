@@ -770,6 +770,49 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         )
         assert.equal(await saldoLoja(), "0.000")
 
+        const antesRecuperar = await snapshot()
+        const headers = { "X-Recuperar-Transferencia": "1" }
+        const conhecida = await a.chamar(rotaEnvio, "POST", dados, {
+          chave,
+          headers,
+        })
+        assert.equal(conhecida.status, 200)
+        assert.deepEqual(conhecida.body.data, enviado)
+        for (const opts of [{ chave: randomUUID() }, { ...outro, chave }]) {
+          const recusada = await a.chamar(rotaEnvio, "POST", dados, {
+            ...opts,
+            headers,
+          })
+          assert.equal(recusada.status, 404)
+          assert.equal(recusada.body.code, "RECUPERACAO_INDISPONIVEL")
+        }
+        const conflitoLocal = await post(
+          rotaEnvio,
+          {
+            ...dados,
+            idSetorDestino: setores[2].id,
+            quantidade: "1.000",
+          },
+          randomUUID(),
+          409,
+        )
+        assert.equal(conflitoLocal.code, "TRANSFERENCIA_RECUSADA")
+        const conflitoSetor = await post(
+          rotaEnvio,
+          {
+            ...dados,
+            idLocalDestino: locais[0].id,
+            quantidade: "1.000",
+          },
+          randomUUID(),
+          409,
+        )
+        assert.equal(conflitoSetor.code, "TRANSFERENCIA_RECUSADA")
+        assert.equal(
+          (await posicao(produto, locais[3].id)).quantidade.toFixed(3),
+          "0.000",
+        )
+        assert.equal(await snapshot(), antesRecuperar)
         const rotaConsulta = "/api/estoque/transferencias"
         const lista = await a.chamar(
           `${rotaConsulta}?status=ENVIADA&idLocalDestino=${locais[3].id}&limite=1`,
@@ -844,7 +887,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           },
           { chave: randomUUID() },
         )
-        assert.equal(reservaEmTransito.status, 404)
+        assert.equal(reservaEmTransito.status, 409)
         assert.equal(await saldoLoja(), "0.000")
         assert.equal(await snapshot(), antesReceber)
 
@@ -2225,6 +2268,18 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         assert.equal(
           (await posicao(novo.id, locais[3].id)).quantidade.toFixed(3),
           "0.200",
+        )
+        const seguinte = await postOutro(rota, {
+          ...dados,
+          quantidade: "0.100",
+        })
+        assert.notEqual(seguinte.idTransferencia, linha.id)
+        const posicaoDestino = await posicao(novo.id, locais[3].id)
+        assert.equal(posicaoDestino.id_setor, setores[6].id)
+        assert.equal(posicaoDestino.quantidade.toFixed(3), "0.200")
+        assert.equal(
+          (await posicao(novo.id, locais[1].id)).quantidade.toFixed(3),
+          "0.000",
         )
       },
     )

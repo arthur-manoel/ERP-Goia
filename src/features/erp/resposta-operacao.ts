@@ -5,7 +5,8 @@ const recusasDefinitivas = [400, 403, 404, 409, 413, 415, 422]
 export async function lerRespostaOperacao(
   resposta: Response,
   descartarTentativa: () => void,
-  exigirRecusaConfirmada: boolean | "TRANSFERENCIA_RECUSADA" = false,
+  exigirRecusaConfirmada:
+    boolean | "TRANSFERENCIA_RECUSADA" | "RECUPERACAO_INDISPONIVEL" = false,
 ) {
   if (resposta.ok) return resposta.json()
   const dados = await resposta.json().catch(() => null)

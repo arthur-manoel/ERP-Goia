@@ -1,6 +1,13 @@
 import "server-only"
 import { Prisma } from "@/generated/prisma/client"
-import { ConflictError, NotFoundError, ValidationError } from "@/lib/api/errors"
+import {
+  ConflictError,
+  HttpError,
+  NotFoundError,
+  ValidationError,
+} from "@/lib/api/errors"
+import { EstoqueError } from "@/modules/estoque/estoque.error"
+import { criarVinculoEstoqueNaTransacao } from "@/modules/estoque/estoque.repository"
 import { movimentarNaTransacao } from "@/modules/movimentacoes-estoque/movimentacoes-estoque.repository"
 import { variacaoAtivaNaEmpresa } from "@/modules/estoque/estoque.grade"
 import {
@@ -528,27 +535,41 @@ export async function enviarTransferencia(
     throw new NotFoundError(
       "Local e setor de destino ativos não encontrados na empresa.",
     )
-  const posicoesDestino = await tx.estoque.findMany({
+  const destinoPendente = await tx.transferencia_estoque.findFirst({
     where: {
       id_empresa: ctx.idEmpresa,
       id_produto: input.idProduto,
+      status: "ENVIADA",
       OR: [
-        { id_local_estoque: input.idLocalDestino },
-        { id_setor: input.idSetorDestino },
+        {
+          id_local_destino: input.idLocalDestino,
+          id_setor_destino: { not: input.idSetorDestino },
+        },
+        {
+          id_setor_destino: input.idSetorDestino,
+          id_local_destino: { not: input.idLocalDestino },
+        },
       ],
     },
-    select: { id_local_estoque: true, id_setor: true },
+    select: { id: true },
   })
-  if (
-    posicoesDestino.some(
-      (p) =>
-        p.id_local_estoque !== input.idLocalDestino ||
-        p.id_setor !== input.idSetorDestino,
-    )
-  )
+  if (destinoPendente)
     throw new ConflictError(
-      "Local e setor de destino não correspondem à posição de estoque deste produto.",
+      "Existe uma transferência em trânsito com outro vínculo entre local e setor de destino.",
     )
+  // Vincular a posição de destino sem movimento evita expedir para duas
+  // combinações de local e setor que não poderão coexistir no recebimento.
+  try {
+    await criarVinculoEstoqueNaTransacao(tx, ctx, {
+      idProduto: input.idProduto,
+      idLocalEstoque: input.idLocalDestino,
+      idSetor: input.idSetorDestino,
+    })
+  } catch (erro) {
+    if (erro instanceof EstoqueError)
+      throw new HttpError(erro.status, erro.message)
+    throw erro
+  }
 
   const mov = await movimentarNaTransacao(
     tx,

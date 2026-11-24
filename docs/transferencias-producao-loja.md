@@ -10,7 +10,10 @@ pela equipe. O saldo da loja fica intacto enquanto houver divergência.
 A posição é específica por empresa, produto e local, com um setor associado.
 O cadastro atual também tem unicidade por empresa, produto e setor. O fluxo
 usa locais e setores ativos configurados na empresa, sem classificação
-estrutural de fábrica e loja. O saldo segue a unidade do produto e a escala
+estrutural de fábrica e loja. Se faltar a posição de destino, o envio
+vincula o local e o setor usando o cadastro de estoque com saldo zero.
+Assim, outra expedição incompatível é recusada antes de baixar a origem.
+O saldo segue a unidade do produto e a escala
 de até três casas adotada pelo serviço de estoque. Estoque sem variação é
 tratado separadamente da grade. Não há atribuição de OP ou lote ao saldo
 agrupado.
@@ -46,6 +49,13 @@ com outra chave e contagem correta recebe a referência da entrada já registrad
 A API só aceita o antigo corpo `{}` para recuperar um resultado já gravado
 com exatamente essa chave e esse conteúdo. Uma tentativa nova sempre requer
 contagem.
+
+Tentativas novas são preservadas por ID de usuário e empresa. Para uma
+tentativa da interface antiga, vinculada por e-mail, a interface envia
+`X-Recuperar-Transferencia: 1`. Esse modo só retorna uma operação já gravada
+com os mesmos usuário, empresa, chave e conteúdo. Se não houver resultado
+da conta atual, retorna 404 com `RECUPERACAO_INDISPONIVEL`. Confira o
+histórico antes de iniciar uma nova transferência.
 
 A saída, a entrada e a mudança de situação usam o serviço canônico e suas
 transações. A auditoria da transferência recebida registra a quantidade

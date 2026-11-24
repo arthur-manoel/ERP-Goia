@@ -212,6 +212,37 @@ const assinar = (fn: () => void) => {
   window.addEventListener("storage", fn)
   return () => window.removeEventListener("storage", fn)
 }
+const rotaDeTransferencia = (url: string) =>
+  /^\/api\/estoque\/transferencias\/(?:enviar|\d+\/receber)$/.test(url)
+
+function lerPendente(armazenado: string | null): Pendente | null {
+  try {
+    const v = armazenado ? (JSON.parse(armazenado) as Pendente) : null
+    return v &&
+      typeof v.url === "string" &&
+      v.url.startsWith("/api/") &&
+      typeof v.chave === "string" &&
+      ["POST", "PUT", "PATCH"].includes(v.metodo)
+      ? v
+      : null
+  } catch {
+    return null
+  }
+}
+
+function useRegistroSessao(chave: string) {
+  return useSyncExternalStore(
+    assinar,
+    useCallback(() => {
+      try {
+        return sessionStorage.getItem(chave)
+      } catch {
+        return null
+      }
+    }, [chave]),
+    () => null,
+  )
+}
 async function json<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const erro = await response.json().catch(() => null)
@@ -353,7 +384,7 @@ export function OperacoesEstoque({ origem = "RESERVAS" }: { origem?: Origem }) {
       )}
       {estado === "carregando" ? (
         <Skeleton className="h-64 w-full" />
-      ) : estado !== "autenticado" || !empresa ? (
+      ) : estado !== "autenticado" || !empresa || !usuario ? (
         <Alert>
           <AlertDescription>
             Entre na sua conta e selecione uma empresa.
@@ -361,9 +392,10 @@ export function OperacoesEstoque({ origem = "RESERVAS" }: { origem?: Origem }) {
         </Alert>
       ) : (
         <Conteudo
-          key={`${usuario?.email}:${empresa.id}:${origem}`}
+          key={`${usuario.id}:${empresa.id}:${origem}`}
           origem={origem}
-          identidade={`${usuario?.email}:${empresa.id}`}
+          identidade={`${usuario.email}:${empresa.id}`}
+          idUsuario={usuario.id}
           idEmpresa={empresa.id}
         />
       )}
@@ -374,10 +406,12 @@ export function OperacoesEstoque({ origem = "RESERVAS" }: { origem?: Origem }) {
 function Conteudo({
   origem,
   identidade,
+  idUsuario,
   idEmpresa,
 }: {
   origem: Origem
   identidade: string
+  idUsuario: string | number
   idEmpresa: number
 }) {
   const { requisitar: executarRequisicao } = useAutenticacao()
@@ -400,32 +434,23 @@ function Conteudo({
   const trava = useRef(false)
   const envioAtivo = useRef<AbortController | null>(null)
   useEffect(() => () => envioAtivo.current?.abort(), [])
-  const chaveStorage = `erp-operacao-estoque:${identidade}`
-  const armazenado = useSyncExternalStore(
-    assinar,
-    useCallback(() => {
-      try {
-        return sessionStorage.getItem(chaveStorage)
-      } catch {
-        return null
-      }
-    }, [chaveStorage]),
-    () => null,
+  const chaveOperacoes = `erp-operacao-estoque:${identidade}`
+  const chaveTransferencias = `erp-transferencia-estoque:${idUsuario}:${idEmpresa}`
+  const registroOperacoes = useRegistroSessao(chaveOperacoes)
+  const registroTransferencias = useRegistroSessao(chaveTransferencias)
+  const pendenteOperacoes = useMemo(
+    () => lerPendente(registroOperacoes),
+    [registroOperacoes],
   )
-  const pendente = useMemo<Pendente | null>(() => {
-    try {
-      const v = armazenado ? (JSON.parse(armazenado) as Pendente) : null
-      return v &&
-        typeof v.url === "string" &&
-        v.url.startsWith("/api/") &&
-        typeof v.chave === "string" &&
-        ["POST", "PUT", "PATCH"].includes(v.metodo)
-        ? v
-        : null
-    } catch {
-      return null
-    }
-  }, [armazenado])
+  const pendenteTransferencia = useMemo(
+    () => lerPendente(registroTransferencias),
+    [registroTransferencias],
+  )
+  const pendente = pendenteTransferencia ?? pendenteOperacoes
+  const transferenciaLegada =
+    !pendenteTransferencia &&
+    pendenteOperacoes !== null &&
+    rotaDeTransferencia(pendenteOperacoes.url)
   const [buscaProduto, setBuscaProduto] = useState("")
   const {
     dados: opcoes,
@@ -446,6 +471,15 @@ function Conteudo({
   ) {
     if (trava.current) return
     const retomada = pendente !== null
+    if (pendente && (url !== pendente.url || body !== pendente.body)) return
+    const noRegistroDeTransferencias =
+      Boolean(pendenteTransferencia) || (!pendente && rotaDeTransferencia(url))
+    const chaveStorage = noRegistroDeTransferencias
+      ? chaveTransferencias
+      : chaveOperacoes
+    const armazenado = noRegistroDeTransferencias
+      ? registroTransferencias
+      : registroOperacoes
     const tentativa = pendente ?? {
       url,
       body,
@@ -487,6 +521,7 @@ function Conteudo({
           "Content-Type": "application/json",
           "Idempotency-Key": tentativa.chave,
           ...tentativa.headers,
+          ...(transferenciaLegada && { "X-Recuperar-Transferencia": "1" }),
         },
         body: JSON.stringify(tentativa.body),
       })
@@ -497,9 +532,11 @@ function Conteudo({
           limparTentativa()
           setRevisao((r) => r + 1)
         },
-        retomada && (despacho || recebimento)
-          ? "TRANSFERENCIA_RECUSADA"
-          : entrega && retomada,
+        transferenciaLegada
+          ? "RECUPERACAO_INDISPONIVEL"
+          : retomada && (despacho || recebimento)
+            ? "TRANSFERENCIA_RECUSADA"
+            : entrega && retomada,
       )
       if (!resposta.ok) {
         throw new Error(
@@ -582,7 +619,9 @@ function Conteudo({
                 enviar(pendente.url, pendente.body, pendente.metodo)
               }
             >
-              Repetir a mesma confirmação
+              {transferenciaLegada
+                ? "Consultar confirmação antiga"
+                : "Repetir a mesma confirmação"}
             </Button>
           </AlertDescription>
         </Alert>

@@ -21,6 +21,7 @@ import {
   conferir,
   executar,
   auditar,
+  RecuperacaoIndisponivel,
   type Exigencia,
 } from "./operacoes"
 import * as schemas from "./reservas.schema"
@@ -597,6 +598,9 @@ export async function operacoesHandler(
         "editar",
       ])
     }
+    const somenteRecuperar =
+      (op === "transferir" || op === "receberTransferencia") &&
+      request.headers.get("X-Recuperar-Transferencia") === "1"
     const data = await executar(
       ctx,
       chave,
@@ -763,7 +767,9 @@ export async function operacoesHandler(
               ])
             },
           }
-        : undefined,
+        : somenteRecuperar
+          ? { somenteRecuperar: true }
+          : undefined,
     )
     return Response.json(
       { success: true, data: data.dados, criado: data.criado },
@@ -776,7 +782,8 @@ export async function operacoesHandler(
       {
         success: false,
         ...(erro instanceof ConflitoTransitorio ||
-        erro instanceof OperacaoRecusada
+        erro instanceof OperacaoRecusada ||
+        erro instanceof RecuperacaoIndisponivel
           ? { code: erro.code }
           : {}),
         error:

@@ -120,6 +120,17 @@ function canonizar(input: unknown, campo = ""): unknown {
 export function chaveMovimento(prefixo: string, chave: string) {
   return `${prefixo}:${createHash("sha256").update(chave).digest("hex")}`
 }
+export class RecuperacaoIndisponivel extends HttpError {
+  readonly code = "RECUPERACAO_INDISPONIVEL"
+
+  constructor() {
+    super(
+      404,
+      "Tentativa antiga sem resultado recuperável para esta conta. Confira o histórico antes de iniciar outra transferência.",
+    )
+  }
+}
+
 export async function executar<T extends Prisma.InputJsonValue>(
   ctx: Contexto,
   chave: string,
@@ -127,7 +138,11 @@ export async function executar<T extends Prisma.InputJsonValue>(
   input: unknown,
   exigencias: Exigencia[],
   operacao: (tx: Tx) => Promise<T>,
-  opcoes?: { validar?: (tx: Tx) => Promise<void>; timeout?: number },
+  opcoes?: {
+    validar?: (tx: Tx) => Promise<void>
+    timeout?: number
+    somenteRecuperar?: boolean
+  },
 ) {
   const hash = createHash("sha256")
     .update(
@@ -153,12 +168,15 @@ export async function executar<T extends Prisma.InputJsonValue>(
               anterior.hash !== hash ||
               anterior.id_usuario !== ctx.idUsuario ||
               anterior.tipo !== tipo
-            )
+            ) {
+              if (opcoes?.somenteRecuperar) throw new RecuperacaoIndisponivel()
               throw new ConflictError(
                 "Chave já utilizada para outra operação. Repita os mesmos dados com a mesma chave.",
               )
+            }
             return { dados: anterior.resultado as T, criado: false }
           }
+          if (opcoes?.somenteRecuperar) throw new RecuperacaoIndisponivel()
           const dados = await operacao(tx)
           await tx.operacao_erp.create({
             data: {
