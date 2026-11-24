@@ -404,12 +404,12 @@ try {
       ...cabecalho,
       idCompra: f.compra,
       valorTotal: "60.00",
-      dataRecebimento: recebida.nota.dataRecebimento?.slice(0, 10),
       versaoEsperada: recebida.nota.versao,
     }
     const editada = await call(f, url, "PUT", corrigido)
     assert.equal(editada.nota.status, "RECEBIDA")
     assert.equal(editada.nota.entradaProcessada, false)
+    assert.equal(editada.nota.dataRecebimento, recebida.nota.dataRecebimento)
     assert.equal(editada.nota.compra.id, f.compra)
     assert.equal((await fisico(f)).total, "0.000")
     await call(f, url + "/itens", "PUT", {

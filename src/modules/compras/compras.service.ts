@@ -1551,7 +1551,14 @@ export function editarNota(ctx: Contexto, id: number, input: EditarNotaInput) {
         versao: antes.versao,
         entrada_processada: false,
       },
-      data: { ...dados, versao: { increment: 1 } },
+      data: {
+        ...dados,
+        data_recebimento:
+          antes.status === "RECEBIDA"
+            ? (dados.data_recebimento ?? undefined)
+            : dados.data_recebimento,
+        versao: { increment: 1 },
+      },
     })
     if (r.count !== 1) throw conflito("A nota foi alterada por outra operação.")
     const depois = await carregarNota(tx, ctx, id)
