@@ -8,7 +8,15 @@ import { disputaPersistencia } from "@/lib/prisma-concorrencia"
 export type Tx = Prisma.TransactionClient
 export type Contexto = { idEmpresa: number; idUsuario: number }
 export type Exigencia = [
-  "ESTOQUE" | "PEDIDOS" | "ORDENS_PRODUCAO" | "FINANCEIRO" | "RELATORIOS",
+  (
+    | "ESTOQUE"
+    | "PEDIDOS"
+    | "ORDENS_PRODUCAO"
+    | "FINANCEIRO"
+    | "COMPRAS"
+    | "NOTAS_FISCAIS"
+    | "RELATORIOS"
+  ),
   "ler" | "criar" | "editar" | "excluir",
 ]
 export async function conferir(
@@ -129,48 +137,20 @@ export async function executar<T extends Prisma.InputJsonValue>(
   operacao: (tx: Tx) => Promise<T>,
   opcoes?: { validar?: (tx: Tx) => Promise<void>; timeout?: number },
 ) {
-  const hash = createHash("sha256")
-    .update(
-      JSON.stringify({
-        tipo,
-        idUsuario: ctx.idUsuario,
-        input: canonizar(input),
-      }),
-    )
-    .digest("hex")
   for (let i = 0; i < 3; i++) {
     try {
       return await prisma.$transaction(
         async (tx) => {
-          await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
-          await conferir(tx, ctx, exigencias)
-          await opcoes?.validar?.(tx)
-          const anterior = await tx.operacao_erp.findUnique({
-            where: { id_empresa_chave: { id_empresa: ctx.idEmpresa, chave } },
-          })
-          if (anterior) {
-            if (
-              anterior.hash !== hash ||
-              anterior.id_usuario !== ctx.idUsuario ||
-              anterior.tipo !== tipo
-            )
-              throw new ConflictError(
-                "Chave já utilizada para outra operação. Repita os mesmos dados com a mesma chave.",
-              )
-            return { dados: anterior.resultado as T, criado: false }
-          }
-          const dados = await operacao(tx)
-          await tx.operacao_erp.create({
-            data: {
-              id_empresa: ctx.idEmpresa,
-              id_usuario: ctx.idUsuario,
-              chave,
-              hash,
-              tipo,
-              resultado: dados,
-            },
-          })
-          return { dados, criado: true }
+          return executarNaTransacao(
+            tx,
+            ctx,
+            chave,
+            tipo,
+            input,
+            exigencias,
+            operacao,
+            opcoes?.validar,
+          )
         },
         {
           isolationLevel: "Serializable",
@@ -187,4 +167,54 @@ export async function executar<T extends Prisma.InputJsonValue>(
     }
   }
   throw new ConflictError("Operação não confirmada.")
+}
+
+export async function executarNaTransacao<T extends Prisma.InputJsonValue>(
+  tx: Tx,
+  ctx: Contexto,
+  chave: string,
+  tipo: string,
+  input: unknown,
+  exigencias: Exigencia[],
+  operacao: (tx: Tx) => Promise<T>,
+  validar?: (tx: Tx) => Promise<void>,
+) {
+  const hash = createHash("sha256")
+    .update(
+      JSON.stringify({
+        tipo,
+        idUsuario: ctx.idUsuario,
+        input: canonizar(input),
+      }),
+    )
+    .digest("hex")
+  await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
+  await conferir(tx, ctx, exigencias)
+  await validar?.(tx)
+  const anterior = await tx.operacao_erp.findUnique({
+    where: { id_empresa_chave: { id_empresa: ctx.idEmpresa, chave } },
+  })
+  if (anterior) {
+    if (
+      anterior.hash !== hash ||
+      anterior.id_usuario !== ctx.idUsuario ||
+      anterior.tipo !== tipo
+    )
+      throw new ConflictError(
+        "Chave já utilizada para outra operação. Repita os mesmos dados com a mesma chave.",
+      )
+    return { dados: anterior.resultado as T, criado: false }
+  }
+  const dados = await operacao(tx)
+  await tx.operacao_erp.create({
+    data: {
+      id_empresa: ctx.idEmpresa,
+      id_usuario: ctx.idUsuario,
+      chave,
+      hash,
+      tipo,
+      resultado: dados,
+    },
+  })
+  return { dados, criado: true }
 }

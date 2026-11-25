@@ -39,7 +39,7 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Auditoria das operações | ✅ | `auditoria` | [#14](https://github.com/arthur-manoel/ERP-Goia/issues/14) |
 | Administração | ⬜ | `empresas`, `setores`, `tipos_setor`, `permissoes_setor`, `cargos` | [#16](https://github.com/arthur-manoel/ERP-Goia/issues/16) a [#18](https://github.com/arthur-manoel/ERP-Goia/issues/18) |
 | Cadastros | 🟨 | `clientes`, `fornecedores`, `empresa_fornecedor`, `categorias`, `cores`, `tamanhos`, `tipos_produto` | [#20](https://github.com/arthur-manoel/ERP-Goia/issues/20) a [#25](https://github.com/arthur-manoel/ERP-Goia/issues/25) |
-| Produtos e ficha técnica | ⬜ | `produtos`, `produto_empresa`, `produto_variacoes`, `produto_fornecedor`, `ficha_tecnica`, `ficha_tecnica_item` | [#26](https://github.com/arthur-manoel/ERP-Goia/issues/26) a [#28](https://github.com/arthur-manoel/ERP-Goia/issues/28) |
+| Produtos e ficha técnica | 🟨 | `produtos`, `produto_empresa`, `produto_variacoes`, `produto_fornecedor`, `ficha_tecnica`, `ficha_tecnica_item` | [#26](https://github.com/arthur-manoel/ERP-Goia/issues/26) a [#28](https://github.com/arthur-manoel/ERP-Goia/issues/28) |
 | Estoque | 🟨 | `locais_estoque`, `estoque`, `estoque_minimo_local`, `movimentacao_estoque`, `kardex`, `reserva_estoque` | [#29](https://github.com/arthur-manoel/ERP-Goia/issues/29) a [#32](https://github.com/arthur-manoel/ERP-Goia/issues/32) |
 | Compras | ⬜ | `requisicao_compra`, `item_requisicao_compra`, `pedido_compra`, `item_pedido_compra`, `compras`, `compra_itens` | [#33](https://github.com/arthur-manoel/ERP-Goia/issues/33) a [#35](https://github.com/arthur-manoel/ERP-Goia/issues/35) |
 | Notas fiscais de entrada | ⬜ | `nota_fiscal`, `item_nota_fiscal` | [#36](https://github.com/arthur-manoel/ERP-Goia/issues/36) |
@@ -580,6 +580,8 @@ banco compartilhado/produção cabe ao responsável após conferência/aprovaç�
 Enviar ou incorporar a PR não executa DDL automaticamente.
 
 ## Histórico
+
+- 20/11/2026: interface de fornecedores do produto em `/produtos`, com condições comerciais, principal, edição parcial e situação; grade existente reaproveitada. APIs de variações e produto-fornecedor pendentes de implementação pelo backend. Contrato em [docs/produtos-variacoes-fornecedores-ui.md](docs/produtos-variacoes-fornecedores-ui.md).
 
 - 11/11/2026: tela de auditoria em `/admin/auditoria`, filtros por período/usuário/tabela/registro, snapshots antes/depois e auditoria transacional dos catálogos. Contrato e cobertura em [src/modules/auditoria/README.md](src/modules/auditoria/README.md).
 

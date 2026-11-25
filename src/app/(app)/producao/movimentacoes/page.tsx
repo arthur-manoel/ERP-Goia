@@ -1,17 +1,19 @@
 import type { Metadata } from "next"
-import { PageHeader } from "@/components/layout/page-header"
-import { Apontamento } from "@/components/producao/apontamento"
-
-export const metadata: Metadata = { title: "Apontamento de produção" }
-
-export default function Page() {
-  return (
-    <>
-      <PageHeader
-        titulo="Apontamento de produção"
-        descricao="Registro do que foi produzido em cada etapa e do que foi perdido, com motivo."
-      />
-      <Apontamento />
-    </>
-  )
+import { MovimentacaoSetores } from "@/features/producao/components/movimentacao-setores"
+export const metadata: Metadata = {
+  title: "Apontamentos e movimentação de produção",
+}
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ ordem?: string | string[] }>
+}) {
+  const raw = (await searchParams).ordem
+  const ordem =
+    typeof raw === "string" &&
+    /^[1-9]\d{0,9}$/.test(raw) &&
+    Number(raw) <= 2147483647
+      ? raw
+      : ""
+  return <MovimentacaoSetores ordemInicial={ordem} />
 }

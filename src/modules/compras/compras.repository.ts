@@ -51,7 +51,7 @@ export function leitura<T>(operation: (tx: Transaction) => Promise<T>) {
 export async function gravacao<T>(
   ctx: Contexto,
   operation: (tx: Transaction) => Promise<T>,
-  { repetirConflito = false } = {},
+  { repetirConflito = false, repetirDisputa = 0, timeout = 15000 } = {},
 ) {
   try {
     return await prisma.$transaction(
@@ -63,9 +63,14 @@ export async function gravacao<T>(
           throw new ComprasError(403, "Acesso negado à empresa.")
         return operation(tx)
       },
-      { isolationLevel: "Serializable", timeout: 15000 },
+      { isolationLevel: "Serializable", timeout },
     )
   } catch (error) {
+    if (repetirDisputa > 0 && disputaPersistencia(error))
+      return gravacao(ctx, operation, {
+        repetirDisputa: repetirDisputa - 1,
+        timeout,
+      })
     if (
       repetirConflito &&
       error instanceof Prisma.PrismaClientKnownRequestError &&

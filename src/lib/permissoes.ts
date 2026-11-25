@@ -19,6 +19,7 @@ export const RECURSOS_PERMISSAO = [
   "FLUXOS_PRODUCAO",
   "TAMANHOS",
   "TIPOS_PRODUTO",
+  "EMPRESAS",
 ] as const satisfies readonly permissoes_usuario_recurso[]
 
 export type RecursoPermissao = permissoes_usuario_recurso

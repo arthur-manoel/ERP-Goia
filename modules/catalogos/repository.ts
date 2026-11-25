@@ -8,7 +8,7 @@ import {
   acaoValida,
   type RecursoPermissao,
 } from "@/lib/permissoes"
-// Resource mantém a assinatura pública dos catálogos; a autorização cobre os 18 recursos.
+// Resource mantém a assinatura pública dos catálogos; a autorização cobre os recursos do catálogo.
 export async function allowedCompanies(
   id: number,
   recurso: RecursoPermissao,
