@@ -21,7 +21,6 @@ import {
   conferir,
   executar,
   auditar,
-  RecuperacaoIndisponivel,
   type Exigencia,
 } from "./operacoes"
 import * as schemas from "./reservas.schema"
@@ -42,6 +41,17 @@ class OperacaoRecusada extends HttpError {
     readonly code: string,
   ) {
     super(status, mensagem)
+  }
+}
+
+class RecuperacaoIndisponivel extends HttpError {
+  readonly code = "RECUPERACAO_INDISPONIVEL"
+
+  constructor() {
+    super(
+      404,
+      "Tentativa antiga sem resultado recuperável para esta conta. Confira o histórico antes de iniciar outra transferência.",
+    )
   }
 }
 
@@ -608,6 +618,8 @@ export async function operacoesHandler(
       body,
       exigencias,
       async (tx) => {
+        // O executor só chama este bloco quando a chave ainda não tem resultado.
+        if (somenteRecuperar) throw new RecuperacaoIndisponivel()
         if (op === "reservas")
           return reservar(tx, ctx, validate(schemas.reservaSchema, body))
         if (op === "liberar") {
@@ -767,10 +779,16 @@ export async function operacoesHandler(
               ])
             },
           }
-        : somenteRecuperar
-          ? { somenteRecuperar: true }
-          : undefined,
-    )
+        : undefined,
+    ).catch((erro: unknown) => {
+      if (
+        somenteRecuperar &&
+        erro instanceof ConflictError &&
+        !(erro instanceof ConflitoTransitorio)
+      )
+        throw new RecuperacaoIndisponivel()
+      throw erro
+    })
     return Response.json(
       { success: true, data: data.dados, criado: data.criado },
       { headers, status: data.criado ? 201 : 200 },
