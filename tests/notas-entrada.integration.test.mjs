@@ -408,13 +408,18 @@ try {
       201,
     )
     const url = `/api/compras/notas-fiscais/${criada.nota.id}`
-    const recebida = await call(f, url + "/acao", "POST", { acao: "receber" })
+    await call(f, url + "/acao", "POST", { acao: "receber" })
+    await prisma.nota_fiscal.update({
+      where: { id: criada.nota.id },
+      data: { data_recebimento: new Date("2026-11-24T01:30:00Z") },
+    })
+    const recebida = await call(f, url)
     assert.equal(recebida.nota.status, "RECEBIDA")
     assert.equal(recebida.nota.entradaProcessada, false)
     const documental = await call(f, url, "PATCH", {
       ...cabecalho,
       valorTotal: "60.00",
-      dataRecebimento: recebida.nota.dataRecebimento.slice(0, 10),
+      dataRecebimento: "2026-11-23",
       versaoEsperada: recebida.nota.versao,
     })
     assert.equal(documental.nota.pedido.id, pedido.id)

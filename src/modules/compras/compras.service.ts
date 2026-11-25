@@ -6,6 +6,7 @@ import {
 import { createHash, randomUUID } from "node:crypto"
 import "server-only"
 import { conferir, executarNaTransacao } from "@/modules/reservas/operacoes"
+import { formatarDiaCivil } from "@/lib/formatacao"
 import { variacaoAtivaNaEmpresa } from "@/modules/estoque/estoque.grade"
 import {
   carregarFisico,
@@ -1545,11 +1546,12 @@ export function editarNota(ctx: Contexto, id: number, input: EditarNotaInput) {
       (await tx.item_nota_fiscal.count({ where: { id_nota_fiscal: id } }))
     )
       throw conflito(
-        "Remova ou confira os itens antes de trocar a compra vinculada.",
+        "Remova e salve os itens da conferência antes de trocar a compra vinculada.",
       )
     const idPedidoCompra =
       input.idPedidoCompra === undefined &&
       idCompra === null &&
+      antes.compra === null &&
       input.idFornecedor === antes.fornecedor.id
         ? antes.pedido?.id
         : input.idPedidoCompra
@@ -1562,7 +1564,9 @@ export function editarNota(ctx: Contexto, id: number, input: EditarNotaInput) {
     const preservarRecebimento =
       antes.status === "RECEBIDA" &&
       (!input.dataRecebimento ||
-        input.dataRecebimento === antes.dataRecebimento?.slice(0, 10))
+        (antes.dataRecebimento !== null &&
+          input.dataRecebimento ===
+            formatarDiaCivil(new Date(antes.dataRecebimento))))
     const r = await tx.nota_fiscal.updateMany({
       where: {
         id,

@@ -202,6 +202,7 @@ function Conteudo({ api }: { api: ComprasApi }) {
 
       {aberto !== null && (
         <Detalhe
+          processamentoPendente={pendente.tentativa?.idNota === aberto}
           api={api}
           id={aberto}
           podeEditar={dados?.permissoes.editar ?? false}
@@ -236,6 +237,7 @@ function Detalhe({
   api,
   id,
   podeEditar,
+  processamentoPendente,
   onFechar,
   onMudou,
   onEditar,
@@ -243,6 +245,7 @@ function Detalhe({
   api: ComprasApi
   id: number
   podeEditar: boolean
+  processamentoPendente: boolean
   onFechar: () => void
   onMudou: () => void
   onEditar: (n: Nota) => void
@@ -357,21 +360,21 @@ function Detalhe({
                   <>
                     <Button
                       variant="outline"
-                      disabled={ocupado}
+                      disabled={ocupado || processamentoPendente}
                       onClick={() => setCancelando(true)}
                     >
                       Cancelar nota
                     </Button>
                     <Button
                       variant="secondary"
-                      disabled={ocupado}
+                      disabled={ocupado || processamentoPendente}
                       onClick={() => onEditar(n)}
                     >
                       Editar
                     </Button>
                     {n.status === "PENDENTE" && (
                       <Button
-                        disabled={ocupado}
+                        disabled={ocupado || processamentoPendente}
                         onClick={() =>
                           void acao(
                             "receber",

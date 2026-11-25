@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { formatarDiaCivil } from "@/lib/formatacao"
 import {
   chaveAcessoValida,
   normalizarChave,
@@ -22,7 +23,7 @@ import type { Nota } from "../tipos"
 import { Campo, dinheiro2, moeda, SeletorUnico } from "./comuns"
 
 type Ref = { id: number; nome: string } | null
-const dia = (iso: string | null) => (iso ? iso.slice(0, 10) : "")
+const dia = (iso: string | null) => (iso ? formatarDiaCivil(new Date(iso)) : "")
 
 export function DialogoNota({
   api,
