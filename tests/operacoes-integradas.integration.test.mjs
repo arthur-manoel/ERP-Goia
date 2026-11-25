@@ -30,6 +30,13 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
   }).format(new Date())
   const produto = a.produtos[1]
   const [m, g] = a.variacoes
+  async function kardex(filtros = {}) {
+    const resposta = await a.chamar(
+      `/api/estoque/kardex?${new URLSearchParams(filtros)}`,
+    )
+    assert.equal(resposta.status, 200, JSON.stringify(resposta.body))
+    return resposta.body
+  }
   const entrada = (
     idProduto,
     idLocalEstoque,
@@ -193,9 +200,51 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     await prisma.produto_fluxo.create({
       data: { id_empresa: empresa, id_produto: produto, id_fluxo: fluxo.id },
     })
-    await entrada(tecido.id, locais[0].id, setores[0].id, "10.000")
+    const fornecedor = await prisma.fornecedores.create({
+      data: { id_empresa: empresa, razao_social: "Fornecedor do tecido" },
+    })
+    const { compra } = await post("/api/compras/compras", {
+      idFornecedor: fornecedor.id,
+      idLocalEstoque: locais[0].id,
+      itens: [
+        { idProduto: tecido.id, quantidade: "10.000", valorUnitario: "2.00" },
+      ],
+    })
+    await post(
+      `/api/compras/compras/${compra.id}/receber`,
+      { idSetorDestino: setores[0].id },
+      randomUUID(),
+      200,
+    )
+    const livroCompra = await kardex({
+      idProduto: tecido.id,
+      idLocalEstoque: locais[0].id,
+      origemTipo: "COMPRA_RECEBIMENTO",
+      origemId: compra.id,
+    })
+    assert.deepEqual(
+      livroCompra.dados.map((r) => [
+        r.tipo,
+        r.quantidade,
+        r.origem,
+        r.observacao,
+      ]),
+      [
+        [
+          "ENTRADA_NF",
+          "10.000",
+          { tipo: "COMPRA_RECEBIMENTO", id: compra.id },
+          null,
+        ],
+      ],
+    )
+    assert.equal(livroCompra.resumo.saldos.fechamento, "10.000")
     await entrada(produto, locais[2].id, setores[5].id, "2.000", m.id)
     await entrada(produto, locais[2].id, setores[5].id, "100.000", g.id)
+    const livroAntesReserva = await kardex({
+      idProduto: produto,
+      idLocalEstoque: locais[2].id,
+    })
     const pedido = await a.pedido({
       status: null,
       entrega: false,
@@ -231,6 +280,10 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       200,
     )
     assert.equal(await snapshot(), s1)
+    assert.deepEqual(
+      await kardex({ idProduto: produto, idLocalEstoque: locais[2].id }),
+      livroAntesReserva,
+    )
     let reserva = await prisma.reserva_estoque.findFirstOrThrow({
       where: { id_pedido_cliente_item: pedido.itens[0].id },
     })
@@ -256,17 +309,149 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       "100 peças G não atendem falta de M",
     )
     assert.equal(await snapshot(), s1)
-    op = await post("/api/ordem_producao", {
-      numero: `OP-${randomUUID()}`,
-      quantidade_planejada: "3.000",
-      id_local_estoque: locais[1].id,
-    })
-    const itemOP = await post(`/api/ordem_producao/${op.id}/itens`, {
-      id_produto: produto,
-      id_variacao: m.id,
+    const rotaOrdens = "/api/ordens-producao"
+    const opcoes = await a.chamar(`${rotaOrdens}/opcoes`)
+    assert.equal(opcoes.status, 200)
+    assert.ok(
+      opcoes.body.data.produtos.some(
+        (p) =>
+          p.id === produto && p.produto_variacoes.some((v) => v.id === m.id),
+      ),
+    )
+    assert.ok(opcoes.body.data.locais.some((l) => l.id === locais[1].id))
+    const abertura = {
+      idProduto: produto,
+      idVariacao: m.id,
+      idLocal: locais[1].id,
       quantidade: "3.000",
+    }
+    const chaveAbertura = randomUUID()
+    const cabecalhoNumerico = await post("/api/ordem_producao", { numero: "1" })
+    op = (await post(rotaOrdens, abertura, chaveAbertura)).ordem
+    assert.equal(op.numero, "2")
+    assert.equal(
+      (await post(rotaOrdens, abertura, chaveAbertura, 200)).ordem.id,
+      op.id,
+    )
+    await post(
+      rotaOrdens,
+      { ...abertura, quantidade: "4.000" },
+      chaveAbertura,
+      409,
+    )
+    assert.equal(
+      await prisma.ordem_producao.count({ where: { id_empresa: empresa } }),
+      2,
+    )
+    const itemOP = op.ordem_producao_item[0]
+    const listar = (filtros = "", opcoes = {}) =>
+      a.chamar(rotaOrdens + "/resumo" + filtros, "GET", undefined, opcoes)
+    const resumo = await listar("?status=PLANEJADA&page=1&limit=1")
+    assert.equal(resumo.status, 200)
+    assert.equal(resumo.body.data.count, 2)
+    assert.equal(resumo.body.data.rows[0].id, op.id)
+    assert.equal(resumo.body.data.rows[0].quantidade_planejada, "3")
+    assert.equal(resumo.body.data.rows[0].etapaAtual.ordem, 1)
+    assert.equal(resumo.body.data.rows[0].itens[0].quantidade_produzida, "0")
+    const outraCor = await prisma.cores.create({
+      data: { id_empresa: empresas[1], nome: "Cor da outra empresa" },
     })
-    await post(`/api/ordem_producao/${op.id}/liberar`, {}, randomUUID(), 200)
+    const outroTamanho = await prisma.tamanhos.create({
+      data: { id_empresa: empresas[1], nome: "Tamanho da outra empresa" },
+    })
+    try {
+      await prisma.ordem_producao_item.update({
+        where: { id: itemOP.id },
+        data: { id_cor: outraCor.id, id_tamanho: outroTamanho.id },
+      })
+      const legado = await listar("?page=1&limit=1")
+      assert.equal(legado.status, 200)
+      const dimensoes = legado.body.data.rows[0].itens[0]
+      assert.equal(dimensoes.id_cor, null)
+      assert.equal(dimensoes.id_tamanho, null)
+      assert.equal(dimensoes.cores, null)
+      assert.equal(dimensoes.tamanhos, null)
+    } finally {
+      await prisma.ordem_producao_item.update({
+        where: { id: itemOP.id },
+        data: { id_cor: itemOP.id_cor, id_tamanho: itemOP.id_tamanho },
+      })
+    }
+    assert.equal((await listar("?page=0")).status, 400)
+    assert.equal((await listar("?status=INEXISTENTE")).status, 400)
+    assert.equal((await listar("", { usuario: null })).status, 401)
+    assert.equal((await listar("", { usuario: 1 })).status, 403)
+    const outroContexto = { usuario: 5, empresa: empresas[1] }
+    assert.deepEqual((await listar("", outroContexto)).body.data.rows, [])
+    const previsao = new Date("2027-01-01T00:00:00Z")
+    const outrasOrdens = []
+    for (const numero of ["EMPRESA-B-01", "EMPRESA-B-02"]) {
+      outrasOrdens.push(
+        await prisma.ordem_producao.create({
+          data: {
+            id_empresa: empresas[1],
+            id_usuario: a.usuarios[5],
+            numero,
+            data_previsao: previsao,
+          },
+        }),
+      )
+    }
+    for (const [i, ordem] of outrasOrdens.entries()) {
+      const resultado = await listar(
+        `?ordenar_por=data_previsao&ordem=asc&page=${i + 1}&limit=1`,
+        outroContexto,
+      )
+      assert.equal(resultado.status, 200)
+      assert.equal(resultado.body.data.count, 2)
+      assert.deepEqual(
+        resultado.body.data.rows.map((linha) => linha.id),
+        [ordem.id],
+      )
+    }
+    assert.deepEqual(
+      (await listar()).body.data.rows.map((linha) => linha.id),
+      [op.id, cabecalhoNumerico.id],
+    )
+    assert.equal(
+      (
+        await a.chamar(
+          `${rotaOrdens}/${op.id}`,
+          "GET",
+          undefined,
+          outroContexto,
+        )
+      ).status,
+      404,
+    )
+    const editar = (observacao, chave) =>
+      a.chamar(
+        `${rotaOrdens}/${op.id}`,
+        "PATCH",
+        {
+          statusEsperado: "PLANEJADA",
+          observacao,
+        },
+        { chave },
+      )
+    const chaveEdicao = randomUUID()
+    assert.equal((await editar("Edição original", chaveEdicao)).status, 200)
+    assert.equal((await editar("Edição posterior", randomUUID())).status, 200)
+    assert.equal((await editar("Edição original", chaveEdicao)).status, 200)
+    assert.equal(
+      (await a.chamar(`${rotaOrdens}/${op.id}`)).body.ordem.observacao,
+      "Edição posterior",
+    )
+    await post(
+      `${rotaOrdens}/${op.id}/avancar`,
+      {
+        statusEsperado: "PLANEJADA",
+        setorEsperado: null,
+        statusDestino: "LIBERADA",
+      },
+      randomUUID(),
+      200,
+    )
     const reservaMaterial = await post("/api/estoque/reservas", {
       origem: "PRODUCAO",
       idOrigem: op.id,
@@ -274,7 +459,45 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       idLocalEstoque: locais[0].id,
       quantidade: "6.000",
     })
-    await post(`/api/ordem_producao/${op.id}/iniciar`, {}, randomUUID(), 200)
+    const primeiraEtapa =
+      await prisma.ordem_producao_fluxo_setor.findFirstOrThrow({
+        where: { id_ordem_producao: op.id },
+        orderBy: { ordem: "asc" },
+      })
+    await post(
+      `${rotaOrdens}/${op.id}/etapas/iniciar`,
+      {
+        etapaId: primeiraEtapa.id,
+      },
+      randomUUID(),
+      200,
+    )
+    const rotaAvanco = `${rotaOrdens}/${op.id}/avancar`
+    const pausa = {
+      statusEsperado: "EM_PRODUCAO",
+      setorEsperado: primeiraEtapa.id_setor,
+      statusDestino: "PAUSADA",
+    }
+    const chavePausa = randomUUID()
+    await post(rotaAvanco, pausa, chavePausa, 200)
+    await post(
+      rotaAvanco,
+      {
+        ...pausa,
+        statusEsperado: "PAUSADA",
+        statusDestino: "EM_PRODUCAO",
+      },
+      randomUUID(),
+      200,
+    )
+    assert.equal(
+      (await post(rotaAvanco, pausa, chavePausa, 200)).ordem.status,
+      "PAUSADA",
+    )
+    assert.equal(
+      (await a.chamar(`${rotaOrdens}/${op.id}`)).body.ordem.status,
+      "EM_PRODUCAO",
+    )
     const consumo = {
       idReserva: reservaMaterial.idReserva,
       quantidade: "6.000",
@@ -320,8 +543,8 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     for (let i = 0; i < etapas.length; i++) {
       if (i)
         await post(
-          `/api/ordem_producao/${op.id}/etapas/${etapas[i].id}/iniciar`,
-          {},
+          `${rotaOrdens}/${op.id}/etapas/iniciar`,
+          { etapaId: etapas[i].id },
           randomUUID(),
           200,
         )
@@ -362,12 +585,35 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
           "Falha da conclusão não confirma etapa/OP nem entrada parcial",
         )
       }
-      await post(
-        `/api/ordem_producao/${op.id}/etapas/${etapas[i].id}/concluir`,
-        {},
-        randomUUID(),
-        200,
-      )
+      const rotaConcluir = `${rotaOrdens}/${op.id}/etapas/concluir`
+      const confirmacao = { etapaId: etapas[i].id }
+      const chaveConclusao = randomUUID()
+      if (i === etapas.length - 1) {
+        assert.equal(
+          (
+            await a.chamar(rotaConcluir, "POST", confirmacao, {
+              chave: chaveConclusao,
+              descartarResposta: true,
+            })
+          ).status,
+          200,
+        )
+        const depoisDaConclusao = await snapshot()
+        const concluida = await post(
+          rotaConcluir,
+          confirmacao,
+          chaveConclusao,
+          200,
+        )
+        assert.equal(concluida.ordem.status, "CONCLUIDA")
+        assert.deepEqual(
+          await post(rotaConcluir, confirmacao, chaveConclusao, 200),
+          concluida,
+        )
+        await post(rotaConcluir, { etapaId: etapas[0].id }, chaveConclusao, 409)
+        await post(rotaConcluir, confirmacao, randomUUID(), 409)
+        assert.equal(await snapshot(), depoisDaConclusao)
+      } else await post(rotaConcluir, confirmacao, chaveConclusao, 200)
     }
     assert.equal(
       (await prisma.ordem_producao.findUniqueOrThrow({ where: { id: op.id } }))
@@ -398,6 +644,20 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         ["ENTRADA_PRODUCAO", "3.000"],
       ],
     )
+    for (const mov of movimentosOP) {
+      const registro = await kardex({
+        idProduto: mov.id_produto,
+        idLocalEstoque: mov.id_local_estoque,
+        origemTipo: mov.origem_tipo,
+        origemId: op.id,
+      })
+      assert.equal(registro.dados[0].idMovimentacao, mov.id)
+      assert.equal(registro.dados[0].tipo, mov.tipo)
+      assert.equal(
+        registro.resumo.saldos.fechamento,
+        mov.tipo === "SAIDA_PRODUCAO" ? "4.000" : "3.000",
+      )
+    }
     assert.equal(
       await prisma.kardex.count({
         where: { id_movimentacao: { in: movimentosOP.map((m) => m.id) } },
@@ -418,9 +678,10 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       "Consumo, apontamento final e conclusão confirmados com uma saída, uma entrada e dois Kardex.",
     )
     const concluida = await snapshot()
-    assert.equal(
-      (await a.chamar(`/api/ordem_producao/${op.id}/concluir`, "POST", {}))
-        .status,
+    await postOutro(
+      `/api/ordem_producao/${op.id}/concluir`,
+      {},
+      randomUUID(),
       409,
     )
     assert.equal(await snapshot(), concluida)
@@ -443,10 +704,42 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       "102.000",
     )
     const chaveReceber = randomUUID()
-    await post(
+    const envio = await kardex({
+      origemTipo: "TRANSFERENCIA_ENVIO",
+      origemId: transferencia.idTransferencia,
+    })
+    assert.equal(envio.dados[0].idMovimentacao, transferencia.idMovimentoSaida)
+    assert.equal(envio.dados[0].idMovimentoRelacionado, null)
+    assert.deepEqual(
+      (
+        await kardex({
+          origemTipo: "TRANSFERENCIA_RECEBIMENTO",
+          origemId: transferencia.idTransferencia,
+        })
+      ).dados,
+      [],
+    )
+    const chegada = await post(
       `/api/estoque/transferencias/${transferencia.idTransferencia}/receber`,
       {},
       chaveReceber,
+    )
+    const recebidoKardex = await kardex({
+      origemTipo: "TRANSFERENCIA_RECEBIMENTO",
+      origemId: transferencia.idTransferencia,
+    })
+    assert.equal(
+      recebidoKardex.dados[0].idMovimentacao,
+      chegada.idMovimentoEntrada,
+    )
+    assert.equal(
+      recebidoKardex.dados[0].idMovimentoRelacionado,
+      transferencia.idMovimentoSaida,
+    )
+    assert.equal(
+      (await kardex({ idMovimentacao: transferencia.idMovimentoSaida }))
+        .dados[0].idMovimentoRelacionado,
+      chegada.idMovimentoEntrada,
     )
     const recebida = await snapshot()
     await post(
@@ -502,6 +795,19 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       ],
     })
     assert.equal(completa.status, "ENTREGUE")
+    const livroEntrega = await kardex({
+      idProduto: produto,
+      idLocalEstoque: locais[2].id,
+      origemTipo: "PEDIDO_ENTREGA",
+    })
+    assert.deepEqual(
+      livroEntrega.dados.map((r) => [r.direcao, r.quantidade]),
+      [
+        ["SAIDA", "3.000"],
+        ["SAIDA", "2.000"],
+      ],
+    )
+    assert.equal(livroEntrega.resumo.saldos.fechamento, "100.000")
     const estoqueFinal = await posicao(produto, locais[2].id)
     assert.equal(estoqueFinal.quantidade.toFixed(3), "100.000")
     assert.equal(
@@ -1124,7 +1430,13 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         })
         const item = await post(`/api/ordem_producao/${ordem.id}/itens`, {
           id_produto: produto,
+          id_variacao: m.id,
           quantidade: "1.000",
+        })
+        // A inclusão atual exige a grade. A perda também precisa cobrir uma ordem legada sem essas referências.
+        await prisma.ordem_producao_item.update({
+          where: { id: item.id },
+          data: { id_cor: null, id_tamanho: null, tamanho: "UNICO" },
         })
         const rota = `/api/ordem_producao/${ordem.id}`
         await post(`${rota}/liberar`, {}, randomUUID(), 409)
@@ -1339,9 +1651,228 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         }
       },
     )
-    assert.ok(ficha.id)
+    await t.test(
+      "OP preserva itens e planejamento com decimais equivalentes",
+      async () => {
+        const id = cabecalhoNumerico.id
+        const rota = `/api/ordem_producao/${id}/itens`
+        const primeira = await post(rota, {
+          id_produto: produto,
+          id_variacao: m.id,
+          quantidade: "3",
+        })
+        const ajusteCabecalho = await a.chamar(`${rotaOrdens}/${id}`, "PATCH", {
+          statusEsperado: "PLANEJADA",
+          quantidade: "3.000",
+        })
+        assert.equal(ajusteCabecalho.status, 200)
+        assert.equal(ajusteCabecalho.body.ordem.quantidade_planejada, "3")
+        await post(rota, {
+          id_produto: produto,
+          id_variacao: g.id,
+          quantidade: "2",
+        })
+        const planejamento = () =>
+          prisma.ordem_producao_item.findMany({
+            where: { id_ordem_producao: id },
+            orderBy: { id: "asc" },
+            include: { ordem_producao_consumo_planejado: true },
+          })
+        const anterior = await planejamento()
+        await prisma.ficha_tecnica_item.updateMany({
+          where: { id_ficha_tecnica: ficha.id },
+          data: { quantidade: "5" },
+        })
+        const alterarOrdem = (quantidade) =>
+          a.chamar(`${rotaOrdens}/${id}`, "PATCH", {
+            statusEsperado: "PLANEJADA",
+            quantidade,
+            observacao: "Ajuste sem alterar a composição",
+          })
+        const editarItem = (quantidade) =>
+          a.chamar(`${rota}/${primeira.id}`, "PATCH", {
+            quantidade,
+          })
+        assert.equal((await alterarOrdem("3.000")).status, 200)
+        assert.equal((await editarItem("3.000")).status, 200)
+        assert.deepEqual(await planejamento(), anterior)
+        assert.equal((await alterarOrdem("3.001")).status, 409)
+        assert.equal((await editarItem("3.001")).status, 200)
+        const atual = await planejamento()
+        assert.equal(
+          atual[0].ordem_producao_consumo_planejado[0].quantidade_necessaria.toFixed(
+            3,
+          ),
+          "15.005",
+        )
+        assert.deepEqual(atual[1], anterior[1])
+      },
+    )
+
+    await t.test(
+      "Opções de OP usam cota de leitura e exibem somente grades válidas",
+      async () => {
+        const cor = await prisma.cores.create({
+          data: { id_empresa: empresa, nome: "Inativa", status: "INATIVA" },
+        })
+        const corAtiva = await prisma.cores.create({
+          data: { id_empresa: empresa, nome: "Ativa" },
+        })
+        const tamanho = await prisma.tamanhos.create({
+          data: { id_empresa: empresa, nome: "Inativo", status: "INATIVO" },
+        })
+        const variante = (dados) =>
+          prisma.produto_variacoes.create({
+            data: { id_empresa: empresa, id_produto: produto, ...dados },
+          })
+        const invalidaCor = await variante({ id_cor: cor.id })
+        const invalidaTamanho = await variante({
+          id_tamanho: tamanho.id,
+          id_cor: corAtiva.id,
+        })
+        const somenteCor = await variante({ id_cor: corAtiva.id })
+        const contexto = { usuario: 5, empresa }
+        const buscar = () =>
+          a.chamar(`${rotaOrdens}/opcoes`, "GET", undefined, contexto)
+        const opcoes = await buscar()
+        const disponiveis = opcoes.body.data.produtos
+          .find((p) => p.id === produto)
+          .produto_variacoes.map((v) => v.id)
+        assert.ok(
+          disponiveis.includes(m.id) && disponiveis.includes(somenteCor.id),
+        )
+        assert.ok(
+          !disponiveis.includes(invalidaCor.id) &&
+            !disponiveis.includes(invalidaTamanho.id),
+        )
+        const abrir = (dados) =>
+          a.chamar(rotaOrdens, "POST", dados, {
+            ...contexto,
+            chave: randomUUID(),
+          })
+        assert.equal(
+          (await abrir({ ...abertura, idVariacao: invalidaCor.id })).status,
+          400,
+        )
+        assert.equal(
+          (await abrir({ ...abertura, idVariacao: invalidaTamanho.id })).status,
+          400,
+        )
+        let consultas = 1
+        while (consultas <= 120) {
+          const consulta = await buscar()
+          if (consulta.status === 429) break
+          assert.equal(consulta.status, 200)
+          consultas++
+        }
+        assert.ok(
+          consultas > 30 && consultas <= 120,
+          `Buscas antes do limite: ${consultas}`,
+        )
+        const ordemValida = await abrir({
+          ...abertura,
+          idVariacao: somenteCor.id,
+        })
+        assert.equal(ordemValida.status, 201, JSON.stringify(ordemValida.body))
+        let esgotou = false
+        for (let i = 0; i < 30 && !esgotou; i++) {
+          const resposta = await abrir(abertura)
+          esgotou = resposta.status === 429
+          if (!esgotou) assert.equal(resposta.status, 201)
+        }
+        assert.ok(esgotou, "A cota de escrita continua sendo aplicada.")
+      },
+    )
+
+    await t.test(
+      "card OP: abertura com previsão hoje, edição e início da primeira etapa",
+      async () => {
+        const criada = await post("/api/ordens-producao", {
+          idProduto: produto,
+          quantidade: "1.000",
+          tamanho: "UNICO",
+          prioridade: "NORMAL",
+          observacao: "Validação HTTP do card",
+          dataPrevisao: `${dia}T00:00:00.000Z`,
+        })
+        const id = criada.ordem.id
+        const listagem = await a.chamar(
+          `/api/ordens-producao?page=1&limit=25&numero=${encodeURIComponent(criada.ordem.numero)}`,
+        )
+        assert.equal(listagem.status, 200)
+        const linha = listagem.body.data.rows.find((row) => row.id === id)
+        assert.equal(linha?.observacao, "Validação HTTP do card")
+        const editar = await a.chamar(`/api/ordens-producao/${id}`, "PATCH", {
+          statusEsperado: "PLANEJADA",
+          quantidade: "2.000",
+          tamanho: "UNICO",
+          prioridade: "ALTA",
+          observacao: "Edição persistida pelo card",
+        })
+        assert.equal(editar.status, 200, JSON.stringify(editar.body))
+        const detalhe = await a.chamar(`/api/ordens-producao/${id}`)
+        assert.equal(detalhe.status, 200)
+        assert.equal(
+          detalhe.body.ordem.observacao,
+          "Edição persistida pelo card",
+        )
+        assert.equal(detalhe.body.ordem.quantidade_planejada, "2")
+        const persistida = await prisma.ordem_producao.findUniqueOrThrow({
+          where: { id },
+        })
+        assert.equal(persistida.quantidade_planejada.toFixed(3), "2.000")
+        await post(
+          `/api/ordem_producao/${id}/regularizar`,
+          {
+            motivo: "Destino da fixture de previsão para hoje",
+            idLocal: locais[1].id,
+            variacoes: [
+              {
+                idItem: criada.ordem.ordem_producao_item[0].id,
+                idVariacao: m.id,
+              },
+            ],
+          },
+          randomUUID(),
+          200,
+        )
+        await post(`/api/ordem_producao/${id}/liberar`, {}, randomUUID(), 200)
+        const [primeiraEtapa] =
+          await prisma.ordem_producao_fluxo_setor.findMany({
+            where: { id_ordem_producao: id },
+            orderBy: { ordem: "asc" },
+          })
+        await post(
+          `/api/ordem_producao/${id}/etapas/${primeiraEtapa.id}/iniciar`,
+          {},
+          randomUUID(),
+          200,
+        )
+        const iniciada = await prisma.ordem_producao.findUniqueOrThrow({
+          where: { id },
+        })
+        assert.equal(iniciada.status, "EM_PRODUCAO")
+        assert.ok(iniciada.data_inicio)
+        assert.equal(
+          iniciada.data_previsao.toISOString(),
+          persistida.data_previsao.toISOString(),
+        )
+        const semLogin = await a.chamar(
+          "/api/ordens-producao",
+          "GET",
+          undefined,
+          { usuario: null },
+        )
+        assert.equal(semLogin.status, 401)
+      },
+    )
   } finally {
     const scope = { in: empresas }
+    await prisma.compra_itens.deleteMany({
+      where: { compras: { id_empresa: scope } },
+    })
+    await prisma.compras.deleteMany({ where: { id_empresa: scope } })
+    await prisma.fornecedores.deleteMany({ where: { id_empresa: scope } })
     await prisma.operacao_erp.deleteMany({ where: { id_empresa: scope } })
     await prisma.transferencia_estoque.deleteMany({
       where: { id_empresa: scope },

@@ -66,7 +66,7 @@ const complete = {
   data_previsao: fields.data_previsao.default(null),
   observacao: fields.observacao.default(null),
 }
-export const createOrdemSchema = z
+const createOrdemBaseSchema = z
   .object({ ...complete, id_empresa: idSchema.optional() })
   .strict()
 export const updateOrdemSchema = z
@@ -116,7 +116,7 @@ export const ordemPaginationSchema = z
     (v) => (v.page - 1) * v.limit <= 2_147_483_647,
     "Paginação excede o limite.",
   )
-export const listOrdemSchema = z
+const listagemBase = z
   .object({
     ...pagination,
     id_empresa: ordemIdSchema.optional(),
@@ -147,40 +147,70 @@ export const listOrdemSchema = z
     ordem: z.enum(["asc", "desc"]).default("desc"),
   })
   .strict()
-  .superRefine((v, ctx) => {
-    if ((v.page - 1) * v.limit > 2_147_483_647)
+function validarIntervalos(
+  v: Omit<z.output<typeof listagemBase>, "status">,
+  ctx: z.RefinementCtx,
+) {
+  if ((v.page - 1) * v.limit > 2_147_483_647)
+    ctx.addIssue({
+      code: "custom",
+      message: "Paginação excede o limite.",
+      path: ["page"],
+    })
+  for (const field of [
+    "data_inicio",
+    "data_previsao",
+    "data_conclusao",
+  ] as const)
+    if (
+      v[`${field}_de`] &&
+      v[`${field}_ate`] &&
+      v[`${field}_de`]! > v[`${field}_ate`]!
+    )
       ctx.addIssue({
         code: "custom",
-        message: "Paginação excede o limite.",
-        path: ["page"],
+        message: "Período inválido.",
+        path: [`${field}_ate`],
       })
-    for (const field of [
-      "data_inicio",
-      "data_previsao",
-      "data_conclusao",
-    ] as const)
-      if (
-        v[`${field}_de`] &&
-        v[`${field}_ate`] &&
-        v[`${field}_de`]! > v[`${field}_ate`]!
-      )
-        ctx.addIssue({
-          code: "custom",
-          message: "Período inválido.",
-          path: [`${field}_ate`],
-        })
+}
+export const listOrdemSchema = listagemBase.superRefine(validarIntervalos)
+export const listResumoSchema = listagemBase
+  .extend({
+    status: ordemStatusSchema.or(z.literal("AGUARDANDO_MATERIAL")).optional(),
   })
+  .superRefine(validarIntervalos)
+export const opcoesAberturaSchema = z.strictObject({
+  busca: z.string().trim().max(100).default(""),
+})
+const tamanhoItemSchema = z.string().trim().min(1).max(30)
 export const ordemItemSchema = z
   .object({
     id_produto: idSchema,
     id_variacao: idSchema.optional(),
     quantidade: decimalSchema.refine((v) => Number(v) > 0),
-    tamanho: z.string().trim().min(1).max(30).default("UNICO"),
+    tamanho: tamanhoItemSchema.default("UNICO"),
   })
   .strict()
+export const createOrdemSchema = createOrdemBaseSchema
+  .extend({
+    item: ordemItemSchema.optional(),
+  })
+  .refine(
+    (dados) =>
+      !dados.item ||
+      Number(dados.quantidade_planejada) === Number(dados.item.quantidade),
+    {
+      message: "A quantidade planejada deve corresponder à quantidade do item.",
+      path: ["quantidade_planejada"],
+    },
+  )
+export const completarOrdemSchema = ordemItemSchema.extend({
+  id_local_estoque: idSchema.optional(),
+})
 export const patchItemSchema = ordemItemSchema
-  .pick({ quantidade: true, tamanho: true })
+  .pick({ quantidade: true })
   .partial()
+  .extend({ tamanho: tamanhoItemSchema.optional() })
   .strict()
   .refine((v) => Object.keys(v).length > 0, "Informe quantidade ou tamanho.")
 export const apontarSchema = z
@@ -193,6 +223,10 @@ export const apontarSchema = z
 export type OrdemInput = z.output<typeof createOrdemSchema>
 export type OrdemFilters = Omit<
   z.output<typeof listOrdemSchema>,
+  "page" | "limit"
+>
+export type ResumoFilters = Omit<
+  z.output<typeof listResumoSchema>,
   "page" | "limit"
 >
 export type Pagination = z.output<typeof ordemPaginationSchema>

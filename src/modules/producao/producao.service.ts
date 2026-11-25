@@ -1,4 +1,6 @@
 import "server-only"
+import { usaLotes, posicoesLote } from "./lotes.repository"
+import { previsaoAnteriorAoDiaDeInicio } from "./producao.datas"
 import { Prisma } from "@/generated/prisma/client"
 import type {
   AbrirInput,
@@ -23,6 +25,7 @@ import {
 import * as fluxos from "../fluxos/fluxos.repository"
 import { validarFluxo } from "../fluxos/fluxos.service"
 import { consumoConclusaoComprovado } from "@/modules/reservas/fluxo.service"
+import { variacaoAtivaNaEmpresa } from "@/modules/estoque/estoque.grade"
 import { entradasProducaoComprovadas } from "./producao.efeitos"
 import {
   ready,
@@ -30,6 +33,8 @@ import {
   perdasIntegraisComprovadas,
   validarApontamentoLegado,
   validarQuantidadesLegadas,
+  validarDestinoProducao,
+  relationships,
 } from "./ordem.validation"
 
 const limite = new Prisma.Decimal("999999999999.999")
@@ -142,49 +147,91 @@ function validarPrevisao(
   previsao: Date | null | undefined,
   inicio: Date | null,
 ) {
-  if (previsao && inicio && previsao < inicio)
+  if (previsaoAnteriorAoDiaDeInicio(previsao, inicio))
     throw new ProducaoError(
       400,
       "A previsão não pode ser anterior ao início da produção.",
     )
 }
 export function abrirOrdem(ctx: Contexto, input: AbrirInput) {
-  return transacao(async (tx) => {
-    await fluxos.produto(tx, ctx, input.idProduto)
-    const fluxo = await fluxos.fluxoProduto(tx, ctx, input.idProduto)
-    validarFluxo(fluxo)
-    const ficha = await produtoComFicha(tx, ctx, input.idProduto)
-    const insumos = calcularInsumos(input.quantidade, ficha.ficha_tecnica_item)
-    const ordem = await tx.ordem_producao.create({
-      data: {
-        id_empresa: ctx.idEmpresa,
-        id_usuario: ctx.idUsuario,
-        numero: await proximoNumero(tx, ctx.idEmpresa),
-        status: "PLANEJADA",
-        quantidade_planejada: input.quantidade,
-        observacao: input.observacao,
-        data_previsao: input.dataPrevisao,
-        prioridade: input.prioridade,
-        ordem_producao_item: {
-          create: {
-            id_produto: input.idProduto,
-            quantidade: input.quantidade,
-            tamanho: input.tamanho,
-          },
+  return transacao((tx) => abrirOrdemNaTransacao(tx, ctx, input))
+}
+export async function abrirOrdemNaTransacao(
+  tx: Transaction,
+  ctx: Contexto,
+  input: AbrirInput,
+) {
+  await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
+  if (input.idLocal)
+    await relationships(
+      ctx,
+      {
+        id_local_estoque: input.idLocal,
+        id_pedido_cliente: null,
+        id_setor: null,
+      },
+      tx,
+    )
+  await fluxos.produto(tx, ctx, input.idProduto)
+  const fluxo = await fluxos.fluxoProduto(tx, ctx, input.idProduto)
+  validarFluxo(fluxo)
+  const ficha = await produtoComFicha(tx, ctx, input.idProduto)
+  const insumos = calcularInsumos(input.quantidade, ficha.ficha_tecnica_item)
+  const variacao = input.idVariacao
+    ? await tx.produto_variacoes.findFirst({
+        where: {
+          id: input.idVariacao,
+          id_empresa: ctx.idEmpresa,
+          id_produto: input.idProduto,
+          status: "ATIVO",
         },
-        ordem_producao_fluxo_setor: {
-          create: fluxo.setores.map((setor, index) => ({
-            id_setor: setor.id,
-            ordem: index + 1,
-          })),
+        include: { cores: true, tamanhos: true },
+      })
+    : null
+  if (
+    input.idVariacao &&
+    (!variacao || !variacaoAtivaNaEmpresa(variacao, ctx.idEmpresa))
+  )
+    throw new ProducaoError(
+      400,
+      "A variação selecionada está indisponível para este produto na empresa.",
+    )
+  const ordem = await tx.ordem_producao.create({
+    data: {
+      id_empresa: ctx.idEmpresa,
+      id_usuario: ctx.idUsuario,
+      id_local_estoque: input.idLocal,
+      numero: await proximoNumero(tx, ctx.idEmpresa),
+      status: "PLANEJADA",
+      quantidade_planejada: input.quantidade,
+      observacao: input.observacao,
+      data_previsao: input.dataPrevisao,
+      prioridade: input.prioridade,
+      ordem_producao_item: {
+        create: {
+          id_produto: input.idProduto,
+          quantidade: input.quantidade,
+          id_cor: variacao?.id_cor,
+          id_tamanho: variacao?.id_tamanho,
+          tamanho: variacao?.tamanhos
+            ? Array.from(variacao.tamanhos.nome).slice(0, 30).join("")
+            : input.tamanho,
         },
       },
-      include: { ordem_producao_item: true },
-    })
-    await fluxos.gravarSnapshot(tx, ordem.id, fluxo)
-    await gravarInsumos(tx, ordem.id, ordem.ordem_producao_item[0].id, insumos)
-    return finalizar(tx, ctx, ordem.id, null)
+      ordem_producao_fluxo_setor: {
+        create: fluxo.setores.map((setor, index) => ({
+          id_setor: setor.id,
+          ordem: index + 1,
+        })),
+      },
+    },
+    include: { ordem_producao_item: true },
   })
+  if (input.idLocal)
+    await validarDestinoProducao(tx, ctx, await buscarOrdem(tx, ctx, ordem.id))
+  await fluxos.gravarSnapshot(tx, ordem.id, fluxo)
+  await gravarInsumos(tx, ordem.id, ordem.ordem_producao_item[0].id, insumos)
+  return finalizar(tx, ctx, ordem.id, null)
 }
 function validarEstado(
   ordem: Ordem,
@@ -206,73 +253,103 @@ function validarEstado(
     )
 }
 export function alterarOrdem(ctx: Contexto, id: number, input: AlterarInput) {
-  return transacao(async (tx) => {
-    const ordem = await buscarOrdem(tx, ctx, id)
-    validarEstado(ordem, input.statusEsperado)
-    if (
-      input.idProduto !== undefined &&
-      ordem.ordem_producao_item.some(
-        (item) => item.id_produto !== input.idProduto,
-      ) &&
-      (await fluxos.snapshot(tx, id))
+  return transacao((tx) => alterarOrdemNaTransacao(tx, ctx, id, input))
+}
+export async function alterarOrdemNaTransacao(
+  tx: Transaction,
+  ctx: Contexto,
+  id: number,
+  input: AlterarInput,
+) {
+  const ordem = await buscarOrdem(tx, ctx, id)
+  validarEstado(ordem, input.statusEsperado)
+  if (
+    input.idProduto !== undefined &&
+    ordem.ordem_producao_item.some(
+      (item) => item.id_produto !== input.idProduto,
+    ) &&
+    (await fluxos.snapshot(tx, id))
+  )
+    throw new ProducaoError(
+      409,
+      "O produto de uma ordem com snapshot não pode ser substituído. Crie outra ordem.",
     )
-      throw new ProducaoError(
-        409,
-        "O produto de uma ordem com snapshot não pode ser substituído. Crie outra ordem.",
-      )
-    const alteraComposicao =
-      input.idProduto !== undefined ||
-      input.quantidade !== undefined ||
-      input.tamanho !== undefined
-    // Só PLANEJADA admite mudança estrutural ou recálculo, inclusive antes de EM_PRODUCAO.
-    if (
-      ordem.status !== "PLANEJADA" &&
-      (alteraComposicao || input.prioridade !== undefined)
+  const quantidadeCabecalho =
+    input.quantidade !== undefined &&
+    !ordem.quantidade_planejada.eq(input.quantidade)
+      ? input.quantidade
+      : undefined
+  const itemUnico =
+    ordem.ordem_producao_item.length === 1
+      ? ordem.ordem_producao_item[0]
+      : undefined
+  const quantidadeItem =
+    input.quantidade !== undefined &&
+    itemUnico &&
+    !itemUnico.quantidade.eq(input.quantidade)
+      ? input.quantidade
+      : undefined
+  const alteraComposicao =
+    input.idProduto !== undefined ||
+    quantidadeItem !== undefined ||
+    (!itemUnico && quantidadeCabecalho !== undefined) ||
+    input.tamanho !== undefined
+  // Só PLANEJADA admite mudança estrutural ou recálculo, inclusive antes de EM_PRODUCAO.
+  if (
+    ordem.status !== "PLANEJADA" &&
+    (alteraComposicao ||
+      quantidadeCabecalho !== undefined ||
+      input.prioridade !== undefined)
+  )
+    throw new ProducaoError(
+      409,
+      "Fora de PLANEJADA, somente observação e previsão podem ser alteradas.",
     )
-      throw new ProducaoError(
-        409,
-        "Fora de PLANEJADA, somente observação e previsão podem ser alteradas.",
-      )
-    validarPrevisao(input.dataPrevisao, ordem.data_inicio)
+  validarPrevisao(input.dataPrevisao, ordem.data_inicio)
+  if (
+    quantidadeCabecalho !== undefined ||
+    input.observacao !== undefined ||
+    input.dataPrevisao !== undefined ||
+    input.prioridade !== undefined
+  )
     await atualizarEstado(tx, ctx, ordem, {
       observacao: input.observacao,
       data_previsao: input.dataPrevisao,
       prioridade: input.prioridade,
-      quantidade_planejada: input.quantidade,
+      quantidade_planejada: quantidadeCabecalho,
     })
-    if (alteraComposicao) {
-      if (ordem.ordem_producao_item.length !== 1)
-        throw new ProducaoError(
-          409,
-          "A alteração de composição exige uma ordem com um único item.",
-        )
-      const item = ordem.ordem_producao_item[0]
-      const idProduto = input.idProduto ?? item.id_produto
-      const quantidade = input.quantidade ?? item.quantidade.toString()
-      // Observação/previsão não recalculam o planejamento existente.
-      if (input.idProduto !== undefined || input.quantidade !== undefined) {
-        const ficha = await produtoComFicha(tx, ctx, idProduto)
-        await gravarInsumos(
-          tx,
-          id,
-          item.id,
-          calcularInsumos(quantidade, ficha.ficha_tecnica_item),
-        )
-      }
-      await tx.ordem_producao_item.update({
-        where: { id: item.id },
-        data: {
-          id_produto: idProduto,
-          quantidade,
-          tamanho: input.tamanho,
-          ...(idProduto !== item.id_produto
-            ? { id_cor: null, id_tamanho: null }
-            : {}),
-        },
-      })
+  if (alteraComposicao) {
+    if (!itemUnico)
+      throw new ProducaoError(
+        409,
+        "A alteração de composição exige uma ordem com um único item.",
+      )
+    const item = itemUnico
+    const idProduto = input.idProduto ?? item.id_produto
+    const quantidade = quantidadeItem ?? item.quantidade.toString()
+    // Observação/previsão não recalculam o planejamento existente.
+    if (input.idProduto !== undefined || quantidadeItem !== undefined) {
+      const ficha = await produtoComFicha(tx, ctx, idProduto)
+      await gravarInsumos(
+        tx,
+        id,
+        item.id,
+        calcularInsumos(quantidade, ficha.ficha_tecnica_item),
+      )
     }
-    return finalizar(tx, ctx, id, ordem)
-  })
+    await tx.ordem_producao_item.update({
+      where: { id: item.id },
+      data: {
+        id_produto: idProduto,
+        quantidade,
+        tamanho: input.tamanho,
+        ...(idProduto !== item.id_produto
+          ? { id_cor: null, id_tamanho: null }
+          : {}),
+      },
+    })
+  }
+  return finalizar(tx, ctx, id, ordem)
 }
 const transicoes: Partial<Record<Ordem["status"], Ordem["status"][]>> = {
   PLANEJADA: ["LIBERADA", "AGUARDANDO_MATERIAL"],
@@ -320,7 +397,7 @@ export async function avancarOrdemNaTransacao(
   if (!transicoes[ordem.status]?.includes(input.statusDestino))
     throw new ProducaoError(409, "Transição de produção não permitida.")
   validarPlanejamento(ordem)
-  validarPendencias(ordem)
+  if (!(await usaLotes(tx, id))) validarPendencias(ordem)
   if (
     input.statusDestino === "LIBERADA" ||
     (input.statusDestino === "EM_PRODUCAO" && ordem.status === "LIBERADA")
@@ -448,6 +525,68 @@ export async function executarEtapaNaTransacao(
       "Esta ordem usa o fluxo legado de avanço e encerramento.",
     )
   validarPlanejamento(ordem)
+  if (await usaLotes(tx, id)) {
+    if (ordem.status !== "EM_PRODUCAO")
+      throw new ProducaoError(409, "Retome a ordem antes de operar as etapas.")
+    const etapas = ordem.ordem_producao_fluxo_setor
+    const indice = etapas.findIndex((e) => e.id === etapaId)
+    const etapa = etapas[indice]
+    if (!etapa)
+      throw new ProducaoError(404, "Etapa não encontrada nesta ordem.")
+    if (iniciar) {
+      if (
+        etapa.status === "PENDENTE" &&
+        indice > 0 &&
+        etapas[indice - 1].status === "CONCLUIDA" &&
+        (await posicoesLote(tx, id)).every(
+          (p) => p.etapas[indice].entrada === "0.000",
+        )
+      ) {
+        await fluxos.transicionarEtapa(tx, id, etapa, true)
+      } else if (etapa.status !== "EM_PRODUCAO")
+        throw new ProducaoError(
+          409,
+          "Receba uma parcela para iniciar a etapa de destino.",
+        )
+      return finalizar(tx, ctx, id, ordem)
+    }
+    if (
+      etapa.status !== "EM_PRODUCAO" ||
+      etapas.slice(0, indice).some((e) => e.status !== "CONCLUIDA")
+    )
+      throw new ProducaoError(
+        409,
+        "Conclua as etapas anteriores antes de encerrar esta etapa.",
+      )
+    const ultima = indice === etapas.length - 1
+    const posicoes = await posicoesLote(tx, id)
+    if (
+      posicoes.some((p) => {
+        const e = p.etapas[indice]
+        return (
+          e.aProduzir !== "0.000" ||
+          (!ultima &&
+            (e.disponivelEnvio !== "0.000" || e.emTransito !== "0.000"))
+        )
+      })
+    )
+      throw new ProducaoError(
+        409,
+        "Há parcelas sem apontamento, sem envio ou com recebimento pendente nesta etapa.",
+      )
+    if (ultima) await confirmarQuantidades(tx, ordem, ctx)
+    await fluxos.transicionarEtapa(tx, id, etapa, false)
+    if (ultima)
+      await atualizarEstado(tx, ctx, ordem, {
+        status: "CONCLUIDA",
+        data_conclusao: new Date(),
+      })
+    else
+      await atualizarEstado(tx, ctx, ordem, {
+        id_setor: etapas[indice + 1].id_setor,
+      })
+    return finalizar(tx, ctx, id, ordem)
+  }
   validarPendencias(ordem)
   const etapas = await fluxos.etapas(tx, id)
   const atual = etapas.find((etapa) => etapa.status !== "CONCLUIDA")

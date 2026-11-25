@@ -4,6 +4,7 @@ import {
   editarSchema,
   listarSchema,
 } from "@/modules/clientes/clientes.schema"
+import { formatarCep, formatarCpfCnpj, formatarTelefone } from "./formatacao"
 
 const id = z.number().int().positive()
 export const clienteApiSchema = z.object({
@@ -30,7 +31,36 @@ const paginacaoSchema = z.object({
   total: z.number().int().nonnegative(),
   totalPaginas: z.number().int().nonnegative(),
 })
+const contatoClienteSchema = z.object({
+  id,
+  id_cliente: id,
+  tipo: z.string(),
+  valor: z.string(),
+  descricao: z.string().nullable(),
+  principal: z.boolean(),
+  ativo: z.boolean(),
+  data_cadastro: z.iso.datetime(),
+})
+const enderecoClienteSchema = z.object({
+  id,
+  id_cliente: id,
+  tipo: z.enum(["PRINCIPAL", "ENTREGA", "COBRANCA", "OUTRO"]),
+  descricao: z.string().nullable(),
+  endereco: z.string(),
+  numero: z.string().nullable(),
+  complemento: z.string().nullable(),
+  bairro: z.string().nullable(),
+  cidade: z.string().nullable(),
+  estado: z.string().nullable(),
+  cep: z.string().nullable(),
+  referencia: z.string().nullable(),
+  principal: z.boolean(),
+  ativo: z.boolean(),
+  data_cadastro: z.iso.datetime(),
+})
 export type ClienteApi = z.infer<typeof clienteApiSchema>
+export type ContatoClienteApi = z.infer<typeof contatoClienteSchema>
+export type EnderecoClienteApi = z.infer<typeof enderecoClienteSchema>
 export type CamposCliente = {
   nomeRazaoSocial: string
   cpfCnpj: string
@@ -69,16 +99,16 @@ function respostaValida<T>(schema: z.ZodType<T>, body: unknown): T {
 export function camposCliente(cliente?: ClienteApi): CamposCliente {
   return {
     nomeRazaoSocial: cliente?.nome_razao_social ?? "",
-    cpfCnpj: cliente?.cpf_cnpj ?? "",
+    cpfCnpj: cliente?.cpf_cnpj ? formatarCpfCnpj(cliente.cpf_cnpj) : "",
     email: cliente?.email ?? "",
-    telefone: cliente?.telefone ?? "",
+    telefone: cliente?.telefone ? formatarTelefone(cliente.telefone) : "",
     endereco: cliente?.endereco ?? "",
     numero: cliente?.numero ?? "",
     complemento: cliente?.complemento ?? "",
     bairro: cliente?.bairro ?? "",
     cidade: cliente?.cidade ?? "",
     estado: cliente?.estado ?? "",
-    cep: cliente?.cep ?? "",
+    cep: cliente?.cep ? formatarCep(cliente.cep) : "",
   }
 }
 
@@ -259,3 +289,81 @@ export async function historicoCliente(
     throw new Error("Histórico incompatível com o cliente consultado.")
   return data
 }
+
+export async function listarVinculosCliente(
+  requisitar: RequisitarClientes,
+  idEmpresa: number,
+  idCliente: number,
+  signal?: AbortSignal,
+) {
+  const data = respostaValida(
+    z.object({
+      contatos: z.array(contatoClienteSchema),
+    }),
+    await pedir(requisitar, idEmpresa, `/api/clientes/${idCliente}/contatos`, {
+      signal,
+    }),
+  )
+  const enderecosData = respostaValida(
+    z.object({ enderecos: z.array(enderecoClienteSchema) }),
+    await pedir(requisitar, idEmpresa, `/api/clientes/${idCliente}/enderecos`, {
+      signal,
+    }),
+  )
+  if (
+    data.contatos.some((item) => item.id_cliente !== idCliente) ||
+    enderecosData.enderecos.some((item) => item.id_cliente !== idCliente)
+  )
+    throw new Error("Dados incompatíveis com o cliente consultado.")
+  return { ...data, ...enderecosData }
+}
+
+async function mutarVinculo<T>(
+  requisitar: RequisitarClientes,
+  idEmpresa: number,
+  idCliente: number,
+  tipo: "contatos" | "enderecos",
+  input: unknown,
+  registro?: number,
+  excluir = false,
+) {
+  return pedir(
+    requisitar,
+    idEmpresa,
+    `/api/clientes/${idCliente}/${tipo}${registro ? `/${registro}` : ""}`,
+    excluir
+      ? { method: "DELETE" }
+      : {
+          method: registro ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+  ) as Promise<T>
+}
+
+export const salvarContatoCliente = (
+  requisitar: RequisitarClientes,
+  idEmpresa: number,
+  idCliente: number,
+  input: unknown,
+  id?: number,
+) => mutarVinculo(requisitar, idEmpresa, idCliente, "contatos", input, id)
+export const excluirContatoCliente = (
+  requisitar: RequisitarClientes,
+  idEmpresa: number,
+  idCliente: number,
+  id: number,
+) => mutarVinculo(requisitar, idEmpresa, idCliente, "contatos", null, id, true)
+export const salvarEnderecoCliente = (
+  requisitar: RequisitarClientes,
+  idEmpresa: number,
+  idCliente: number,
+  input: unknown,
+  id?: number,
+) => mutarVinculo(requisitar, idEmpresa, idCliente, "enderecos", input, id)
+export const excluirEnderecoCliente = (
+  requisitar: RequisitarClientes,
+  idEmpresa: number,
+  idCliente: number,
+  id: number,
+) => mutarVinculo(requisitar, idEmpresa, idCliente, "enderecos", null, id, true)

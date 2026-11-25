@@ -27,7 +27,13 @@ function setup() {
   let memberships = [admin]
   const auth = { user: { id: 5, role: "ADMINISTRACAO" } }
   const cargo = { id: 2, nome: "Produção", status: "ATIVO" }
-  const setor = { id: 3, nome: "Corte", tipo: "Produção", status: "ATIVO" }
+  const setor = {
+    id: 3,
+    nome: "Corte",
+    tipo: "Produção",
+    status: "ATIVO",
+    permissoes_setor: [{ recurso: "ORDENS_PRODUCAO" }],
+  }
   const tx = {
     usuario_empresa: {
       findFirst: async ({ where }) => {
@@ -70,7 +76,7 @@ function setup() {
             ...m,
             empresas: { status: "ATIVA" },
             cargos: cargo,
-            setores: setor,
+            setores: m.id_setor === setor.id ? setor : null,
           })),
         }
       },
@@ -180,7 +186,7 @@ test("201: funcionário e vínculo USUARIO, hash Argon2, auditoria sem credencia
     email: " FUNCIONARIO@example.test ",
   })
   assert.equal(response.status, 201)
-  assert.equal(response.headers.get("cache-control"), "no-store")
+  assert.equal(response.headers.get("cache-control"), "private, no-store")
   const result = await response.json()
   assert.equal(result.usuario.nome, input.nome)
   assert.equal(result.usuario.email, input.email)
@@ -217,7 +223,6 @@ test("400: entradas inválidas, elevação de privilégio e seleção de empresa
     { nivel_acesso: "ADMIN" },
     { nivelAcesso: "EMPRESA" },
     { perfil: "ADMINISTRACAO" },
-    { permissoes: [] },
     { idEmpresa: 11 },
     { status: "ATIVO" },
     { password: "123" },
@@ -320,7 +325,7 @@ test("falha de auditoria reverte usuário e vínculo sem expor credenciais", asy
     const response = await post()
     assert.equal(response.status, 500)
     assert.deepEqual(await response.json(), {
-      error: "Não foi possível cadastrar o funcionário.",
+      error: "Não foi possível concluir a operação de usuários.",
     })
     assert.equal(state.users.length, 0)
     assert.equal(state.auditoria.length, 0)

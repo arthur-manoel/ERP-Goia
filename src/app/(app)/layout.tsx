@@ -5,7 +5,10 @@ import { AppHeader } from "@/components/layout/app-header"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { obterUsuarioAtual } from "@/features/autenticacao/usuario-atual"
-import { ProtecaoRota } from "@/features/autenticacao/components/protecao-rota"
+import {
+  ConteudoDaEmpresa,
+  ProtecaoRota,
+} from "@/features/autenticacao/components/protecao-rota"
 
 // Ler cookies torna todas as telas do app dinâmicas (renderizadas por requisição).
 // Assim nenhuma consulta ao banco roda durante o build.
@@ -22,7 +25,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <SidebarInset>
             <AppHeader usuario={usuario} />
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
-              {children}
+              <ConteudoDaEmpresa>{children}</ConteudoDaEmpresa>
             </div>
           </SidebarInset>
         </SidebarProvider>

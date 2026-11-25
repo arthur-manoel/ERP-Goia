@@ -36,6 +36,8 @@ const campos = {
 }
 export const abrirSchema = z.strictObject({
   ...campos,
+  idVariacao: idSchema.optional(),
+  idLocal: idSchema.optional(),
 })
 export const alterarSchema = z
   .strictObject({

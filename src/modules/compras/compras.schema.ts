@@ -216,12 +216,30 @@ export const receberCompraSchema = z
     itens: z
       .array(
         z
-          .object({ idProduto: idSchema, quantidade: quantidadeSchema })
-          .strict(),
+          .object({
+            idProduto: idSchema.optional(),
+            idItemCompra: idSchema.optional(),
+            idVariacao: idSchema.optional(),
+            idSetorDestino: idSchema.nullable().optional(),
+            quantidade: quantidadeSchema,
+          })
+          .strict()
+          .refine(
+            (v) => !!v.idProduto || !!v.idItemCompra,
+            "Informe o item da compra ou o produto.",
+          ),
       )
       .min(1, "Informe ao menos um item recebido.")
       .max(200)
-      .superRefine(itensUnicos)
+      .refine(
+        (v) =>
+          new Set(
+            v.map((i) =>
+              i.idItemCompra ? `i:${i.idItemCompra}` : `p:${i.idProduto}`,
+            ),
+          ).size === v.length,
+        "Item de recebimento repetido.",
+      )
       .optional(),
     /** Setor de destino no estoque; exigido só quando o produto ainda não tem saldo no local da compra. */
     idSetorDestino: idSchema.nullable().optional(),
@@ -286,12 +304,14 @@ const camposNota = {
   idPedidoCompra: idSchema.nullable().optional(),
   dataEmissao: diaSchema.nullable().optional(),
   dataRecebimento: diaSchema.nullable().optional(),
-  /** Total do documento fiscal. Se omitido e houver compra vinculada, usa o total da compra. */
+  /** Total explícito do documento fiscal, inclusive quando cobre parte da compra. */
   valorTotal: valorSchema.optional(),
   observacao: texto(255),
 }
 export const criarNotaSchema = z.object(camposNota).strict()
-export const editarNotaSchema = z.object(camposNota).strict()
+export const editarNotaSchema = z
+  .object({ ...camposNota, versaoEsperada: idSchema.optional() })
+  .strict()
 export const acaoNotaSchema = z
   .object({
     acao: z.enum(["receber", "cancelar"]),

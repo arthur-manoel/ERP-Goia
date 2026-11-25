@@ -21,6 +21,13 @@ const dataHora = new Intl.DateTimeFormat("pt-BR", {
   timeZone: TIMEZONE,
 })
 
+const diaCivil = new Intl.DateTimeFormat("pt-BR", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: TIMEZONE,
+})
+
 function paraNumero(valor: Numerico) {
   return typeof valor === "number" ? valor : Number(valor.toString())
 }
@@ -41,6 +48,14 @@ export function formatarQuantidade(valor: Numerico, casas = 3) {
 /** 18/09/2026 */
 export function formatarData(valor: Date) {
   return data.format(valor)
+}
+
+/** Data civil da aplicação no formato aceito por input type="date". */
+export function formatarDiaCivil(valor: Date) {
+  const partes = diaCivil.formatToParts(valor)
+  return ["year", "month", "day"]
+    .map((tipo) => partes.find((p) => p.type === tipo)?.value)
+    .join("-")
 }
 
 /** 18/09/2026, 14:30 */

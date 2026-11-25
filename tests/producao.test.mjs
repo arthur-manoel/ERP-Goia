@@ -117,6 +117,9 @@ function setup(overrides = {}) {
       return 1
     },
     ordem_producao: {
+      async findUnique() {
+        return null
+      },
       async findFirst({ where }) {
         return where.id_empresa === 10 && where.id === 1 ? ordem : null
       },
@@ -850,6 +853,7 @@ test("CRUD e associação validam empresa, setores ativos, vínculos e transaç�
       writes.push(["setores", id, setores]),
     auditarCadastro: async () => {},
     produtosDoFluxo: async () => [],
+    recursosDosSetores: async () => new Map(),
     associacao: async () => associado,
     emUso: async () => uso,
     remover: async () => writes.push(["remover"]),

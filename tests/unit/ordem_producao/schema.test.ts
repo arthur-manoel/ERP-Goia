@@ -60,3 +60,22 @@ it.each([
 it.each(["0", "-1", "1.1", "2147483648", "1e1"])("rejeita ID %s", (id) => {
   expect(ordemParamsSchema.safeParse({ id }).success).toBe(false)
 })
+
+it("abertura atômica valida o item e exige quantidade igual à meta do cabeçalho", () => {
+  const dados = {
+    numero: "OP-NOVA",
+    quantidade_planejada: "3",
+    item: { id_produto: 20, quantidade: "3.000" },
+  }
+  expect(createOrdemSchema.safeParse(dados).success).toBe(true)
+  expect(
+    createOrdemSchema.safeParse({ ...dados, quantidade_planejada: "4" })
+      .success,
+  ).toBe(false)
+  expect(
+    createOrdemSchema.safeParse({
+      ...dados,
+      item: { id_produto: 20, quantidade: "0" },
+    }).success,
+  ).toBe(false)
+})

@@ -19,6 +19,7 @@ function model() {
 }
 export const db = {
   refresh_tokens: model(),
+  usuarios: model(),
   usuario_empresa: model(),
   tamanhos: model(),
   cores: model(),
@@ -37,6 +38,8 @@ export const db = {
   pedido_cliente_historico: model(),
   produto_variacoes: model(),
   clientes: model(),
+  cliente_contato: model(),
+  cliente_endereco: model(),
   sequencias_automaticas: { ...model(), upsert: vi.fn() },
   tipos_produto: model(),
   $queryRaw: vi.fn(),
@@ -51,6 +54,11 @@ export const db = {
   pagamentos_receber: model(),
   pagamentos_pagar: model(),
   compras: model(),
+  compra_itens: model(),
+  nota_fiscal: model(),
+  item_nota_fiscal: model(),
+  compra_recebimento_linha: model(),
+  nota_item_entrada: model(),
   despesas: model(),
   ordem_producao: model(),
   ordem_producao_item: model(),

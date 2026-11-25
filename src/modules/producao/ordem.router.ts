@@ -16,6 +16,8 @@ export type ItemContext = { params: Promise<{ id: string; itemId: string }> }
 export type StageContext = { params: Promise<{ id: string; etapaId: string }> }
 type Operation =
   | "list"
+  | "listResumo"
+  | "opcoesAbertura"
   | "get"
   | "create"
   | "update"
@@ -25,6 +27,7 @@ type Operation =
   | "items"
   | "stages"
   | "addItem"
+  | "complete"
   | "editItem"
   | "removeItem"
   | "production"
@@ -51,13 +54,15 @@ async function execute(
   try {
     const ctx = await autorizar(
       request,
-      ["list", "get", "items", "stages"].includes(operation)
+      ["list", "listResumo", "get", "items", "stages"].includes(operation)
         ? "ler"
-        : ["create", "addItem"].includes(operation)
+        : ["create", "addItem", "opcoesAbertura"].includes(operation)
           ? "criar"
           : ["cancel", "removeItem"].includes(operation)
             ? "excluir"
             : "editar",
+      "ORDENS_PRODUCAO",
+      operation === "opcoesAbertura" ? "read" : undefined,
     )
     if (ctx instanceof Response)
       return errorResponse(
@@ -66,8 +71,26 @@ async function execute(
           ctx.status === 401 ? "Não autenticado." : "Acesso negado.",
         ),
       )
+    if (operation === "complete") {
+      const permissaoCriar = await autorizar(request, "criar")
+      if (permissaoCriar instanceof Response) return permissaoCriar
+    }
     return respond(
       async () => {
+        if (operation === "listResumo") {
+          const { page, limit, ...filters } = validate(
+            schemas.listResumoSchema,
+            readQuery(request),
+          )
+          return service.listarResumo(ctx, filters, { page, limit })
+        }
+        if (operation === "opcoesAbertura") {
+          const { busca } = validate(
+            schemas.opcoesAberturaSchema,
+            readQuery(request),
+          )
+          return service.opcoesAbertura(ctx, busca)
+        }
         if (operation === "list") {
           const { page, limit, ...filters } = validate(
             schemas.listOrdemSchema,
@@ -132,6 +155,13 @@ async function execute(
             id,
             validate(schemas.ordemPaginationSchema, readQuery(request)),
           )
+        if (operation === "complete") {
+          const { id_local_estoque, ...item } = validate(
+            schemas.completarOrdemSchema,
+            await readJson(request),
+          )
+          return service.addItem(ctx, id, item, { id_local_estoque })
+        }
         if (operation === "addItem")
           return service.addItem(
             ctx,
@@ -152,13 +182,17 @@ async function execute(
           )
         return service.action(ctx, id, operation)
       },
-      operation === "create" || operation === "addItem" ? 201 : 200,
+      ["create", "addItem", "complete"].includes(operation) ? 201 : 200,
     )
   } catch (error) {
     return errorResponse(error)
   }
 }
 export const listHandler = (request: Request) => execute(request, "list")
+export const listarResumoHandler = (request: Request) =>
+  execute(request, "listResumo")
+export const opcoesAberturaHandler = (request: Request) =>
+  execute(request, "opcoesAbertura")
 export const createHandler = (request: Request) => execute(request, "create")
 export const getHandler = (request: Request, context: RouteContext) =>
   execute(request, "get", context)
@@ -189,3 +223,6 @@ export const startStageHandler = (request: Request, context: StageContext) =>
   execute(request, "startStage", context)
 export const finishStageHandler = (request: Request, context: StageContext) =>
   execute(request, "finishStage", context)
+
+export const completeHandler = (request: Request, context: RouteContext) =>
+  execute(request, "complete", context)

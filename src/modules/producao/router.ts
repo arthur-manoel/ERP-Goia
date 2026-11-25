@@ -1,8 +1,18 @@
 import "server-only"
-import { HttpError } from "@/lib/api/errors"
+import { ConflitoTransitorio, HttpError } from "@/lib/api/errors"
+import {
+  conferir,
+  executar as executarIdempotente,
+} from "@/modules/reservas/operacoes"
+import { chaveRecebimento } from "@/modules/recebimentos/recebimentos.schema"
 import type { z } from "zod"
 import { autorizar } from "./producao.authorization"
-import { ProducaoError } from "./producao.repository"
+import {
+  ProducaoError,
+  transacao,
+  type Contexto,
+  type Transaction,
+} from "./producao.repository"
 import {
   abrirSchema,
   alterarSchema,
@@ -11,12 +21,12 @@ import {
   idSchema,
 } from "./producao.schema"
 import {
-  executarEtapa,
   consultarOrdem,
-  abrirOrdem,
-  alterarOrdem,
-  avancarOrdem,
-  encerrarOrdem,
+  abrirOrdemNaTransacao,
+  alterarOrdemNaTransacao,
+  avancarOrdemNaTransacao,
+  encerrarOrdemNaTransacao,
+  executarEtapaNaTransacao,
 } from "./producao.service"
 
 import { etapaSchema } from "../fluxos/fluxos.schema"
@@ -30,6 +40,45 @@ type Operacao =
   | "iniciarEtapa"
   | "concluirEtapa"
   | "consultar"
+async function confirmarEscrita<T>(
+  request: Request,
+  ctx: Contexto,
+  tipo:
+    | "ABERTURA_ORDEM_PRODUCAO"
+    | "EDICAO_ORDEM_PRODUCAO"
+    | "AVANCO_ORDEM_PRODUCAO"
+    | "ENCERRAMENTO_ORDEM_PRODUCAO"
+    | "INICIO_ETAPA_ORDEM_PRODUCAO"
+    | "CONCLUSAO_ETAPA_ORDEM_PRODUCAO",
+  input: object,
+  operacao: (tx: Transaction) => Promise<T>,
+  validar?: (tx: Transaction) => Promise<void>,
+) {
+  const abrir = tipo === "ABERTURA_ORDEM_PRODUCAO"
+  const header = request.headers.get("Idempotency-Key")
+  const headers = { "Cache-Control": "no-store" }
+  if (header === null)
+    return Response.json(await transacao(operacao), {
+      status: abrir ? 201 : 200,
+      headers,
+    })
+
+  const chave = chaveRecebimento.safeParse(header)
+  if (!chave.success) throw new ProducaoError(400, "Idempotency-Key inválida.")
+  const resultado = await executarIdempotente(
+    ctx,
+    chave.data,
+    tipo,
+    JSON.parse(JSON.stringify(input)),
+    [["ORDENS_PRODUCAO", abrir ? "criar" : "editar"]],
+    async (tx) => JSON.parse(JSON.stringify(await operacao(tx))),
+    { validar },
+  )
+  return Response.json(resultado.dados, {
+    status: abrir && resultado.criado ? 201 : 200,
+    headers,
+  })
+}
 async function executar(
   request: Request,
   operacao: Operacao,
@@ -69,31 +118,91 @@ async function executar(
         )
       return parsed.data
     }
-    const result =
-      operacao === "consultar"
-        ? await consultarOrdem(ctx, id)
-        : operacao === "iniciarEtapa" || operacao === "concluirEtapa"
-          ? await executarEtapa(
-              ctx,
-              id,
-              validar(etapaSchema).etapaId,
-              operacao === "iniciarEtapa",
-            )
-          : operacao === "abrir"
-            ? await abrirOrdem(ctx, validar(abrirSchema))
-            : operacao === "alterar"
-              ? await alterarOrdem(ctx, id, validar(alterarSchema))
-              : operacao === "avancar"
-                ? await avancarOrdem(ctx, id, validar(avancarSchema))
-                : await encerrarOrdem(ctx, id, validar(encerrarSchema))
+    if (operacao === "abrir") {
+      const input = validar(abrirSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "ABERTURA_ORDEM_PRODUCAO",
+        input,
+        (tx) => abrirOrdemNaTransacao(tx, ctx, input),
+      )
+    }
+    if (operacao === "alterar") {
+      const input = validar(alterarSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "EDICAO_ORDEM_PRODUCAO",
+        { id, ...input },
+        (tx) => alterarOrdemNaTransacao(tx, ctx, id, input),
+      )
+    }
+    if (operacao === "avancar") {
+      const input = validar(avancarSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "AVANCO_ORDEM_PRODUCAO",
+        { id, ...input },
+        (tx) => avancarOrdemNaTransacao(tx, ctx, id, input),
+      )
+    }
+    if (operacao === "encerrar") {
+      const input = validar(encerrarSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "ENCERRAMENTO_ORDEM_PRODUCAO",
+        { id, ...input },
+        (tx) => encerrarOrdemNaTransacao(tx, ctx, id, input),
+        (tx) => conferir(tx, ctx, [["ESTOQUE", "editar"]]),
+      )
+    }
+    if (operacao === "iniciarEtapa") {
+      const { etapaId } = validar(etapaSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "INICIO_ETAPA_ORDEM_PRODUCAO",
+        { id, etapaId },
+        (tx) => executarEtapaNaTransacao(tx, ctx, id, etapaId, true),
+      )
+    }
+    if (operacao === "concluirEtapa") {
+      const { etapaId } = validar(etapaSchema)
+      return await confirmarEscrita(
+        request,
+        ctx,
+        "CONCLUSAO_ETAPA_ORDEM_PRODUCAO",
+        { id, etapaId },
+        (tx) => executarEtapaNaTransacao(tx, ctx, id, etapaId, false),
+        async (tx) => {
+          const ultima = await tx.ordem_producao_fluxo_setor.findFirst({
+            where: {
+              id_ordem_producao: id,
+              ordem_producao: { id_empresa: ctx.idEmpresa },
+            },
+            orderBy: { ordem: "desc" },
+            select: { id: true },
+          })
+          if (ultima?.id === etapaId)
+            await conferir(tx, ctx, [["ESTOQUE", "editar"]])
+        },
+      )
+    }
+    const result = await consultarOrdem(ctx, id)
     return Response.json(result, {
-      status: operacao === "abrir" ? 201 : 200,
+      status: 200,
       headers: { "Cache-Control": "no-store" },
     })
   } catch (error) {
     if (error instanceof HttpError)
       return Response.json(
-        { error: error.message },
+        {
+          error: error.message,
+          ...(error instanceof ConflitoTransitorio ? { code: error.code } : {}),
+        },
         { status: error.status, headers: { "Cache-Control": "no-store" } },
       )
     console.error("Falha na API de ordens de produção", error)

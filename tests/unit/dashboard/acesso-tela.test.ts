@@ -13,12 +13,19 @@ const autenticacao = vi.mocked(useAutenticacao)
 beforeEach(() =>
   autenticacao.mockReturnValue({
     estado: "autenticado",
-    usuario: { email: "a@a.test", nome: "A" },
+    usuario: { id: 1, email: "a@a.test", nome: "A" },
     empresas: [
       { id: 1, nome: "A" },
       { id: 2, nome: "B" },
     ],
     empresa: null,
+    erroAcesso: null,
+    recarregarAcesso: vi.fn(),
+    sessaoIdentificada: true,
+    saindo: false,
+    erroSaida: false,
+    chaveEmpresa: 0,
+    conferirEmpresa: vi.fn(),
     requisitar: vi.fn(),
     selecionarEmpresa: vi.fn(),
     entrar: vi.fn(),

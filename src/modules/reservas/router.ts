@@ -37,6 +37,7 @@ class EntregaRecusada extends HttpError {
 }
 
 type Operacao =
+  | "disponibilidade"
   | "fechamento"
   | "reservas"
   | "detalhe"
@@ -62,7 +63,15 @@ export async function operacoesHandler(
     const escrita = request.method === "POST"
     const exigencias: Exigencia[] = [["ESTOQUE", "ler"]]
     if (escrita) exigencias.push(["ESTOQUE", "editar"])
-    if (["pedido", "confirmar", "entregar", "fechamento"].includes(op))
+    if (
+      [
+        "pedido",
+        "confirmar",
+        "entregar",
+        "fechamento",
+        "disponibilidade",
+      ].includes(op)
+    )
       exigencias.push(["PEDIDOS", escrita ? "editar" : "ler"])
     if (["producao", "consumir"].includes(op))
       exigencias.push(["ORDENS_PRODUCAO", escrita ? "editar" : "ler"])
@@ -95,6 +104,108 @@ export async function operacoesHandler(
       const data = await prisma.$transaction(
         async (tx) => {
           await conferir(tx, ctx, exigencias)
+          if (op === "disponibilidade") {
+            const filtro = validate(
+              z.strictObject({
+                idProduto: z.coerce.number().pipe(schemas.id),
+                idVariacao: z.coerce.number().pipe(schemas.id).optional(),
+              }),
+              readQuery(request),
+            )
+            const produto = await tx.produtos.findFirst({
+              where: {
+                id: filtro.idProduto,
+                status: "ATIVO",
+                controla_estoque: true,
+                produto_empresa: {
+                  some: { id_empresa: ctx.idEmpresa, status: "ATIVO" },
+                },
+              },
+              select: { id: true },
+            })
+            if (!produto)
+              throw new NotFoundError(
+                "Produto ativo não encontrado na empresa.",
+              )
+            if (
+              filtro.idVariacao &&
+              !(await tx.produto_variacoes.findFirst({
+                where: {
+                  id: filtro.idVariacao,
+                  id_produto: produto.id,
+                  id_empresa: ctx.idEmpresa,
+                  status: "ATIVO",
+                },
+                select: { id: true },
+              }))
+            )
+              throw new NotFoundError(
+                "Variação ativa não encontrada no produto.",
+              )
+            const posicoes = await tx.estoque.findMany({
+              where: {
+                id_empresa: ctx.idEmpresa,
+                id_produto: produto.id,
+                locais_estoque: { id_empresa: ctx.idEmpresa, status: "ATIVO" },
+                setores: { id_empresa: ctx.idEmpresa, status: "ATIVO" },
+              },
+              include: { estoque_variacao: true },
+            })
+            let fisica = new Prisma.Decimal(0)
+            let reservada = new Prisma.Decimal(0)
+            for (const p of posicoes) {
+              const fisicaGrade = p.estoque_variacao.reduce(
+                (s, v) => s.plus(v.quantidade),
+                new Prisma.Decimal(0),
+              )
+              const reservadaGrade = p.estoque_variacao.reduce(
+                (s, v) => s.plus(v.quantidade_reservada),
+                new Prisma.Decimal(0),
+              )
+              if (
+                p.quantidade.lt(0) ||
+                p.quantidade_reservada.lt(0) ||
+                p.quantidade_reservada.gt(p.quantidade) ||
+                fisicaGrade.gt(p.quantidade) ||
+                reservadaGrade.gt(p.quantidade_reservada) ||
+                p.estoque_variacao.some(
+                  (v) =>
+                    v.quantidade.lt(0) ||
+                    v.quantidade_reservada.lt(0) ||
+                    v.quantidade_reservada.gt(v.quantidade),
+                )
+              )
+                throw new ConflictError("Saldo de estoque exige regularização.")
+              const grade = p.estoque_variacao.find(
+                (v) => v.id_variacao === filtro.idVariacao,
+              )
+              const q = filtro.idVariacao
+                ? (grade?.quantidade ?? new Prisma.Decimal(0))
+                : p.quantidade.minus(
+                    p.estoque_variacao.reduce(
+                      (s, v) => s.plus(v.quantidade),
+                      new Prisma.Decimal(0),
+                    ),
+                  )
+              const r = filtro.idVariacao
+                ? (grade?.quantidade_reservada ?? new Prisma.Decimal(0))
+                : p.quantidade_reservada.minus(
+                    p.estoque_variacao.reduce(
+                      (s, v) => s.plus(v.quantidade_reservada),
+                      new Prisma.Decimal(0),
+                    ),
+                  )
+              if (q.lt(0) || r.lt(0) || r.gt(q))
+                throw new ConflictError("Saldo de estoque exige regularização.")
+              fisica = fisica.plus(q)
+              reservada = reservada.plus(r)
+            }
+            return {
+              fisica: fisica.toFixed(3),
+              reservada: reservada.toFixed(3),
+              disponivel: fisica.minus(reservada).toFixed(3),
+            }
+          }
           if (op === "fechamento") {
             if (new URL(request.url).search)
               throw new ValidationError("Não informe filtros.")
@@ -135,12 +246,24 @@ export async function operacoesHandler(
                   id: true,
                   nome: true,
                   unidade: true,
+                  permite_producao: true,
+                  _count: {
+                    select: {
+                      produto_variacoes: {
+                        where: { id_empresa: ctx.idEmpresa },
+                      },
+                    },
+                  },
                   produto_variacoes: {
                     where: { id_empresa: ctx.idEmpresa, status: "ATIVO" },
                     select: {
                       id: true,
-                      cores: { select: { nome: true } },
-                      tamanhos: { select: { nome: true } },
+                      cores: {
+                        select: { nome: true, status: true, id_empresa: true },
+                      },
+                      tamanhos: {
+                        select: { nome: true, status: true, id_empresa: true },
+                      },
                     },
                   },
                   estoque: {
@@ -160,7 +283,26 @@ export async function operacoesHandler(
                 orderBy: { id: "asc" },
               }),
             ])
-            return textoJson({ produtos, locais, setores, limiteProdutos: 50 })
+            return textoJson({
+              produtos: produtos.map(
+                ({ _count, produto_variacoes, ...produto }) => ({
+                  produto_variacoes: produto_variacoes
+                    .filter((variacao) =>
+                      variacaoAtivaNaEmpresa(variacao, ctx.idEmpresa),
+                    )
+                    .map(({ id, cores, tamanhos }) => ({
+                      id,
+                      cores: cores ? { nome: cores.nome } : null,
+                      tamanhos: tamanhos ? { nome: tamanhos.nome } : null,
+                    })),
+                  ...produto,
+                  possui_grade: _count.produto_variacoes > 0,
+                }),
+              ),
+              locais,
+              setores,
+              limiteProdutos: 50,
+            })
           }
           if (op === "pedido") {
             if (new URL(request.url).search)
@@ -172,6 +314,18 @@ export async function operacoesHandler(
                 numero: true,
                 status: true,
                 versao: true,
+                id_cliente: true,
+                id_endereco_entrega: true,
+                destinatario: true,
+                telefone_entrega: true,
+                endereco_entrega: true,
+                numero_entrega: true,
+                complemento_entrega: true,
+                bairro_entrega: true,
+                cidade_entrega: true,
+                estado_entrega: true,
+                cep_entrega: true,
+                referencia_entrega: true,
                 pedido_cliente_fechamento: { select: { id: true } },
                 pedido_cliente_item: {
                   select: {
@@ -190,7 +344,21 @@ export async function operacoesHandler(
               },
             })
             if (!pedido) throw new NotFoundError("Pedido não encontrado.")
-            return textoJson(pedido)
+            const contatosCliente = await tx.cliente_contato.findMany({
+              where: {
+                id_cliente: pedido.id_cliente,
+                ativo: true,
+                clientes: { id_empresa: ctx.idEmpresa },
+              },
+              select: {
+                tipo: true,
+                valor: true,
+                descricao: true,
+                principal: true,
+              },
+              orderBy: [{ principal: "desc" }, { id: "asc" }],
+            })
+            return textoJson({ ...pedido, contatosCliente })
           }
           if (op === "producao") {
             if (new URL(request.url).search)
