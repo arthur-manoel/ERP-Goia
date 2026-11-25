@@ -2309,6 +2309,9 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     )
   } finally {
     const scope = { in: empresas }
+    await prisma.compra_recebimento_linha?.deleteMany({
+      where: { id_empresa: scope },
+    })
     await prisma.compra_itens.deleteMany({
       where: { compras: { id_empresa: scope } },
     })
