@@ -150,6 +150,11 @@ export const navegacao: GrupoNavegacao[] = [
         icone: ArrowLeftRight,
       },
       { titulo: "PDV", href: "/vendas", icone: BadgeDollarSign },
+      {
+        titulo: "Histórico de vendas",
+        href: "/vendas/historico",
+        icone: Receipt,
+      },
     ],
   },
   {
