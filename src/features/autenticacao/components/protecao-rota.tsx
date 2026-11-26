@@ -1,4 +1,5 @@
 "use client"
+import Link from "next/link"
 import { Fragment, useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -38,7 +39,7 @@ export function ProtecaoRota({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     )
-  if (estado === "erro" || !empresa)
+  if (estado === "erro" || (!empresa && pathname !== "/admin/empresas"))
     return (
       <main className="flex min-h-svh items-center justify-center p-4">
         <div className="w-full max-w-md space-y-5 rounded-xl border bg-card p-6">
@@ -62,6 +63,14 @@ export function ProtecaoRota({ children }: { children: React.ReactNode }) {
           </p>
           {estado !== "erro" && <SeletorEmpresa />}
           <div className="flex flex-wrap gap-2">
+            {estado === "autenticado" && (
+              <Button
+                variant="outline"
+                render={<Link href="/admin/empresas" />}
+              >
+                Gerenciar empresas
+              </Button>
+            )}
             <Button
               variant="outline"
               disabled={saindo || erroSaida}
@@ -92,6 +101,11 @@ export function ProtecaoRota({ children }: { children: React.ReactNode }) {
 }
 
 export function ConteudoDaEmpresa({ children }: { children: React.ReactNode }) {
-  const { chaveEmpresa } = useAutenticacao()
-  return <Fragment key={chaveEmpresa}>{children}</Fragment>
+  const { chaveEmpresa, usuario } = useAutenticacao()
+  const pathname = usePathname()
+  const chave =
+    pathname === "/admin/empresas"
+      ? `empresas:${usuario?.id ?? "anonimo"}`
+      : chaveEmpresa
+  return <Fragment key={chave}>{children}</Fragment>
 }

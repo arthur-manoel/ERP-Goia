@@ -37,7 +37,7 @@ Legenda: ⬜ não iniciado · 🟨 em andamento · ✅ concluído · ⛔ bloquea
 | Base compartilhada | ⬜ | `sequencias_automaticas` | [#6](https://github.com/arthur-manoel/ERP-Goia/issues/6) a [#10](https://github.com/arthur-manoel/ERP-Goia/issues/10), [#15](https://github.com/arthur-manoel/ERP-Goia/issues/15) |
 | Acesso e segurança | 🟨 | `usuarios`, `refresh_tokens`, `administradores_gerais`, `usuario_empresa`, `permissoes_usuario`, `auditoria` | [#11](https://github.com/arthur-manoel/ERP-Goia/issues/11) a [#14](https://github.com/arthur-manoel/ERP-Goia/issues/14), [#19](https://github.com/arthur-manoel/ERP-Goia/issues/19) |
 | Auditoria das operações | ✅ | `auditoria` | [#14](https://github.com/arthur-manoel/ERP-Goia/issues/14) |
-| Administração | ⬜ | `empresas`, `setores`, `tipos_setor`, `permissoes_setor`, `cargos` | [#16](https://github.com/arthur-manoel/ERP-Goia/issues/16) a [#18](https://github.com/arthur-manoel/ERP-Goia/issues/18) |
+| Administração | 🟨 | `empresas`, `setores`, `tipos_setor`, `permissoes_setor`, `cargos` | [#16](https://github.com/arthur-manoel/ERP-Goia/issues/16) a [#18](https://github.com/arthur-manoel/ERP-Goia/issues/18) |
 | Cadastros | 🟨 | `clientes`, `fornecedores`, `empresa_fornecedor`, `categorias`, `cores`, `tamanhos`, `tipos_produto` | [#20](https://github.com/arthur-manoel/ERP-Goia/issues/20) a [#25](https://github.com/arthur-manoel/ERP-Goia/issues/25) |
 | Produtos e ficha técnica | 🟨 | `produtos`, `produto_empresa`, `produto_variacoes`, `produto_fornecedor`, `ficha_tecnica`, `ficha_tecnica_item` | [#26](https://github.com/arthur-manoel/ERP-Goia/issues/26) a [#28](https://github.com/arthur-manoel/ERP-Goia/issues/28) |
 | Estoque | 🟨 | `locais_estoque`, `estoque`, `estoque_minimo_local`, `movimentacao_estoque`, `kardex`, `reserva_estoque` | [#29](https://github.com/arthur-manoel/ERP-Goia/issues/29) a [#32](https://github.com/arthur-manoel/ERP-Goia/issues/32) |
@@ -578,6 +578,8 @@ banco compartilhado/produção cabe ao responsável após conferência/aprovaç�
 Enviar ou incorporar a PR não executa DDL automaticamente.
 
 ## Histórico
+
+- 23/11/2026: tela de Empresas integrada à API do PR #155, com gestão global autenticada, edição parcial e revalidação da sessão. Validação com banco local e revisão de segurança em [docs/revisao-empresas.md](docs/revisao-empresas.md).
 
 - 20/11/2026: interface de fornecedores do produto em `/produtos`, com condições comerciais, principal, edição parcial e situação; grade existente reaproveitada. APIs de variações e produto-fornecedor pendentes de implementação pelo backend. Contrato em [docs/produtos-variacoes-fornecedores-ui.md](docs/produtos-variacoes-fornecedores-ui.md).
 

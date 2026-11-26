@@ -28,7 +28,7 @@ type Contexto = {
   empresas: EmpresaSessao[]
   empresa: EmpresaSessao | null
   erroAcesso: string | null
-  recarregarAcesso: () => Promise<void>
+  recarregarAcesso: (manterTela?: boolean) => Promise<void>
   selecionarEmpresa: (id: number) => void
   entrar: (email: string, password: string) => Promise<void>
   sair: () => Promise<void>
@@ -38,6 +38,7 @@ type Contexto = {
   chaveEmpresa: number
   conferirEmpresa: (chave: number) => void
   requisitar: (url: string, init?: RequestInit) => Promise<Response>
+  requisitarEmpresas: (url: string, init?: RequestInit) => Promise<Response>
 }
 const AutenticacaoContexto = createContext<Contexto | null>(null)
 const chaveAntiga = "erp-goia-empresa-ativa"
@@ -314,15 +315,18 @@ export function ProvedorAutenticacao({
     }
   }, [limpar])
 
-  const recarregarAcesso = useCallback(async () => {
-    if (logoutSolicitado.current === versaoSessao.current) return
-    const silencioso = empresaAtual.current !== null
-    if (!silencioso) {
-      setEstado("carregando")
-      setErroAcesso(null)
-    }
-    await restaurar(silencioso)
-  }, [restaurar])
+  const recarregarAcesso = useCallback(
+    async (manterTela = false) => {
+      if (logoutSolicitado.current === versaoSessao.current) return
+      const silencioso = manterTela || empresaAtual.current !== null
+      if (!silencioso) {
+        setEstado("carregando")
+        setErroAcesso(null)
+      }
+      await restaurar(silencioso)
+    },
+    [restaurar],
+  )
   const selecionarEmpresa = useCallback(
     (id: number) => {
       const escolhida = empresas.find((e) => e.id === id)
@@ -417,35 +421,44 @@ export function ProvedorAutenticacao({
     if (chave !== versaoEmpresa.current || !empresaAtual.current)
       throw new DOMException("Sessão ou empresa alterada.", "AbortError")
   }, [])
-  const requisitar = useCallback(
-    async (url: string, init: RequestInit = {}) => {
+  const requisitarAutenticado = useCallback(
+    async (url: string, init: RequestInit = {}, cadastroEmpresas = false) => {
       const versao = versaoSessao.current
       if (logoutSolicitado.current === versao)
         throw new Error("Saída sem confirmação. Tente sair novamente.")
       if (!token.current) throw new Error("Entre para acessar o ERP.")
-      if (!empresaAtual.current)
+      if (!cadastroEmpresas && !empresaAtual.current)
         throw new Error("Selecione uma empresa para continuar.")
-      const idEmpresa = empresaAtual.current.id
+      const idEmpresa = empresaAtual.current?.id ?? null
       const selecao = versaoEmpresa.current
       const idUsuario = usuarioAtual.current?.id
       // Capture os headers antes do primeiro await, inclusive a chave e a versão.
-      const headers = cabecalhosDaSessao(init.headers, token.current, idEmpresa)
+      const headers = cadastroEmpresas
+        ? new Headers(init.headers)
+        : cabecalhosDaSessao(init.headers, token.current, idEmpresa!)
+      if (cadastroEmpresas && headers.has("X-Empresa-Id"))
+        throw new Error(
+          "O cadastro global de empresas não aceita empresa no cabeçalho.",
+        )
       const opcoes = { ...init, cache: "no-store" as const }
       const conferir = () => {
         if (
           versaoSessao.current !== versao ||
           logoutSolicitado.current === versao ||
-          versaoEmpresa.current !== selecao ||
           usuarioAtual.current?.id !== idUsuario ||
-          empresaAtual.current?.id !== idEmpresa
+          (!cadastroEmpresas &&
+            (versaoEmpresa.current !== selecao ||
+              empresaAtual.current?.id !== idEmpresa))
         )
           throw new DOMException("Sessão ou empresa alterada.", "AbortError")
       }
-      const executar = (accessToken: string) =>
-        fetch(url, {
-          ...opcoes,
-          headers: cabecalhosDaSessao(headers, accessToken, idEmpresa),
-        })
+      const executar = (accessToken: string) => {
+        const autorizados = cadastroEmpresas
+          ? new Headers(headers)
+          : cabecalhosDaSessao(headers, accessToken, idEmpresa!)
+        autorizados.set("Authorization", `Bearer ${accessToken}`)
+        return fetch(url, { ...opcoes, headers: autorizados })
+      }
       const emCurso = renovacaoAcesso.current
       if (emCurso?.versao === versao) {
         const resultado = await emCurso.resultado
@@ -471,6 +484,20 @@ export function ProvedorAutenticacao({
     },
     [limpar, restaurar],
   )
+  const requisitar = useCallback(
+    (url: string, init?: RequestInit) => requisitarAutenticado(url, init),
+    [requisitarAutenticado],
+  )
+  const requisitarEmpresas = useCallback(
+    (url: string, init?: RequestInit) => {
+      if (!/^\/api\/empresas(?:\/[1-9]\d*)?(?:\?[^#]*)?$/.test(url))
+        return Promise.reject(
+          new Error("Rota inválida para o cadastro de empresas."),
+        )
+      return requisitarAutenticado(url, init, true)
+    },
+    [requisitarAutenticado],
+  )
   return (
     <AutenticacaoContexto.Provider
       value={{
@@ -489,6 +516,7 @@ export function ProvedorAutenticacao({
         chaveEmpresa,
         conferirEmpresa,
         requisitar,
+        requisitarEmpresas,
       }}
     >
       {children}

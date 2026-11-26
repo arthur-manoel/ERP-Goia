@@ -13,10 +13,13 @@ import {
 import { comBloqueioSessao } from "@/features/autenticacao/requisicoes-sessao"
 import { ProdutosProntosView } from "@/features/produtos/components/produtos-prontos-view"
 import { TelaUsuarios } from "@/features/usuarios/components/tela-usuarios"
-const router = vi.hoisted(() => ({ replace: vi.fn() }))
+const router = vi.hoisted(() => ({
+  replace: vi.fn(),
+  pathname: "/cadastros/clientes",
+}))
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
-  usePathname: () => "/cadastros/clientes",
+  usePathname: () => router.pathname,
 }))
 vi.mock("@/features/erp/components/seletor-pesquisavel", () => ({
   SearchSelect: ({
@@ -102,6 +105,7 @@ beforeEach(() => {
   ;(
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true
+  router.pathname = "/cadastros/clientes"
   sessionStorage.clear()
   refresh = "token-1"
   resposta = async () => json()
@@ -1189,4 +1193,118 @@ it("troca de empresa reinicia o estado da tela protegida", async () => {
   await act(async () => ctx.selecionarEmpresa(20))
   expect(host.querySelector("input")?.value).toBe("")
   expect(montagens).toBe(2)
+})
+
+it("cadastro de Empresas funciona autenticado sem empresa ativa, mantendo módulos operacionais bloqueados", async () => {
+  router.pathname = "/admin/empresas"
+  resposta = async () => json(1, [])
+  await montar()
+  expect(ctx.estado).toBe("autenticado")
+  expect(ctx.empresa).toBeNull()
+  expect(host.textContent).toContain("Módulo carregado")
+  await act(async () => {
+    await ctx.requisitarEmpresas("/api/empresas?page=1&limit=10")
+  })
+  const [, init] = chamadas.mock.calls.find(([url]) =>
+    url.startsWith("/api/empresas?"),
+  )!
+  expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer token-1")
+  expect(new Headers(init?.headers).has("X-Empresa-Id")).toBe(false)
+  await expect(ctx.requisitar("/api/produtos")).rejects.toThrow(
+    "Selecione uma empresa",
+  )
+})
+
+it.each([
+  "https://example.test/api/empresas",
+  "//example.test/api/empresas",
+  "/api/usuarios",
+  "/api/empresas/../usuarios",
+  "/api/empresas/1/usuarios",
+  "/api/empresas/0",
+])("helper de Empresas rejeita rota fora do escopo: %s", async (url) => {
+  await montar()
+  const antes = chamadas.mock.calls.length
+  await expect(ctx.requisitarEmpresas(url)).rejects.toThrow("Rota inválida")
+  expect(chamadas).toHaveBeenCalledTimes(antes)
+})
+
+it("helper global recusa cabeçalho de empresa e não remonta o cadastro na seleção operacional", async () => {
+  router.pathname = "/admin/empresas"
+  resposta = async () => json(1, duasEmpresas)
+  await montar(createElement(ConteudoDaEmpresa, null, createElement(Modulo)))
+  await expect(
+    ctx.requisitarEmpresas("/api/empresas", {
+      headers: { "X-Empresa-Id": "10" },
+    }),
+  ).rejects.toThrow("não aceita empresa no cabeçalho")
+  await act(async () => ctx.selecionarEmpresa(10))
+  const campo = host.querySelector("input")!
+  campo.value = "rascunho global"
+  await act(async () => ctx.selecionarEmpresa(20))
+  expect(host.querySelector("input")?.value).toBe("rascunho global")
+  expect(montagens).toBe(1)
+})
+
+it("resposta global anterior ao logout é descartada", async () => {
+  await montar()
+  const consulta = pendente<Response>()
+  const padrao = chamadas.getMockImplementation()!
+  chamadas.mockImplementation((url, init) =>
+    url === "/api/empresas" ? consulta.promise : padrao(url, init),
+  )
+  const resultado = ctx.requisitarEmpresas("/api/empresas").then(
+    () => null,
+    (erro: Error) => erro,
+  )
+  await act(async () => ctx.sair())
+  consulta.resolve(Response.json({ success: true, data: [] }))
+  expect((await resultado)?.name).toBe("AbortError")
+})
+
+it("401 no cadastro global renova o token antes de repetir e continua sem cabeçalho de empresa", async () => {
+  router.pathname = "/admin/empresas"
+  resposta = async () => json(1, [])
+  await montar()
+  let consultas = 0
+  const padrao = chamadas.getMockImplementation()!
+  chamadas.mockImplementation(async (url, init) => {
+    if (url === "/api/auth/refresh")
+      return Response.json({ accessToken: "token-renovado" })
+    if (url !== "/api/empresas") return padrao(url, init)
+    expect(new Headers(init?.headers).has("X-Empresa-Id")).toBe(false)
+    consultas++
+    if (consultas === 1)
+      return Response.json({ error: "Sessão expirada" }, { status: 401 })
+    expect(new Headers(init?.headers).get("Authorization")).toBe(
+      "Bearer token-renovado",
+    )
+    return Response.json({ success: true, data: [] })
+  })
+  await act(async () => {
+    expect((await ctx.requisitarEmpresas("/api/empresas")).status).toBe(200)
+  })
+  expect(consultas).toBe(2)
+})
+
+it("revalidação explícita de Empresas mantém tela autenticada sem empresa ativa", async () => {
+  router.pathname = "/admin/empresas"
+  resposta = async () => json(1, [])
+  await montar()
+  const refreshPendente = pendente<Response>()
+  const padrao = chamadas.getMockImplementation()!
+  chamadas.mockImplementation((url, init) =>
+    url === "/api/auth/refresh" ? refreshPendente.promise : padrao(url, init),
+  )
+  let atualizacao!: Promise<void>
+  await act(async () => {
+    atualizacao = ctx.recarregarAcesso(true)
+  })
+  expect(ctx.estado).toBe("autenticado")
+  expect(host.textContent).toContain("Módulo carregado")
+  await act(async () => {
+    refreshPendente.resolve(Response.json({ accessToken: "token-novo" }))
+    await atualizacao
+  })
+  expect(ctx.estado).toBe("autenticado")
 })
