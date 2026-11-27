@@ -5,7 +5,12 @@ import { db } from "../../helpers/prisma"
 type Entrada = (
   request: Request,
   context: {
-    params: Promise<{ id: string; idItem: string; idApontamento: string }>
+    params: Promise<{
+      id: string
+      idItem: string
+      idApontamento: string
+      indicador: string
+    }>
   },
 ) => Promise<Response>
 const routes = import.meta.glob("../../../src/app/api/**/route.ts", {
@@ -25,6 +30,7 @@ for (const [file, exports] of Object.entries(routes)) {
           id: empresas ? "10" : "1",
           idItem: "1",
           idApontamento: "1",
+          indicador: "saldo",
         }),
       }
       const make = (authorization?: string) =>

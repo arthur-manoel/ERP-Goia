@@ -1,5 +1,8 @@
+"use client"
+
 import { Wallet } from "lucide-react"
-import { obterSaldoDoMes } from "@/lib/dashboard/indicadores"
+import { useIndicador } from "./provedor-indicadores"
+import { IndicadorCardSkeleton } from "./indicador-card"
 import { formatarMoeda } from "@/lib/formatacao"
 import {
   IndicadorAlerta,
@@ -24,13 +27,9 @@ const base = {
   icone: Wallet,
 }
 
-/**
- * Indicador financeiro. Quem renderiza decide se o usuário pode vê-lo
- * (podeVerSaldoDoMes), e obterSaldoDoMes confere a permissão de novo no
- * servidor: se negar, este componente não renderiza nada.
- */
-export async function SaldoDoMes({ className }: { className?: string }) {
-  const resultado = await obterSaldoDoMes()
+export function SaldoDoMes({ className }: { className?: string }) {
+  const resultado = useIndicador("saldo")
+  if (!resultado) return <IndicadorCardSkeleton className={className} />
   if (resultado.estado !== "ok") {
     return (
       <IndicadorIndisponivel

@@ -1,5 +1,8 @@
+"use client"
+
 import { Factory } from "lucide-react"
-import { obterOrdensProducaoAbertas } from "@/lib/dashboard/indicadores"
+import { useIndicador } from "./provedor-indicadores"
+import { IndicadorCardSkeleton } from "./indicador-card"
 import { formatarQuantidade } from "@/lib/formatacao"
 import {
   IndicadorAlerta,
@@ -19,12 +22,9 @@ const base = {
   link: { href: "/producao/ordens", rotulo: "Ver produção" },
 }
 
-export async function OrdensProducaoAbertas({
-  className,
-}: {
-  className?: string
-}) {
-  const resultado = await obterOrdensProducaoAbertas()
+export function OrdensProducaoAbertas({ className }: { className?: string }) {
+  const resultado = useIndicador("ordens")
+  if (!resultado) return <IndicadorCardSkeleton className={className} />
   if (resultado.estado !== "ok") {
     return (
       <IndicadorIndisponivel
