@@ -62,6 +62,8 @@ model categoria_financeira {
   despesas                  despesas[]
   pedido_cliente_fechamento pedido_cliente_fechamento[]
 
+  movimentacoes_financeiras movimentacoes_financeiras[]
+
   @@unique([id_empresa, nome], map: "uk_categoria_financeira_empresa_nome")
   @@unique([id, id_empresa], map: "uk_categoria_financeira_id_empresa")
   @@index([id_empresa], map: "idx_categoria_financeira_empresa")
@@ -801,6 +803,8 @@ model movimentacao_estoque {
 model movimentacoes_financeiras {
   id                   Int                              @id @default(autoincrement())
   id_empresa           Int
+  id_categoria Int?
+  categoria_financeira categoria_financeira? @relation(fields: [id_categoria, id_empresa], references: [id, id_empresa], onUpdate: Restrict, onDelete: Restrict, map: "fk_mov_fin_categoria_empresa")
   id_conta_bancaria    Int
   tipo                 movimentacoes_financeiras_tipo
   origem               movimentacoes_financeiras_origem
@@ -820,6 +824,7 @@ model movimentacoes_financeiras {
   id_pedido_reembolso Int?              @unique(map: "uk_movimento_financeiro_reembolso")
   pedido_reembolso    pedido_reembolso? @relation(fields: [id_pedido_reembolso, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_movimento_financeiro_reembolso")
 
+  @@index([id_categoria, id_empresa], map: "idx_mov_fin_categoria_empresa")
   @@index([id_empresa], map: "idx_movimentacao_financeira_empresa")
   @@index([id_conta_bancaria], map: "idx_movimentacao_financeira_conta")
   @@index([data_movimentacao], map: "idx_movimentacao_financeira_data")
