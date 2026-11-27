@@ -25,6 +25,9 @@ isoladamente, não constitui essa exceção.
 Empresa **S**: `X-Empresa-Id` seleciona um vínculo ativo; com vários vínculos,
 omitir o header retorna 400. Consultas e gravações filtram a empresa selecionada.
 
+Nas rotas de variações e fornecedores do produto, **S obrigatório** indica que
+o cabeçalho `X-Empresa-Id` é exigido mesmo com um único vínculo.
+
 Empresa **C**: catálogos/financeiro consultam somente as empresas autorizadas
 para o recurso e a flag; header, quando enviado, restringe esse conjunto.
 Corpo/filtro de empresa não autorizada retorna 403; ID inacessível retorna 404.
@@ -50,6 +53,10 @@ novos recursos. As suítes próprias indicadas cobrem operações e regras adici
 | `/produtos`, `/produtos/{id}` | GET | PRODUTOS / L | C | A | I, M, B, unit/catalogos |
 | `/produtos` | POST | PRODUTOS / C | C | A | I, unit/catalogos |
 | `/produtos/{id}` | PUT, PATCH; DELETE | PRODUTOS / E; X | C | A | I, unit/catalogos |
+| `/produtos/{id}/variacoes` | GET; POST | PRODUTOS / L; C | S obrigatório | A | produto-configuracao.integration.test.mjs |
+| `/produtos/{id}/variacoes/{idVariacao}` | PATCH | PRODUTOS / E (+ X em inativação) | S obrigatório | A | produto-configuracao.integration.test.mjs |
+| `/produtos/{id}/fornecedores`, `/produtos/{id}/fornecedores/opcoes`, `/produtos/{id}/fornecedores/{idVinculo}` | GET | PRODUTOS / L | S obrigatório | A | produto-configuracao.integration.test.mjs |
+| `/produtos/{id}/fornecedores`, `/produtos/{id}/fornecedores/{idVinculo}` | POST; PATCH | PRODUTOS / C (+ E para trocar o principal); E (+ X em inativação) | S obrigatório | A | produto-configuracao.integration.test.mjs |
 | `/cores`, `/cores/{id}` | GET | CORES / L | C | A | I, M, B, unit/catalogos |
 | `/cores` | POST | CORES / C | C | A | I, unit/catalogos |
 | `/cores/{id}` | PUT, PATCH; DELETE | CORES / E; X | C | A | I, unit/catalogos |

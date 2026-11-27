@@ -315,6 +315,7 @@ export async function incluirItem(
   input: ItemInput,
 ) {
   return repo.gravacao(async (tx) => {
+    await repo.bloquearEmpresa(tx, ctx.idEmpresa)
     const antes = await repo.bloquearRascunho(tx, ctx, id, versao)
     if (antes.pedido_cliente_item.length >= MAX_ITENS)
       throw new PedidoError(409, "Pedido atingiu o limite de itens.")
@@ -348,6 +349,7 @@ export async function editarItem(
   input: EditarItemInput,
 ) {
   return repo.gravacao(async (tx) => {
+    await repo.bloquearEmpresa(tx, ctx.idEmpresa)
     const antes = await repo.bloquearRascunho(tx, ctx, id, versao)
     const item = antes.pedido_cliente_item.find((i) => i.id === idItem)
     if (!item) throw new PedidoError(404, "Item não encontrado.")

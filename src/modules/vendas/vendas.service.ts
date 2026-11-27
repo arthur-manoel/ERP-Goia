@@ -290,6 +290,7 @@ export async function consultarVenda(ctx: ContextoVenda, id: number) {
 export async function criarVenda(ctx: ContextoVenda, input: CriarVenda) {
   return prisma.$transaction(
     async (tx) => {
+      await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
       await validarVinculos(tx, ctx, input.idCliente, null)
       const itens = await carregarItens(tx, ctx, input.itens)
       const montantes = valores(
@@ -343,6 +344,7 @@ export async function editarVenda(
 ) {
   return prisma.$transaction(
     async (tx) => {
+      await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
       const atual = await buscar(tx, ctx, id)
       await validarEditavel(tx, atual)
       if (

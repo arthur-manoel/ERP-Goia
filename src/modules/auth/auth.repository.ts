@@ -36,9 +36,13 @@ const activeRefresh = (id_usuario: number, sessao_id: string) => ({
   data_expiracao: { gt: new Date() },
 })
 
-export async function findSessionUser(userId: number, sessionId: string) {
-  const { prisma } = await import("@/lib/prisma")
-  const current = await prisma.refresh_tokens.findFirst({
+export async function findSessionUser(
+  userId: number,
+  sessionId: string,
+  database?: Pick<Prisma.TransactionClient, "refresh_tokens">,
+) {
+  const db = database ?? (await import("@/lib/prisma")).prisma
+  const current = await db.refresh_tokens.findFirst({
     where: activeRefresh(userId, sessionId),
     select: { usuarios: { include: userInclude } },
   })

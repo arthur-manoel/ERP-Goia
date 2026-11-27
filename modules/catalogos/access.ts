@@ -14,10 +14,15 @@ export function catalogRequest<T>(
   request: Request,
   resource: RecursoPermissao,
   action: Action,
-  operation: (companies: number[], actor: CatalogActor) => Promise<T>,
+  operation: (
+    companies: number[],
+    actor: CatalogActor,
+    body?: unknown,
+  ) => Promise<T>,
   status = 200,
   rateLimit?: RateLimit,
   roles: Role[] = ["ADMINISTRACAO", "PRODUCAO", "VENDAS", "FINANCEIRO"],
+  lerCorpo?: (request: Request) => Promise<unknown>,
 ) {
   return handleRequest(async () => {
     const auth = await requireRole(request, roles)
@@ -43,6 +48,7 @@ export function catalogRequest<T>(
         throw new HttpError(403, "Sem permissão para esta empresa.")
       companies = [Number(empresa)]
     }
+    let body: unknown
     // Inativar por POST/PUT/PATCH tem o mesmo efeito de DELETE nesses catálogos.
     if (
       ["pode_criar", "pode_editar"].includes(action) &&
@@ -54,12 +60,14 @@ export function catalogRequest<T>(
         "FORNECEDORES",
       ].includes(resource)
     ) {
-      const body = await readJson(request.clone())
+      body = lerCorpo
+        ? await lerCorpo(request)
+        : await readJson(request.clone())
       if (
         body &&
         typeof body === "object" &&
         "status" in body &&
-        ["INATIVO", "INATIVA"].includes(String(body.status))
+        (body.status === "INATIVO" || body.status === "INATIVA")
       ) {
         const exclusao = await allowedCompanies(id, resource, "pode_excluir")
         empresasAutorizadas = empresasAutorizadas.filter((company) =>
@@ -72,7 +80,7 @@ export function catalogRequest<T>(
     }
     return contextoAuditoriaCatalogo.run(
       { idUsuario: id, empresas: companies },
-      () => operation(companies, { idUsuario: id, empresasAutorizadas }),
+      () => operation(companies, { idUsuario: id, empresasAutorizadas }, body),
     )
   }, status)
 }

@@ -25,6 +25,45 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
+export async function readLimitedJson(request: Request): Promise<unknown> {
+  if (
+    request.headers
+      .get("Content-Type")
+      ?.split(";", 1)[0]
+      .trim()
+      .toLowerCase() !== "application/json"
+  )
+    throw new ValidationError("Envie JSON com Content-Type application/json.")
+  const reader = request.body?.getReader()
+  if (!reader) throw new ValidationError("JSON inválido.")
+  try {
+    const chunks: Uint8Array[] = []
+    let size = 0
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > 65536) {
+        void reader.cancel().catch(() => {})
+        throw new ValidationError("JSON excede o limite de 64 KiB.")
+      }
+      chunks.push(value)
+    }
+    const bytes = new Uint8Array(size)
+    let offset = 0
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
+  } catch (error) {
+    if (error instanceof ValidationError) throw error
+    throw new ValidationError("JSON inválido.")
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 export function readQuery(request: Request) {
   const query: Record<string, string> = Object.create(null)
   for (const [key, value] of new URL(request.url).searchParams) {
