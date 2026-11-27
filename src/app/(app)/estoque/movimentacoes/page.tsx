@@ -1,17 +1,8 @@
 import type { Metadata } from "next"
-import { PageHeader } from "@/components/layout/page-header"
-import { PainelMovimentacao } from "@/components/movimentacao/painel-movimentacao"
+import { TelaMovimentacoes } from "@/features/estoque/components/tela-movimentacoes"
 
-export const metadata: Metadata = { title: "Movimentação" }
+export const metadata: Metadata = { title: "Movimentações de estoque" }
 
 export default function Page() {
-  return (
-    <>
-      <PageHeader
-        titulo="Movimentação"
-        descricao="Posição atual, registro de entradas/saídas/transferências e histórico por período."
-      />
-      <PainelMovimentacao />
-    </>
-  )
+  return <TelaMovimentacoes />
 }

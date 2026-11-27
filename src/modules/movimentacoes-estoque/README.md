@@ -123,8 +123,18 @@ Escritas usam Serializable e `SELECT ... FOR UPDATE` no vínculo produto/empresa
 O lock existe antes da primeira posição e serializa todas as escritas deste
 produto na empresa. Em seguida o saldo é apurado pelo histórico e a projeção é
 atualizada com condição sobre o saldo anterior. Movimento, projeção, kardex,
-abertura e auditoria são atômicos. Não há repetição automática nem idempotência
-de POST: se houver dúvida sobre a resposta, confira o histórico antes de reenviar.
+abertura e auditoria são atômicos. Os POSTs aceitam `Idempotency-Key` opcional (8 a 128 caracteres ASCII, letras,
+números e `. _ : -`). A caixa dos caracteres faz parte da identidade. Com chave, o ERP guarda a identidade e o resultado no
+mesmo commit da movimentação. Repetir conteúdo e chave na empresa pelo mesmo
+autor devolve 200 com o resultado original, inclusive se o saldo já mudou.
+Chave com dados, autor ou operação diferentes retorna 409. Disputas transitórias
+podem ser repetidas com a mesma chave. Chamadores antigos sem chave mantêm o
+contrato anterior e devem conferir o histórico diante de resposta inconclusiva.
+Se a resposta da tela se perder, a tentativa continua guardada até a confirmação
+pelo servidor, inclusive quando uma recuperação é recusada por perda de acesso.
+Uma recusa de negócio com `code: ESTOQUE_RECUSADO` é persistida para a chave e
+desfaz os efeitos parciais. Repetir a chave devolve a recusa original mesmo se o
+saldo mudar. Corrigir e confirmar uma nova operação usa outra chave.
 Outros módulos que escreverem estoque devem manter esse mesmo protocolo e histórico.
 Disputas do driver MariaDB também são classificadas pelo helper compartilhado
 `prisma-concorrencia.ts`, incluindo P2010/1213, P2010/1205 e DriverAdapterError.
@@ -154,3 +164,39 @@ abertura de saldo antigo e duas baixas/ajustes simultâneos. `--http` exige que 
 haja outro `next dev` neste diretório (lock de desenvolvimento compartilhado).
 Sem banco configurado,
 falha explicitamente em vez de considerar concorrência aprovada.
+
+
+## Telas e exportação
+
+`GET /api/estoque/movimentacoes` lista os movimentos persistidos, inclusive os
+legados que ainda não têm linha no Kardex. `GET /api/estoque/kardex` lista o livro
+e informa a prova de saldo da posição. Ambas usam período civil de São Paulo,
+ordenam por data efetiva e ID decrescentes e compartilham filtros e limites de
+paginação. O catálogo real autorizado está em
+`GET /api/estoque/movimentacoes/catalogo`. A tela usa somente cadastros ativos para
+novas operações e permite consultar catálogos inativos em filtros históricos.
+O catálogo retorna até 500 opções de cada tipo, sinaliza quando há mais e aceita
+busca por produto/código, nome de local ou setor e cor/tamanho. A busca de
+variações por cor ou tamanho considera todo o conjunto autorizado que
+corresponde ao filtro de produto. O formulário consulta as variações ativas
+do produto selecionado por `idProduto` e permite refinar por cor ou tamanho.
+Os filtros do histórico são independentes dessa consulta.
+
+Nas duas telas, `GET /api/estoque/{movimentacoes|kardex}/exportar?formato=csv|pdf`
+aceita os mesmos filtros da consulta (sem paginação). Exige leitura de ESTOQUE e
+RELATORIOS, verificadas na consulta e antes de devolver o arquivo. A referência de
+origem não dá acesso ao documento. A observação é exibida nos movimentos manuais.
+A autoria e os dados monetários de documentos permanecem nos módulos responsáveis.
+
+CSV usa UTF-8 com BOM, ponto e vírgula, aspas, decimais com vírgula e datas ISO em
+UTC. Células de texto que podem ser abertas como fórmulas recebem apóstrofo.
+PDF usa A4 horizontal, cabeçalhos repetidos, data local de São Paulo e identificação
+da empresa, do período e dos filtros. As linhas do Kardex apresentam saldo agregado
+antes/depois, mesmo com filtro por variação. O relatório não soma unidades diferentes.
+PDFKit gera arquivos no servidor com quebra de linha, paginação e fonte DejaVu Sans
+incorporada para preservar acentos e outros caracteres cobertos pela fonte.
+
+O conjunto filtrado inteiro é exportado até 5.000 linhas no CSV ou 500 no PDF.
+Os limites controlam tamanho, memória e tempo de geração. Ao exceder, HTTP 413
+pede intervalo menor ou filtros mais específicos. Não há truncamento do conjunto.
+Nenhum destes GETs modifica a posição, os movimentos ou o Kardex.

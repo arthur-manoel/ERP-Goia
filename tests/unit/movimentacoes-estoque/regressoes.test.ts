@@ -12,6 +12,7 @@ import {
 
 const tx = {
   $queryRaw: vi.fn(),
+  usuario_empresa: { findFirst: vi.fn() },
   produto_empresa: { findFirst: vi.fn() },
   locais_estoque: { findFirst: vi.fn() },
   setores: { findFirst: vi.fn() },
@@ -103,6 +104,18 @@ beforeEach(() => {
     },
   ])
   db.$transaction.mockImplementation(async (run) => run(tx))
+  tx.usuario_empresa.findFirst.mockResolvedValue({
+    nivel_acesso: "USUARIO",
+    usuarios: { nivel_acesso: "USUARIO" },
+    permissoes_usuario: [
+      {
+        recurso: "ESTOQUE",
+        pode_ler: true,
+        pode_criar: true,
+        pode_editar: true,
+      },
+    ],
+  })
   tx.$queryRaw.mockResolvedValue([{ id: 1 }])
   tx.produto_empresa.findFirst.mockResolvedValue({ id: 1 })
   tx.locais_estoque.findFirst.mockResolvedValue({ id: 2 })

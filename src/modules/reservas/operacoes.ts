@@ -15,6 +15,7 @@ export type Exigencia = [
     | "FINANCEIRO"
     | "COMPRAS"
     | "NOTAS_FISCAIS"
+    | "RELATORIOS"
   ),
   "ler" | "criar" | "editar" | "excluir",
 ]

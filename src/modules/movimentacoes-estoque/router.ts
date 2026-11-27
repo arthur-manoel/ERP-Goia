@@ -1,6 +1,12 @@
 import "server-only"
-import { HttpError, ValidationError } from "@/lib/api/errors"
+import {
+  ConflitoTransitorio,
+  HttpError,
+  ValidationError,
+} from "@/lib/api/errors"
+import { enforceRateLimit } from "@/lib/api/rate-limit"
 import { readQuery, validate } from "@/lib/api/http"
+import { confirmarMovimento } from "./confirmacao"
 import { autorizar } from "./movimentacoes-estoque.authorization"
 import { consultarSaldo, movimentar } from "./movimentacoes-estoque.repository"
 import {
@@ -75,6 +81,28 @@ async function executar(
       operacao === "ajuste"
         ? validate(ajusteSchema, body)
         : validate(movimentoSchema, body)
+    const chave = request.headers.get("Idempotency-Key")
+    if (chave !== null) {
+      if (!/^[A-Za-z0-9._:-]{8,128}$/.test(chave))
+        throw new ValidationError(
+          "Idempotency-Key deve ter de 8 a 128 caracteres ASCII válidos.",
+        )
+      enforceRateLimit(
+        request,
+        { scope: "estoque:escrita-idempotente", limit: 60, windowMs: 60_000 },
+        String(ctx.idUsuario),
+      )
+      const resultado = await confirmarMovimento(ctx, chave, dados, operacao)
+      if (!resultado.dados.confirmada)
+        return Response.json(
+          { error: resultado.dados.mensagem, code: "ESTOQUE_RECUSADO" },
+          { status: resultado.dados.status, headers },
+        )
+      return Response.json(resultado.dados.movimento, {
+        status: resultado.criado ? 201 : 200,
+        headers,
+      })
+    }
     return Response.json(await movimentar(ctx, dados, operacao), {
       status: 201,
       headers,
@@ -84,6 +112,9 @@ async function executar(
       console.error("Falha na API de movimentações de estoque.")
     return Response.json(
       {
+        ...(error instanceof ConflitoTransitorio
+          ? { code: "CONFLITO_TRANSITORIO" }
+          : {}),
         error:
           error instanceof HttpError
             ? error.message

@@ -237,7 +237,18 @@ it("recebimento real do serviço abre legado antes de somar e permanece compatí
   tx.produto_empresa.findFirst.mockResolvedValue({ id: 1 })
   tx.locais_estoque.findFirst.mockResolvedValue({ id: 1 })
   tx.setores.findFirst.mockResolvedValue({ id: 1 })
-  db.$transaction.mockImplementation(async (run) => run(tx))
+  db.$transaction.mockImplementation(async (run) =>
+    run({
+      ...tx,
+      usuario_empresa: {
+        findFirst: vi.fn().mockResolvedValue({
+          nivel_acesso: "EMPRESA",
+          usuarios: { nivel_acesso: "USUARIO" },
+          permissoes_usuario: [],
+        }),
+      },
+    }),
+  )
   const saida = await movimentar(
     ctx,
     {
