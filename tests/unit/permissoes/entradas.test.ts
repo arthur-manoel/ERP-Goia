@@ -5,7 +5,12 @@ import { db } from "../../helpers/prisma"
 type Entrada = (
   request: Request,
   context: {
-    params: Promise<{ id: string; idItem: string; idApontamento: string }>
+    params: Promise<{
+      id: string
+      idItem: string
+      idApontamento: string
+      indicador: string
+    }>
   },
 ) => Promise<Response>
 const routes = import.meta.glob("../../../src/app/api/**/route.ts", {
@@ -19,8 +24,14 @@ for (const [file, exports] of Object.entries(routes)) {
   )) {
     const path = file.split("/api/")[1].replace("/route.ts", "")
     it(`${method} /api/${path}: autentica e nega ausência de vínculo/permissão`, async () => {
+      const empresas = path === "empresas" || path === "empresas/[id]"
       const context = {
-        params: Promise.resolve({ id: "1", idItem: "1", idApontamento: "1" }),
+        params: Promise.resolve({
+          id: empresas ? "10" : "1",
+          idItem: "1",
+          idApontamento: "1",
+          indicador: "saldo",
+        }),
       }
       const make = (authorization?: string) =>
         new Request("http://localhost/api/" + path, {
@@ -30,15 +41,27 @@ for (const [file, exports] of Object.entries(routes)) {
             "Content-Type": "application/json",
             "X-Empresa-Id": "10",
           },
-          ...(method === "GET" ? {} : { body: "{}" }),
+          ...(method === "GET"
+            ? {}
+            : {
+                body: empresas
+                  ? '{"razao_social":"Empresa","cnpj":"11222333000181"}'
+                  : "{}",
+              }),
         })
       expect((await exports[method](make(), context)).status).toBe(401)
       expect(db.usuario_empresa.findMany).not.toHaveBeenCalled()
       db.usuario_empresa.findMany.mockResolvedValue([])
+      if (empresas)
+        db.usuarios.findFirst.mockResolvedValue({ nivel_acesso: "USUARIO" })
       const resposta = await exports[method](make("Bearer test-token"), context)
       if (path === "estoque-minimo/empresas") {
         expect(resposta.status).toBe(200)
         expect(await resposta.json()).toEqual({ usuario: null, empresas: [] })
+      } else if (empresas) {
+        expect(resposta.status).toBe(404) // Empresa selecionada fora do escopo, inclusive no POST com cabeçalho.
+        expect(db.empresas.create).not.toHaveBeenCalled()
+        expect(db.empresas.update).not.toHaveBeenCalled()
       } else expect(resposta.status).toBe(403)
       for (const model of [
         db.produtos,

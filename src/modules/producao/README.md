@@ -254,3 +254,24 @@ Exemplo de corpo.
 ```
 
 A interface envia uma única chamada na abertura. Para retomar uma OP vazia já existente, usa /{id}/completar, que continua exigindo criação e edição. O POST sem item preserva o contrato anterior de criação de cabeçalho para integrações existentes.
+
+
+## Lote fracionado entre setores
+
+`/producao/movimentacoes` usa dados persistidos e as APIs autenticadas:
+
+- `GET /api/ordens-producao/{id}/movimentacoes?pagina=1`: posições por item/unidade, etapas, envios e eventos de recebimento.
+- `POST` na mesma URL: `{idEtapaOrigem,idEtapaDestino,itens:[{idItem,quantidade}],observacao?}`.
+- `POST /api/ordens-producao/{id}/movimentacoes/{mov}/receber`: `{itens:[{idItem,quantidade}]}`.
+
+Escritas exigem `Idempotency-Key`, permissão de editar ORDENS_PRODUCAO e vínculo com o setor da origem ou do destino, respectivamente. ADMIN global e vínculo EMPRESA podem operar os setores da empresa. A autorização é relida na transação, inclusive antes de recuperar uma operação já confirmada. A mesma chave e conteúdo retornam o resultado anterior; conteúdo ou autor diferente retorna 409. Corpo JSON estrito de até 64 KiB, 1–200 itens, quantidades decimais positivas com até três casas, sem arredondamento.
+
+A primeira remessa ativa atomicamente o protocolo por OP. Exige snapshot correspondente às etapas, primeira etapa em produção, demais pendentes e ausência de produção, confirmação ou passagem legada entre setores posteriores. Ordens já avançadas continuam no protocolo anterior; o sistema não presume quantidades históricas.
+
+Disponível para envio = produção boa válida menos todos os envios. Entrada de uma etapa posterior = recebimentos efetivos. Trânsito = enviado menos recebido no destino. No setor = entrada menos perdas e envios. O recebimento parcial inicia o destino, permitindo produção em paralelo. O cabeçalho resume a primeira etapa não concluída; a posição real vem dos registros por item. Quantidades de unidades diferentes não são somadas no cabeçalho da remessa, cuja quantidade permanece nula.
+
+Apontamentos, correções, estornos e conclusão compartilham os locks de empresa/OP. Uma correção não pode reduzir produção boa abaixo do enviado nem produzir além do recebido. Para encerrar cada etapa: toda entrada deve estar classificada em boas/perdas; etapas anteriores concluídas; nas intermediárias, todas as boas enviadas e recebidas no destino. Uma etapa sem entrada após perdas integrais pode ser iniciada administrativamente quando a anterior terminar. O encerramento final conserva os bloqueios de consumo/reservas e a entrada única oficial de produto acabado.
+
+O transporte não movimenta estoque físico. O consumo real permanece em `/producao/ordens`, pelo serviço existente de reservas, incluindo encerramento administrativo com quantidade zero e motivo quando todo o material já foi consumido.
+
+Aplique o incremento SQL `20261118000000_producao_lotes_setores` pelo processo DB-first antes de instalar a aplicação. Ele conserva registros antigos com vínculo quantitativo nulo, amplia DECIMAL(15,2) para DECIMAL(16,3) mantendo os treze dígitos inteiros e acrescenta restrições de identidade e eventos de recebimento. Após a atualização controlada do banco, gere o Prisma Client a partir do schema versionado; uma introspecção deve preservar os complementos Prisma documentados do projeto.

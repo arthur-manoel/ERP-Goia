@@ -22,6 +22,7 @@ export const rotulosRecursos: Record<
   FLUXOS_PRODUCAO: "Fluxos de produção",
   TAMANHOS: "Tamanhos",
   TIPOS_PRODUTO: "Tipos de produto",
+  EMPRESAS: "Empresas",
   CARGOS: "Cargos",
 }
 export { RECURSOS_PERMISSAO }

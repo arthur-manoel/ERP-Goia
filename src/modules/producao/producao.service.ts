@@ -1,4 +1,5 @@
 import "server-only"
+import { usaLotes, posicoesLote } from "./lotes.repository"
 import { previsaoAnteriorAoDiaDeInicio } from "./producao.datas"
 import { Prisma } from "@/generated/prisma/client"
 import type {
@@ -396,7 +397,7 @@ export async function avancarOrdemNaTransacao(
   if (!transicoes[ordem.status]?.includes(input.statusDestino))
     throw new ProducaoError(409, "Transição de produção não permitida.")
   validarPlanejamento(ordem)
-  validarPendencias(ordem)
+  if (!(await usaLotes(tx, id))) validarPendencias(ordem)
   if (
     input.statusDestino === "LIBERADA" ||
     (input.statusDestino === "EM_PRODUCAO" && ordem.status === "LIBERADA")
@@ -524,6 +525,68 @@ export async function executarEtapaNaTransacao(
       "Esta ordem usa o fluxo legado de avanço e encerramento.",
     )
   validarPlanejamento(ordem)
+  if (await usaLotes(tx, id)) {
+    if (ordem.status !== "EM_PRODUCAO")
+      throw new ProducaoError(409, "Retome a ordem antes de operar as etapas.")
+    const etapas = ordem.ordem_producao_fluxo_setor
+    const indice = etapas.findIndex((e) => e.id === etapaId)
+    const etapa = etapas[indice]
+    if (!etapa)
+      throw new ProducaoError(404, "Etapa não encontrada nesta ordem.")
+    if (iniciar) {
+      if (
+        etapa.status === "PENDENTE" &&
+        indice > 0 &&
+        etapas[indice - 1].status === "CONCLUIDA" &&
+        (await posicoesLote(tx, id)).every(
+          (p) => p.etapas[indice].entrada === "0.000",
+        )
+      ) {
+        await fluxos.transicionarEtapa(tx, id, etapa, true)
+      } else if (etapa.status !== "EM_PRODUCAO")
+        throw new ProducaoError(
+          409,
+          "Receba uma parcela para iniciar a etapa de destino.",
+        )
+      return finalizar(tx, ctx, id, ordem)
+    }
+    if (
+      etapa.status !== "EM_PRODUCAO" ||
+      etapas.slice(0, indice).some((e) => e.status !== "CONCLUIDA")
+    )
+      throw new ProducaoError(
+        409,
+        "Conclua as etapas anteriores antes de encerrar esta etapa.",
+      )
+    const ultima = indice === etapas.length - 1
+    const posicoes = await posicoesLote(tx, id)
+    if (
+      posicoes.some((p) => {
+        const e = p.etapas[indice]
+        return (
+          e.aProduzir !== "0.000" ||
+          (!ultima &&
+            (e.disponivelEnvio !== "0.000" || e.emTransito !== "0.000"))
+        )
+      })
+    )
+      throw new ProducaoError(
+        409,
+        "Há parcelas sem apontamento, sem envio ou com recebimento pendente nesta etapa.",
+      )
+    if (ultima) await confirmarQuantidades(tx, ordem, ctx)
+    await fluxos.transicionarEtapa(tx, id, etapa, false)
+    if (ultima)
+      await atualizarEstado(tx, ctx, ordem, {
+        status: "CONCLUIDA",
+        data_conclusao: new Date(),
+      })
+    else
+      await atualizarEstado(tx, ctx, ordem, {
+        id_setor: etapas[indice + 1].id_setor,
+      })
+    return finalizar(tx, ctx, id, ordem)
+  }
   validarPendencias(ordem)
   const etapas = await fluxos.etapas(tx, id)
   const atual = etapas.find((etapa) => etapa.status !== "CONCLUIDA")

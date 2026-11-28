@@ -16,6 +16,10 @@ import { db } from "../../helpers/prisma"
 
 const tx = vi.hoisted(() => ({
   $queryRaw: vi.fn(),
+  usuario_empresa: { findFirst: vi.fn() },
+  operacao_erp: { findUnique: vi.fn(), create: vi.fn() },
+  produto_variacoes: { findMany: vi.fn() },
+  compra_recebimento_linha: { create: vi.fn() },
   compras: {
     findFirst: vi.fn(),
     update: vi.fn(),
@@ -85,7 +89,12 @@ function compra() {
         quantidade: new Prisma.Decimal(10),
         valor_unitario: new Prisma.Decimal(1),
         valor_total: new Prisma.Decimal(10),
-        produtos: { codigo: "P1", nome: "Produto", unidade: "UN" },
+        produtos: {
+          codigo: "P1",
+          nome: "Produto",
+          unidade: "UN",
+          produto_variacoes: [],
+        },
       },
     ],
   }
@@ -100,7 +109,36 @@ function semGravacoes() {
   expect(tx.estoque.create).not.toHaveBeenCalled()
 }
 
+const operacoes = new Map<string, unknown>()
 beforeEach(() => {
+  operacoes.clear()
+  tx.usuario_empresa.findFirst.mockResolvedValue({
+    nivel_acesso: "EMPRESA",
+    usuarios: { nivel_acesso: "USUARIO" },
+  })
+  tx.operacao_erp.findUnique.mockImplementation(
+    async ({ where }) => operacoes.get(where.id_empresa_chave.chave) ?? null,
+  )
+  tx.operacao_erp.create.mockImplementation(async ({ data }) => {
+    operacoes.set(data.chave, { ...data })
+    return data
+  })
+  tx.produto_variacoes.findMany.mockResolvedValue([])
+  tx.produto_empresa.findFirst.mockResolvedValue({ id: 1 })
+  tx.locais_estoque.findFirst.mockResolvedValue({ id: 1 })
+  tx.setores.findFirst.mockResolvedValue({ id: 1 })
+  tx.estoque.findUnique.mockImplementation(async () => {
+    const e = await tx.estoque.findFirst()
+    return e
+      ? {
+          ...e,
+          id_produto: e.id_produto ?? 1,
+          quantidade_reservada: e.quantidade_reservada ?? new Prisma.Decimal(0),
+        }
+      : null
+  })
+  tx.estoque.updateMany.mockResolvedValue({ count: 1 })
+
   tx.estoque_variacao.aggregate.mockResolvedValue({
     _sum: { quantidade: null },
   })
@@ -153,6 +191,7 @@ it("recebimento real do serviço abre legado antes de somar e permanece compatí
     for (const mov of livro) {
       const grupo = grupos.get(mov.tipo) ?? {
         quantidade: new Prisma.Decimal(0),
+        quantidade_reservada: new Prisma.Decimal(0),
         count: 0,
       }
       grupos.set(mov.tipo, {
@@ -193,7 +232,7 @@ it("recebimento real do serviço abre legado antes de somar e permanece compatí
   ])
   expect(new Prisma.Decimal(estoque.quantidade).toFixed(3)).toBe("15.000")
   expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
-    tx.estoque.findFirst.mock.invocationCallOrder[0],
+    tx.estoque.findUnique.mock.invocationCallOrder[0],
   )
   tx.produto_empresa.findFirst.mockResolvedValue({ id: 1 })
   tx.locais_estoque.findFirst.mockResolvedValue({ id: 1 })
@@ -303,13 +342,13 @@ describe("compras rejeitam observação composta antes da primeira escrita", () 
     semGravacoes()
   })
 
-  it("mantém o replay idempotente de recebimento já registrado", async () => {
+  it("chave antiga sem hash exige conferência sem alterar estoque", async () => {
     tx.movimentacao_estoque.findMany.mockResolvedValue([
       {
         id: 1,
         id_produto: 1,
         quantidade: new Prisma.Decimal(1),
-        observacao: `Recebimento anterior [rec:${chave}]`,
+        observacao: `Recebimento anterior [rec:marcador-da-observacao] [rec:${chave}]`,
         data_movimentacao: new Date("2026-10-28T12:00:00Z"),
         usuarios: { id: 1, nome: "Usuário" },
         produtos: { codigo: "P1", nome: "Produto" },
@@ -320,7 +359,10 @@ describe("compras rejeitam observação composta antes da primeira escrita", () 
         chaveIdempotencia: chave,
         observacao: "a".repeat(255),
       }),
-    ).resolves.toMatchObject({ repetido: true, chave })
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("protocolo antigo"),
+    })
     semGravacoes()
   })
 })

@@ -1,4 +1,5 @@
 import "server-only"
+import { usaLotes, posicoesLote } from "./lotes.repository"
 import { Prisma } from "@/generated/prisma/client"
 import {
   entradaConclusao,
@@ -214,6 +215,22 @@ export async function confirmarQuantidades(
   ordem: Ordem,
   ctx: Contexto,
 ) {
+  if (await usaLotes(tx, ordem.id)) {
+    const posicoes = await posicoesLote(tx, ordem.id)
+    if (
+      ordem.ordem_producao_fluxo_setor
+        .slice(0, -1)
+        .some((e) => e.status !== "CONCLUIDA") ||
+      posicoes.some((p) =>
+        p.etapas.some(
+          (e) => e.aProduzir !== "0.000" || e.emTransito !== "0.000",
+        ),
+      )
+    )
+      fail(
+        "Há etapas anteriores, apontamentos ou recebimentos pendentes nas parcelas.",
+      )
+  }
   const perdas = await perdasIntegraisComprovadas(tx, ordem)
   if (
     !ordem.ordem_producao_item.length ||
