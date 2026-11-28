@@ -63,8 +63,9 @@ recuperação própria e continuam disponíveis conforme suas permissões.
 
 A expedição e as alterações cadastrais usam o bloqueio da empresa. Enquanto
 houver peças em trânsito, a inativação do local ou do setor de destino, a
-inativação do produto e das dimensões da grade usada e a desativação do
-controle de estoque do produto são recusadas para preservar o recebimento.
+inativação do produto, a inativação ou troca de empresa das dimensões da
+grade usada e a desativação do controle de estoque do produto são recusadas
+para preservar o recebimento.
 
 A saída, a entrada e a mudança de situação usam o serviço canônico e suas
 transações. A auditoria da transferência recebida registra a quantidade

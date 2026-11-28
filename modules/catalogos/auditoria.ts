@@ -103,11 +103,17 @@ export async function gravarCatalogo<T extends Registro>(
       antes.controla_estoque &&
       "controla_estoque" in depois &&
       depois.controla_estoque === false
-    if (inativou || desativouEstoque) {
+    const empresaAntes =
+      antes && "id_empresa" in antes ? antes.id_empresa : undefined
+    const mudouEmpresaDaGrade =
+      (tabela === "cores" || tabela === "tamanhos") &&
+      empresaAntes != null &&
+      depois.id_empresa !== empresaAntes
+    if (inativou || desativouEstoque || mudouEmpresaDaGrade) {
       const filtro = (() => {
         if (tabela === "produtos") return { id_produto: depois.id }
-        if (depois.id_empresa == null) return null
-        const escopo = { id_empresa: depois.id_empresa }
+        if (empresaAntes == null) return null
+        const escopo = { id_empresa: empresaAntes }
         if (tabela === "locais_estoque")
           return { ...escopo, id_local_destino: depois.id }
         if (tabela === "cores")
@@ -124,7 +130,7 @@ export async function gravarCatalogo<T extends Registro>(
         }))
       )
         throw new ConflictError(
-          "Este cadastro é necessário para receber peças em trânsito. Confirme o recebimento antes de inativar ou desativar o estoque.",
+          "Este cadastro é necessário para receber peças em trânsito. Confirme o recebimento antes de alterar sua disponibilidade.",
         )
     }
     const serializar = (v: unknown) =>
@@ -134,8 +140,6 @@ export async function gravarCatalogo<T extends Registro>(
     const dadosAnteriores = serializar(antes)
     const dadosNovos = serializar(depois)
     if (dadosAnteriores === dadosNovos) return result
-    const empresaAntes =
-      antes && "id_empresa" in antes ? antes.id_empresa : undefined
     const transferencia =
       tabela !== "produtos" &&
       antes !== null &&
