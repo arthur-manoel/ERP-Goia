@@ -173,6 +173,7 @@ beforeEach(() => {
   })
   db.$queryRaw.mockImplementation(async (query, ...values) => {
     const sql = Array.from(query.strings ?? query).join("?")
+    if (sql.includes("FROM producao_lote_protocolo")) return []
     if (sql.includes("SELECT a.id,a.id_setor"))
       return fatos.map((f) => ({ ...f }))
     if (sql.includes("FROM producao_confirmacao WHERE"))

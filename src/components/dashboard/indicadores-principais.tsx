@@ -1,3 +1,5 @@
+"use client"
+
 import { Suspense } from "react"
 import { cn } from "@/lib/utils"
 import { IndicadorCardSkeleton } from "./indicador-card"
@@ -6,24 +8,11 @@ import { OrdensProducaoAbertas } from "./ordens-producao-abertas"
 import { PedidosAEntregar } from "./pedidos-a-entregar"
 import { SaldoDoMes } from "./saldo-do-mes"
 
-type IndicadoresPrincipaisProps = {
-  /** Resultado de podeVerSaldoDoMes(), calculado no servidor. */
-  mostrarSaldo: boolean
-}
+import { useIndicador } from "./provedor-indicadores"
 
-/**
- * Primeira área da Dashboard. Cada indicador carrega por conta própria
- * (Suspense): um lento ou com falha não trava nem derruba os outros.
- *
- * Grade: 1 coluna no celular, 2 no tablet e 3 no desktop. Pedidos e ordens de
- * produção (que têm gráfico) ocupam 2 colunas; insumos e saldo ocupam 1.
- * grid-flow-dense preenche buracos quando a ordem não fecha a linha.
- *
- * Para adicionar um indicador, crie o componente (com prop `className`) e inclua-o aqui.
- */
-export function IndicadoresPrincipais({
-  mostrarSaldo,
-}: IndicadoresPrincipaisProps) {
+export function IndicadoresPrincipais() {
+  const saldo = useIndicador("saldo")
+  const mostrarSaldo = saldo?.estado !== "sem_permissao"
   const larguraPedidos = "md:col-span-2"
   // Sem o saldo ao lado, as ordens de produção ocupam a linha inteira (sem buraco).
   const larguraOrdens = cn("md:col-span-2", !mostrarSaldo && "xl:col-span-3")

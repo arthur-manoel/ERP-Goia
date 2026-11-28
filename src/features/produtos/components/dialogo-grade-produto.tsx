@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -220,7 +221,10 @@ export function DialogoGradeProduto({
         if (!aberto && !ocupado) aoFechar()
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent
+        className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
+        showCloseButton={!ocupado}
+      >
         <DialogHeader>
           <DialogTitle>Grade de {produto.nome}</DialogTitle>
           <DialogDescription>
@@ -278,13 +282,12 @@ export function DialogoGradeProduto({
                       key={opcao.id}
                       className="flex items-center gap-2 text-sm"
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selecao.includes(opcao.id)}
-                        onChange={(evento) =>
+                        onCheckedChange={(marcado) =>
                           selecionar(
                             opcao.id,
-                            evento.target.checked,
+                            marcado === true,
                             selecao,
                             alterar,
                           )
@@ -343,66 +346,62 @@ export function DialogoGradeProduto({
             {novas.length > 200 && (
               <p role="alert">Selecione até 200 combinações novas por vez.</p>
             )}
-            {variacoes ? (
-              variacoes.length ? (
-                <div className="overflow-x-auto rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Variação</TableHead>
-                        <TableHead>Situação</TableHead>
-                        <TableHead>Ação</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {variacoes.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell>{dimensoes(item)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {item.status === "ATIVO" ? "Ativa" : "Inativa"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="outline"
-                              disabled={
-                                ocupado ||
-                                !!erroGrade ||
-                                (item.status === "INATIVO" &&
-                                  produto.status !== "ATIVO")
-                              }
-                              onClick={() =>
-                                void salvar(
-                                  {
-                                    status:
-                                      item.status === "ATIVO"
-                                        ? "INATIVO"
-                                        : "ATIVO",
-                                  },
-                                  item.id,
-                                )
-                              }
-                            >
-                              {item.status === "ATIVO"
-                                ? "Inativar"
-                                : "Reativar"}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Este produto ainda está sem variações cadastradas.
-                </p>
-              )
-            ) : (
-              !erroGrade && <Skeleton className="h-24 w-full" />
-            )}
           </>
+        )}
+        {variacoes ? (
+          variacoes.length ? (
+            <div className="overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Variação</TableHead>
+                    <TableHead>Situação</TableHead>
+                    <TableHead>Ação</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {variacoes.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>{dimensoes(item)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {item.status === "ATIVO" ? "Ativa" : "Inativa"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          disabled={
+                            ocupado ||
+                            !!erroGrade ||
+                            (item.status === "INATIVO" &&
+                              produto.status !== "ATIVO")
+                          }
+                          onClick={() =>
+                            void salvar(
+                              {
+                                status:
+                                  item.status === "ATIVO" ? "INATIVO" : "ATIVO",
+                              },
+                              item.id,
+                            )
+                          }
+                        >
+                          {item.status === "ATIVO" ? "Inativar" : "Reativar"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Este produto ainda está sem variações cadastradas.
+            </p>
+          )
+        ) : (
+          !erroGrade && <Skeleton className="h-24 w-full" />
         )}
         <DialogFooter>
           <Button variant="outline" onClick={aoFechar} disabled={ocupado}>

@@ -174,6 +174,9 @@ model compra_itens {
   @@index([id_cor], map: "fk_compra_item_cor")
   @@index([id_produto], map: "fk_compra_item_produto")
   @@index([id_tamanho], map: "fk_compra_item_tamanho")
+  compra_recebimento_linha compra_recebimento_linha[]
+  @@unique([id_compra, id, id_produto], map: "uk_compra_linha_produto")
+  item_nota_fiscal         item_nota_fiscal[]
 }
 
 model compras {
@@ -213,6 +216,25 @@ model compras {
   @@index([id_ordem_producao], map: "fk_compra_op")
   @@index([id_usuario], map: "fk_compra_usuario")
   @@index([id_empresa, status], map: "idx_compra_empresa_status")
+  compra_recebimento_linha compra_recebimento_linha[]
+}
+
+model compra_recebimento_linha {
+  id_movimentacao      Int                  @id
+  id_empresa           Int
+  id_compra            Int
+  id_compra_item       Int
+  id_produto           Int
+  quantidade           Decimal              @db.Decimal(15, 3)
+  compras              compras              @relation(fields: [id_compra, id_empresa], references: [id, id_empresa], onUpdate: Restrict, map: "fk_recebimento_linha_compra")
+  compra_itens         compra_itens         @relation(fields: [id_compra, id_compra_item, id_produto], references: [id_compra, id, id_produto], onUpdate: Restrict, map: "fk_recebimento_linha_item")
+  movimentacao_estoque movimentacao_estoque @relation(fields: [id_movimentacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onUpdate: Restrict, map: "fk_recebimento_linha_mov")
+  nota_item_entrada    nota_item_entrada[]
+
+  @@unique([id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], map: "uk_recebimento_linha_identidade")
+  @@unique([id_movimentacao, id_empresa, id_produto], map: "uk_recebimento_linha_mov")
+  @@index([id_compra, id_empresa], map: "fk_recebimento_linha_compra")
+  @@index([id_compra, id_compra_item, id_produto], map: "fk_recebimento_linha_item")
 }
 
 model condicoes_pagamento {
@@ -456,6 +478,11 @@ model empresas {
   cor_tema                  String                      @default("#22c55e") @db.VarChar(50)
   status                    empresas_status             @default(ATIVA)
   data_cadastro             DateTime                    @default(now()) @db.Timestamp(0)
+  created_at                DateTime                    @default(now()) @db.Timestamp(0)
+  updated_at                DateTime                    @default(now()) @updatedAt @db.Timestamp(0)
+  inativado_em              DateTime?                   @db.Timestamp(0)
+  inativado_por             Int?
+  inativador                usuarios?                   @relation("EmpresaInativador", fields: [inativado_por], references: [id], onDelete: SetNull, map: "fk_empresa_inativador")
   auditoria                 auditoria[]
   cargos                    cargos[]
   categorias                categorias[]
@@ -498,6 +525,10 @@ model empresas {
   movimentacoes_financeiras movimentacoes_financeiras[]
   pedido_cliente            pedido_cliente[]
   pedido_cliente_fechamento pedido_cliente_fechamento[]
+
+  @@index([inativado_por], map: "fk_empresa_inativador")
+  @@index([razao_social, id], map: "idx_empresa_razao_id")
+  @@index([status, razao_social, id], map: "idx_empresa_status_razao_id")
 }
 
 model estoque {
@@ -603,6 +634,24 @@ model item_nota_fiscal {
   @@index([id_cor], map: "fk_item_nf_cor")
   @@index([id_produto], map: "fk_item_nf_produto")
   @@index([id_tamanho], map: "fk_item_nf_tamanho")
+  id_empresa                                                                    Int?
+  id_compra                                                                     Int?
+  id_compra_item                                                                Int?
+  id_variacao                                                                   Int?
+  id_local_estoque                                                              Int?
+  id_setor                                                                      Int?
+  nota_fiscal_item_nota_fiscal_id_nota_fiscal_id_empresa_id_compraTonota_fiscal nota_fiscal?                @relation("item_nota_fiscal_id_nota_fiscal_id_empresa_id_compraTonota_fiscal", fields: [id_nota_fiscal, id_empresa, id_compra], references: [id, id_empresa, id_compra], onUpdate: Restrict, map: "fk_nf_linha_cab")
+  compra_itens                                                                  compra_itens?               @relation(fields: [id_compra, id_compra_item, id_produto], references: [id_compra, id, id_produto], onDelete: Restrict, onUpdate: Restrict, map: "fk_nf_linha_compra")
+  locais_estoque                                                                locais_estoque?             @relation(fields: [id_local_estoque], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_nf_linha_local")
+  setores                                                                       setores?                    @relation(fields: [id_setor], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_nf_linha_setor")
+  produto_variacoes                                                             produto_variacoes?          @relation(fields: [id_variacao, id_empresa, id_produto], references: [id, id_empresa, id_produto], onDelete: Restrict, onUpdate: Restrict, map: "fk_nf_linha_variacao")
+  nota_item_entrada                                                             nota_item_entrada[]
+  @@unique([id, id_nota_fiscal, id_empresa, id_compra, id_compra_item, id_produto], map: "uk_nf_linha_identidade")
+  @@index([id_nota_fiscal, id_empresa, id_compra], map: "fk_nf_linha_cab")
+  @@index([id_compra, id_compra_item, id_produto], map: "fk_nf_linha_compra")
+  @@index([id_local_estoque], map: "fk_nf_linha_local")
+  @@index([id_setor], map: "fk_nf_linha_setor")
+  @@index([id_variacao, id_empresa, id_produto], map: "fk_nf_linha_variacao")
 }
 
 model item_pedido_compra {
@@ -703,6 +752,7 @@ model locais_estoque {
 
   @@unique([id_empresa, nome], map: "uk_local_estoque_empresa_nome")
   @@unique([id_empresa, id], map: "idx_local_estoque_empresa_id")
+  item_nota_fiscal                                                                        item_nota_fiscal[]
 }
 
 model movimentacao_estoque {
@@ -744,6 +794,8 @@ model movimentacao_estoque {
   @@index([id_setor], map: "fk_mov_estoque_setor")
   @@index([id_usuario], map: "fk_mov_estoque_usuario")
   @@index([id_variacao, id_empresa, id_produto], map: "fk_movimento_variacao")
+  compra_recebimento_linha                                                                                      compra_recebimento_linha?
+  @@unique([id, id_empresa, id_produto], map: "uk_mov_compra_produto")
 }
 
 model movimentacoes_financeiras {
@@ -792,6 +844,23 @@ model necessidade_producao {
   @@index([id_produto], map: "fk_necessidade_produto")
 }
 
+model nota_item_entrada {
+  id_item_nota             Int
+  id_nota                  Int
+  id_empresa               Int
+  id_compra                Int
+  id_compra_item           Int
+  id_produto               Int
+  id_movimentacao          Int
+  quantidade               Decimal                  @db.Decimal(15, 3)
+  item_nota_fiscal         item_nota_fiscal         @relation(fields: [id_item_nota, id_nota, id_empresa, id_compra, id_compra_item, id_produto], references: [id, id_nota_fiscal, id_empresa, id_compra, id_compra_item, id_produto], onUpdate: Restrict, map: "fk_nf_entrada_linha")
+  compra_recebimento_linha compra_recebimento_linha @relation(fields: [id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], references: [id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], onUpdate: Restrict, map: "fk_nf_entrada_recebimento")
+
+  @@id([id_item_nota, id_movimentacao])
+  @@index([id_item_nota, id_nota, id_empresa, id_compra, id_compra_item, id_produto], map: "fk_nf_entrada_linha")
+  @@index([id_movimentacao, id_empresa, id_compra, id_compra_item, id_produto], map: "fk_nf_entrada_recebimento")
+}
+
 model nota_fiscal {
   id                 Int                @id @default(autoincrement())
   id_empresa         Int
@@ -824,6 +893,10 @@ model nota_fiscal {
   @@index([id_fornecedor], map: "fk_nota_fiscal_fornecedor")
   @@index([id_local_estoque], map: "fk_nota_fiscal_local")
   @@index([id_pedido_compra], map: "fk_nota_fiscal_pedido")
+  versao                                                                             Int                @default(1)
+  justificativa_valores                                                              String?            @db.VarChar(255)
+  item_nota_fiscal_item_nota_fiscal_id_nota_fiscal_id_empresa_id_compraTonota_fiscal item_nota_fiscal[] @relation("item_nota_fiscal_id_nota_fiscal_id_empresa_id_compraTonota_fiscal")
+  @@unique([id, id_empresa, id_compra], map: "uk_nf_identidade_compra")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -867,6 +940,7 @@ model ordem_producao {
   @@index([id_local_estoque], map: "fk_ordem_producao_local")
   @@index([id_usuario], map: "fk_ordem_producao_usuario")
   @@index([id_pedido_cliente], map: "fk_ordem_producao_pedido_cliente")
+  producao_lote_protocolo           producao_lote_protocolo?
 }
 
 model ordem_producao_consumo_planejado {
@@ -905,6 +979,8 @@ model ordem_producao_fluxo_setor {
   @@unique([id_ordem_producao, ordem], map: "uk_op_fluxo_ordem")
   @@unique([id_ordem_producao, id_setor], map: "uk_op_fluxo_setor")
   @@index([id_setor], map: "fk_op_fluxo_setor")
+  producao_remessa_producao_remessa_id_ordem_producao_id_etapa_destino_id_setor_destinoToordem_producao_fluxo_setor producao_remessa[]            @relation("producao_remessa_id_ordem_producao_id_etapa_destino_id_setor_destinoToordem_producao_fluxo_setor")
+  producao_remessa_producao_remessa_id_ordem_producao_id_etapa_origem_id_setor_origemToordem_producao_fluxo_setor   producao_remessa[]            @relation("producao_remessa_id_ordem_producao_id_etapa_origem_id_setor_origemToordem_producao_fluxo_setor")
 }
 
 model ordem_producao_item {
@@ -935,18 +1011,26 @@ model ordem_producao_item {
   @@index([id_produto], map: "fk_op_item_produto")
   @@index([id_tamanho], map: "fk_op_item_tamanho")
   @@index([id_pedido_cliente_item], map: "fk_ordem_producao_item_pedido_item")
+  ordem_producao_movimentacao_item_ordem_producao_movimentacao_item_id_ordem_producao_id_ordem_producao_itemToordem_producao_item ordem_producao_movimentacao_item[] @relation("ordem_producao_movimentacao_item_id_ordem_producao_id_ordem_producao_itemToordem_producao_item")
 }
 
 model ordem_producao_movimentacao_item {
   id                                Int                               @id @default(autoincrement())
   id_movimentacao                   Int
   id_ordem_producao_item            Int
-  quantidade                        Decimal                           @db.Decimal(15, 2)
+  quantidade                        Decimal                           @db.Decimal(16, 3)
   ordem_producao_item               ordem_producao_item               @relation(fields: [id_ordem_producao_item], references: [id], onDelete: Cascade, map: "fk_op_mov_item_item")
   ordem_producao_movimentacao_setor ordem_producao_movimentacao_setor @relation(fields: [id_movimentacao], references: [id], onDelete: Cascade, map: "fk_op_mov_item_mov")
 
   @@unique([id_movimentacao, id_ordem_producao_item], map: "uk_op_mov_item")
   @@index([id_ordem_producao_item], map: "idx_op_mov_item_op")
+  id_ordem_producao                                                                                                                       Int?
+  ordem_producao_item_ordem_producao_movimentacao_item_id_ordem_producao_id_ordem_producao_itemToordem_producao_item                      ordem_producao_item?               @relation("ordem_producao_movimentacao_item_id_ordem_producao_id_ordem_producao_itemToordem_producao_item", fields: [id_ordem_producao, id_ordem_producao_item], references: [id_ordem_producao, id], onUpdate: Restrict, map: "fk_lote_linha_item")
+  ordem_producao_movimentacao_setor_ordem_producao_movimentacao_item_id_movimentacao_id_ordem_producaoToordem_producao_movimentacao_setor ordem_producao_movimentacao_setor? @relation("ordem_producao_movimentacao_item_id_movimentacao_id_ordem_producaoToordem_producao_movimentacao_setor", fields: [id_movimentacao, id_ordem_producao], references: [id, id_ordem_producao], onUpdate: Restrict, map: "fk_lote_linha_mov")
+  producao_recebimento_item                                                                                                               producao_recebimento_item[]
+  @@unique([id, id_movimentacao, id_ordem_producao], map: "uk_lote_linha_ordem")
+  @@index([id_ordem_producao, id_ordem_producao_item], map: "fk_lote_linha_item")
+  @@index([id_movimentacao, id_ordem_producao], map: "fk_lote_linha_mov")
 }
 
 model ordem_producao_movimentacao_setor {
@@ -954,7 +1038,7 @@ model ordem_producao_movimentacao_setor {
   id_ordem_producao                                                           Int
   id_setor_origem                                                             Int?
   id_setor_destino                                                            Int
-  quantidade                                                                  Decimal?                                 @db.Decimal(15, 2)
+  quantidade                                                                  Decimal?                                 @db.Decimal(16, 3)
   id_usuario_envio                                                            Int?
   id_usuario_recebimento                                                      Int?
   status                                                                      ordem_producao_movimentacao_setor_status @default(ENTREGUE)
@@ -973,6 +1057,9 @@ model ordem_producao_movimentacao_setor {
   @@index([id_usuario_envio], map: "fk_op_movimentacao_usuario_envio")
   @@index([id_usuario_recebimento], map: "fk_op_movimentacao_usuario_recebimento")
   @@index([id_ordem_producao, data_envio], map: "idx_op_movimentacao_ordem")
+  producao_remessa                                                                                                                       producao_remessa?
+  ordem_producao_movimentacao_item_ordem_producao_movimentacao_item_id_movimentacao_id_ordem_producaoToordem_producao_movimentacao_setor ordem_producao_movimentacao_item[]       @relation("ordem_producao_movimentacao_item_id_movimentacao_id_ordem_producaoToordem_producao_movimentacao_setor")
+  @@unique([id, id_ordem_producao], map: "uk_lote_mov_ordem")
 }
 
 model pagamentos_pagar {
@@ -1346,6 +1433,7 @@ model produto_variacoes {
   @@index([id_cor], map: "fk_produto_variacao_cor")
   @@index([id_produto], map: "fk_produto_variacao_produto")
   @@index([id_tamanho], map: "fk_produto_variacao_tamanho")
+  item_nota_fiscal      item_nota_fiscal[]
 }
 
 model produtos {
@@ -1511,6 +1599,7 @@ model setores {
   usuario_empresa                                                                               usuario_empresa[]
 
   @@unique([id_empresa, nome], map: "uk_setor_empresa_nome")
+  item_nota_fiscal                                                                              item_nota_fiscal[]
 }
 
 model tamanhos {
@@ -1589,9 +1678,11 @@ model usuario_empresa {
   @@index([id_cargo], map: "fk_usuario_empresa_cargo")
   @@index([id_empresa], map: "fk_usuario_empresa_empresa")
   @@index([id_setor], map: "fk_usuario_empresa_setor")
+  producao_recebimento                                                               producao_recebimento[]
 }
 
 model usuarios {
+  empresas_inativadas empresas[] @relation("EmpresaInativador")
   ordem_producao_apontamento                                                                           ordem_producao_apontamento[]
   pedido_cliente_fechamento                                                                            pedido_cliente_fechamento[]
   id                                                                                                   Int                                 @id @default(autoincrement())
@@ -2567,4 +2658,69 @@ enum producao_confirmacao_tipo {
   REGISTRO
   CONFIRMACAO
   LEGADO
+}
+
+
+model producao_lote_protocolo {
+  id_empresa           Int
+  id_ordem_producao    Int                    @id
+  data_ativacao        DateTime               @default(now())
+  ordem_producao       ordem_producao         @relation(fields: [id_empresa, id_ordem_producao], references: [id_empresa, id], onUpdate: Restrict, map: "fk_lote_protocolo_op")
+  producao_recebimento producao_recebimento[]
+  producao_remessa     producao_remessa[]
+
+  @@unique([id_empresa, id_ordem_producao], map: "uk_lote_protocolo_empresa")
+}
+
+model producao_recebimento {
+  id                        Int                         @id @default(autoincrement())
+  id_movimentacao           Int
+  id_ordem_producao         Int
+  id_empresa                Int
+  id_usuario                Int
+  data_recebimento          DateTime                    @default(now())
+  usuario_empresa           usuario_empresa             @relation(fields: [id_usuario, id_empresa], references: [id_usuario, id_empresa], onUpdate: Restrict, map: "fk_lote_recebimento_autor")
+  producao_lote_protocolo   producao_lote_protocolo     @relation(fields: [id_empresa, id_ordem_producao], references: [id_empresa, id_ordem_producao], onUpdate: Restrict, map: "fk_lote_recebimento_op")
+  producao_remessa          producao_remessa            @relation(fields: [id_movimentacao, id_ordem_producao], references: [id_movimentacao, id_ordem_producao], onUpdate: Restrict, map: "fk_lote_recebimento_remessa")
+  producao_recebimento_item producao_recebimento_item[]
+
+  @@unique([id, id_movimentacao, id_ordem_producao], map: "uk_lote_recebimento_mov")
+  @@index([id_usuario, id_empresa], map: "fk_lote_recebimento_autor")
+  @@index([id_empresa, id_ordem_producao], map: "fk_lote_recebimento_op")
+  @@index([id_movimentacao, id_ordem_producao], map: "fk_lote_recebimento_remessa")
+}
+
+model producao_recebimento_item {
+  id_recebimento                   Int
+  id_movimentacao                  Int
+  id_ordem_producao                Int
+  id_linha                         Int
+  quantidade                       Decimal                          @db.Decimal(16, 3)
+  producao_recebimento             producao_recebimento             @relation(fields: [id_recebimento, id_movimentacao, id_ordem_producao], references: [id, id_movimentacao, id_ordem_producao], onUpdate: Restrict, map: "fk_lote_recebimento_cab")
+  ordem_producao_movimentacao_item ordem_producao_movimentacao_item @relation(fields: [id_linha, id_movimentacao, id_ordem_producao], references: [id, id_movimentacao, id_ordem_producao], onUpdate: Restrict, map: "fk_lote_recebimento_linha")
+
+  @@id([id_recebimento, id_linha])
+  @@index([id_recebimento, id_movimentacao, id_ordem_producao], map: "fk_lote_recebimento_cab")
+  @@index([id_linha, id_movimentacao, id_ordem_producao], map: "fk_lote_recebimento_linha")
+  @@index([id_linha], map: "idx_lote_recebimento_linha")
+}
+
+model producao_remessa {
+  id_movimentacao                                                                                                             Int                               @id
+  id_empresa                                                                                                                  Int
+  id_ordem_producao                                                                                                           Int
+  id_etapa_origem                                                                                                             Int
+  id_setor_origem                                                                                                             Int
+  id_etapa_destino                                                                                                            Int
+  id_setor_destino                                                                                                            Int
+  producao_recebimento                                                                                                        producao_recebimento[]
+  ordem_producao_fluxo_setor_producao_remessa_id_ordem_producao_id_etapa_destino_id_setor_destinoToordem_producao_fluxo_setor ordem_producao_fluxo_setor        @relation("producao_remessa_id_ordem_producao_id_etapa_destino_id_setor_destinoToordem_producao_fluxo_setor", fields: [id_ordem_producao, id_etapa_destino, id_setor_destino], references: [id_ordem_producao, id, id_setor], onUpdate: Restrict, map: "fk_remessa_destino")
+  ordem_producao_movimentacao_setor                                                                                           ordem_producao_movimentacao_setor @relation(fields: [id_movimentacao, id_ordem_producao], references: [id, id_ordem_producao], onUpdate: Restrict, map: "fk_remessa_mov")
+  ordem_producao_fluxo_setor_producao_remessa_id_ordem_producao_id_etapa_origem_id_setor_origemToordem_producao_fluxo_setor   ordem_producao_fluxo_setor        @relation("producao_remessa_id_ordem_producao_id_etapa_origem_id_setor_origemToordem_producao_fluxo_setor", fields: [id_ordem_producao, id_etapa_origem, id_setor_origem], references: [id_ordem_producao, id, id_setor], onUpdate: Restrict, map: "fk_remessa_origem")
+  producao_lote_protocolo                                                                                                     producao_lote_protocolo           @relation(fields: [id_empresa, id_ordem_producao], references: [id_empresa, id_ordem_producao], onUpdate: Restrict, map: "fk_remessa_protocolo")
+
+  @@unique([id_movimentacao, id_ordem_producao], map: "uk_remessa_mov_ordem")
+  @@index([id_ordem_producao, id_etapa_destino, id_setor_destino], map: "fk_remessa_destino")
+  @@index([id_ordem_producao, id_etapa_origem, id_setor_origem], map: "fk_remessa_origem")
+  @@index([id_empresa, id_ordem_producao], map: "fk_remessa_protocolo")
 }

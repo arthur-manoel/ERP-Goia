@@ -112,6 +112,8 @@ export type CompraDetalhe = Compra & {
   itens: Array<{
     id: number
     idProduto: number
+    idVariacao?: number | null
+    variacoes?: { id: number; nome: string }[]
     codigo: string
     nome: string
     unidade: string
@@ -144,6 +146,8 @@ export type CompraDetalhe = Compra & {
 }
 
 export type Nota = {
+  versao: number
+  dataProcessamento: string | null
   id: number
   numero: string
   serie: string

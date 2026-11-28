@@ -1,37 +1,23 @@
+"use client"
+
 import Link from "next/link"
 import { CircleAlert } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import {
-  obterOrdensProducaoAbertas,
-  obterPedidosAEntregar,
-  obterSaldoDoMes,
-} from "@/lib/dashboard/indicadores"
+import { useIndicador } from "./provedor-indicadores"
 
 type Pendencia = { chave: string; texto: string; href?: string }
 
 const plural = (n: number, singular: string, pluralizado: string) =>
   `${n} ${n === 1 ? singular : pluralizado}`
 
-/**
- * Faixa no topo que junta, em uma linha, o que exige ação hoje. Usa os MESMOS
- * dados dos cards (cache por requisição), então nunca mostra algo que os cards
- * não mostrem. Some por completo quando não há pendência.
- */
-export async function ResumoAtencao({
-  mostrarSaldo,
-}: {
-  mostrarSaldo: boolean
-}) {
-  const [ordens, pedidos, saldo] = await Promise.all([
-    obterOrdensProducaoAbertas(),
-    obterPedidosAEntregar(),
-    // O saldo só entra se o usuário pode vê-lo (e a função ainda confere no servidor).
-    mostrarSaldo ? obterSaldoDoMes() : Promise.resolve(null),
-  ])
+export function ResumoAtencao() {
+  const ordens = useIndicador("ordens")
+  const pedidos = useIndicador("pedidos")
+  const saldo = useIndicador("saldo")
 
   const pendencias: Pendencia[] = []
 
-  if (pedidos.estado === "ok" && pedidos.dados.atrasados > 0) {
+  if (pedidos?.estado === "ok" && pedidos.dados.atrasados > 0) {
     pendencias.push({
       chave: "pedidos",
       texto: plural(
@@ -39,10 +25,10 @@ export async function ResumoAtencao({
         "pedido atrasado",
         "pedidos atrasados",
       ),
-      href: "/vendas",
+      href: "/vendas/pedidos",
     })
   }
-  if (ordens.estado === "ok" && (ordens.dados.atrasadas ?? 0) > 0) {
+  if (ordens?.estado === "ok" && (ordens.dados.atrasadas ?? 0) > 0) {
     pendencias.push({
       chave: "ordens",
       texto: plural(

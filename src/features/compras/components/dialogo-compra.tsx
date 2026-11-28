@@ -223,7 +223,12 @@ export function DialogoReceber({
   )
   const [qtds, setQtds] = useState<Record<number, string>>(
     Object.fromEntries(
-      pendentes.map((i) => [i.idProduto, String(Number(pendenteDe(i)))]),
+      pendentes.map((i) => [i.id, String(Number(pendenteDe(i)))]),
+    ),
+  )
+  const [variacoes, setVariacoes] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      pendentes.map((i) => [i.id, i.idVariacao ? String(i.idVariacao) : ""]),
     ),
   )
   const [obs, setObs] = useState("")
@@ -236,9 +241,13 @@ export function DialogoReceber({
   async function salvar() {
     if (Array.from(obs.trim()).length > limiteObservacao)
       return setErro(`Observação: use até ${limiteObservacao} caracteres.`)
-    const itens: Array<{ idProduto: number; quantidade: string }> = []
+    const itens: Array<{
+      idItemCompra: number
+      idVariacao?: number
+      quantidade: string
+    }> = []
     for (const i of pendentes) {
-      const q = numero(qtds[i.idProduto] ?? "")
+      const q = numero(qtds[i.id] ?? "")
       if (q === "" || paraEscala(q, 3) === BigInt(0)) continue // zero = nada recebido agora
       if (!quantidadeValida(q))
         return setErro(`${i.nome}: quantidade inválida.`)
@@ -249,7 +258,13 @@ export function DialogoReceber({
         return setErro(
           `${i.nome}: a quantidade recebida não pode exceder o pendente (${quantidade(pendenteDe(i))}).`,
         )
-      itens.push({ idProduto: i.idProduto, quantidade: q })
+      if (i.variacoes?.length && !variacoes[i.id])
+        return setErro(`${i.nome}: selecione a variação recebida.`)
+      itens.push({
+        idItemCompra: i.id,
+        ...(variacoes[i.id] ? { idVariacao: Number(variacoes[i.id]) } : {}),
+        quantidade: q,
+      })
     }
     if (!itens.length)
       return setErro("Informe a quantidade recebida de ao menos um item.")
@@ -292,7 +307,7 @@ export function DialogoReceber({
             </TableHeader>
             <TableBody>
               {pendentes.map((i) => {
-                const q = numero(qtds[i.idProduto] ?? "")
+                const q = numero(qtds[i.id] ?? "")
                 const pend = quantidadeValida(q)
                   ? quantidadePendente(pendenteDe(i), q)
                   : pendenteDe(i)
@@ -300,6 +315,26 @@ export function DialogoReceber({
                   <TableRow key={i.id}>
                     <TableCell>
                       <div className="font-medium">{i.nome}</div>
+                      {!!i.variacoes?.length && (
+                        <select
+                          aria-label={`Variação recebida do item ${i.id}`}
+                          className="w-full rounded-md border p-2"
+                          value={variacoes[i.id] ?? ""}
+                          onChange={(e) =>
+                            setVariacoes((v) => ({
+                              ...v,
+                              [i.id]: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Selecione a variação</option>
+                          {i.variacoes.map((x) => (
+                            <option key={x.id} value={x.id}>
+                              {x.nome}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <div className="text-xs text-muted-foreground">
                         {i.codigo}
                       </div>
@@ -314,9 +349,9 @@ export function DialogoReceber({
                       <Input
                         aria-label={`Quantidade recebida agora de ${i.nome}`}
                         inputMode="decimal"
-                        value={qtds[i.idProduto] ?? ""}
+                        value={qtds[i.id] ?? ""}
                         onChange={(e) =>
-                          setQtds({ ...qtds, [i.idProduto]: e.target.value })
+                          setQtds({ ...qtds, [i.id]: e.target.value })
                         }
                       />
                     </TableCell>
