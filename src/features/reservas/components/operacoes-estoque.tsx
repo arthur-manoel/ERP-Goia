@@ -434,27 +434,33 @@ function Conteudo({
   const trava = useRef(false)
   const envioAtivo = useRef<AbortController | null>(null)
   useEffect(() => () => envioAtivo.current?.abort(), [])
-  const chaveOperacoes = `erp-operacao-estoque:${identidade}`
+  const chaveLegada = `erp-operacao-estoque:${identidade}`
+  const chaveOperacoes = `erp-operacao-estoque-usuario:${idUsuario}:${idEmpresa}`
   const chaveTransferencias = `erp-transferencia-estoque:${idUsuario}:${idEmpresa}`
+  const registroLegado = useRegistroSessao(chaveLegada)
   const registroOperacoes = useRegistroSessao(chaveOperacoes)
   const registroTransferencias = useRegistroSessao(chaveTransferencias)
-  const pendenteOperacoes = useMemo(
+  const pendenteLegado = useMemo(
+    () => lerPendente(registroLegado),
+    [registroLegado],
+  )
+  const operacaoAtual = useMemo(
     () => lerPendente(registroOperacoes),
     [registroOperacoes],
   )
-  const pendenteTransferencia = useMemo(
+  const transferenciaAtual = useMemo(
     () => lerPendente(registroTransferencias),
     [registroTransferencias],
   )
-  const pendente = pendenteTransferencia ?? pendenteOperacoes
   const transferenciaLegada =
-    !pendenteTransferencia &&
-    pendenteOperacoes !== null &&
-    rotaDeTransferencia(pendenteOperacoes.url)
-  const retomandoTransferencia =
-    pendente !== null && rotaDeTransferencia(pendente.url)
+    pendenteLegado && rotaDeTransferencia(pendenteLegado.url)
+      ? pendenteLegado
+      : null
+  const operacaoLegada = transferenciaLegada ? null : pendenteLegado
+  const pendenteOperacoes = operacaoLegada ?? operacaoAtual
+  const pendenteTransferencia = transferenciaAtual ?? transferenciaLegada
   const acessoRetomada = useConsulta<{ podeMovimentar: boolean }>(
-    retomandoTransferencia && !ocupado
+    origem === "RESERVAS" && pendenteTransferencia && !ocupado
       ? "/api/estoque/transferencias?limite=1"
       : null,
     requisitar,
@@ -483,16 +489,21 @@ function Conteudo({
     headers?: Record<string, string>,
   ) {
     if (trava.current) return
-    const retomada = pendente !== null
+    const transferindo = rotaDeTransferencia(url)
+    const pendente = transferindo ? pendenteTransferencia : pendenteOperacoes
     if (pendente && (url !== pendente.url || body !== pendente.body)) return
-    const noRegistroDeTransferencias =
-      Boolean(pendenteTransferencia) || (!pendente && rotaDeTransferencia(url))
-    const chaveStorage = noRegistroDeTransferencias
-      ? chaveTransferencias
-      : chaveOperacoes
-    const armazenado = noRegistroDeTransferencias
-      ? registroTransferencias
-      : registroOperacoes
+    const retomada = pendente !== null
+    const legado = retomada && pendente === pendenteLegado
+    const chaveStorage = legado
+      ? chaveLegada
+      : transferindo
+        ? chaveTransferencias
+        : chaveOperacoes
+    const armazenado = legado
+      ? registroLegado
+      : transferindo
+        ? registroTransferencias
+        : registroOperacoes
     const tentativa = pendente ?? {
       url,
       body,
@@ -534,7 +545,7 @@ function Conteudo({
           "Content-Type": "application/json",
           "Idempotency-Key": tentativa.chave,
           ...tentativa.headers,
-          ...(transferenciaLegada && { "X-Recuperar-Transferencia": "1" }),
+          ...(transferindo && legado && { "X-Recuperar-Transferencia": "1" }),
         },
         body: JSON.stringify(tentativa.body),
       })
@@ -547,7 +558,7 @@ function Conteudo({
           limparTentativa()
           setRevisao((r) => r + 1)
         },
-        transferenciaLegada
+        transferindo && legado
           ? "RECUPERACAO_INDISPONIVEL"
           : retomada && (despacho || recebimento)
             ? "TRANSFERENCIA_RECUSADA"
@@ -588,7 +599,7 @@ function Conteudo({
       if (!controller.signal.aborted) setOcupado(false)
     }
   }
-  const bloqueado = ocupado || !!pendente
+  const bloqueado = ocupado || !!pendenteOperacoes
   return (
     <div className="space-y-6">
       {origem === "PEDIDO" && (
@@ -623,10 +634,29 @@ function Conteudo({
           <AlertDescription>{erro || erroOpcoes}</AlertDescription>
         </Alert>
       )}
-      {pendente && (
+      {pendenteOperacoes && (
         <Alert>
           <AlertDescription>
-            Uma confirmação ficou sem resposta conclusiva. Os dados dessa
+            Uma operação ficou sem resposta conclusiva.{" "}
+            <Button
+              disabled={ocupado}
+              onClick={() =>
+                enviar(
+                  pendenteOperacoes.url,
+                  pendenteOperacoes.body,
+                  pendenteOperacoes.metodo,
+                )
+              }
+            >
+              Repetir a mesma operação
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {pendenteTransferencia && origem === "RESERVAS" && (
+        <Alert>
+          <AlertDescription>
+            Uma transferência ficou sem resposta conclusiva. Os dados dessa
             tentativa foram preservados.{" "}
             {acessoRetomadaNegado ? (
               "A edição de estoque é necessária para recuperar essa transferência."
@@ -634,15 +664,18 @@ function Conteudo({
               <Button
                 disabled={
                   ocupado ||
-                  (retomandoTransferencia &&
-                    (acessoRetomada.carregando ||
-                      !acessoRetomada.dados?.podeMovimentar))
+                  acessoRetomada.carregando ||
+                  !acessoRetomada.dados?.podeMovimentar
                 }
                 onClick={() =>
-                  enviar(pendente.url, pendente.body, pendente.metodo)
+                  enviar(
+                    pendenteTransferencia.url,
+                    pendenteTransferencia.body,
+                    pendenteTransferencia.metodo,
+                  )
                 }
               >
-                {transferenciaLegada
+                {pendenteTransferencia === transferenciaLegada
                   ? "Consultar confirmação antiga"
                   : "Repetir a mesma confirmação"}
               </Button>
@@ -711,7 +744,7 @@ function Conteudo({
               revisao={revisao}
               opcoes={opcoes}
               atualizandoOpcoes={atualizandoOpcoes}
-              bloqueado={bloqueado}
+              bloqueado={ocupado || !!pendenteTransferencia}
               enviar={enviar}
               confirmacao={confirmacaoTransferencia}
               versaoEnvio={versaoEnvio}

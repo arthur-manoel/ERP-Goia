@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import { Prisma } from "../../src/generated/prisma/client"
 import { prisma } from "../../src/lib/prisma"
 import { serializarJsonTextMysql } from "../../src/lib/limites-texto"
-import { ValidationError } from "../../src/lib/api/errors"
+import { ConflictError, ValidationError } from "../../src/lib/api/errors"
 import { bloquearProdutoCatalogo } from "./transactions"
 
 type Contexto = { idUsuario: number; empresas: number[] }
@@ -13,6 +13,7 @@ type Tabela =
   | "tipos_produto"
   | "fornecedores"
   | "categorias"
+  | "locais_estoque"
   | "produtos"
 type Registro = { id: number; id_empresa?: number | null }
 
@@ -59,6 +60,9 @@ export async function gravarCatalogo<T extends Registro>(
         case "categorias":
           await tx.$queryRaw`SELECT id FROM categorias WHERE id = ${id} FOR UPDATE`
           break
+        case "locais_estoque":
+          await tx.$queryRaw`SELECT id FROM locais_estoque WHERE id = ${id} FOR UPDATE`
+          break
         case "produtos":
           await bloquearProdutoCatalogo(tx, id)
           break
@@ -76,6 +80,8 @@ export async function gravarCatalogo<T extends Registro>(
           return tx.fornecedores.findUnique({ where: { id: registro } })
         case "categorias":
           return tx.categorias.findUnique({ where: { id: registro } })
+        case "locais_estoque":
+          return tx.locais_estoque.findUnique({ where: { id: registro } })
         case "produtos":
           return tx.produtos.findUnique({ where: { id: registro } })
       }
@@ -83,6 +89,44 @@ export async function gravarCatalogo<T extends Registro>(
     const antes = id === null ? null : ((await ler(id)) ?? null)
     const result = await operation(tx)
     const depois = result
+    // O cadastro e a expedição já bloqueiam a empresa. A recusa aqui
+    // reverte a atualização antes de confirmar o cadastro e sua auditoria.
+    const inativou =
+      antes &&
+      "status" in depois &&
+      ((antes.status === "ATIVO" && depois.status === "INATIVO") ||
+        (antes.status === "ATIVA" && depois.status === "INATIVA"))
+    const desativouEstoque =
+      tabela === "produtos" &&
+      antes &&
+      "controla_estoque" in antes &&
+      antes.controla_estoque &&
+      "controla_estoque" in depois &&
+      depois.controla_estoque === false
+    if (inativou || desativouEstoque) {
+      const filtro = (() => {
+        if (tabela === "produtos") return { id_produto: depois.id }
+        if (depois.id_empresa == null) return null
+        const escopo = { id_empresa: depois.id_empresa }
+        if (tabela === "locais_estoque")
+          return { ...escopo, id_local_destino: depois.id }
+        if (tabela === "cores")
+          return { ...escopo, produto_variacoes: { id_cor: depois.id } }
+        if (tabela === "tamanhos")
+          return { ...escopo, produto_variacoes: { id_tamanho: depois.id } }
+        return null
+      })()
+      if (
+        filtro &&
+        (await tx.transferencia_estoque.findFirst({
+          where: { ...filtro, status: "ENVIADA" },
+          select: { id: true },
+        }))
+      )
+        throw new ConflictError(
+          "Este cadastro é necessário para receber peças em trânsito. Confirme o recebimento antes de inativar ou desativar o estoque.",
+        )
+    }
     const serializar = (v: unknown) =>
       v === null
         ? null

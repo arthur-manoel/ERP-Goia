@@ -57,6 +57,15 @@ com os mesmos usuário, empresa, chave e conteúdo. Se não houver resultado
 da conta atual, retorna 404 com `RECUPERACAO_INDISPONIVEL`. Confira o
 histórico antes de iniciar uma nova transferência.
 
+Uma transferência pendente de recuperação bloqueia novos envios e
+recebimentos dessa conta na mesma empresa. As outras operações têm
+recuperação própria e continuam disponíveis conforme suas permissões.
+
+A expedição e as alterações cadastrais usam o bloqueio da empresa. Enquanto
+houver peças em trânsito, a inativação do local ou do setor de destino, a
+inativação do produto e das dimensões da grade usada e a desativação do
+controle de estoque do produto são recusadas para preservar o recebimento.
+
 A saída, a entrada e a mudança de situação usam o serviço canônico e suas
 transações. A auditoria da transferência recebida registra a quantidade
 conferida. O movimento de entrada registra usuário e horário. Esta entrega

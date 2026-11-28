@@ -192,3 +192,33 @@ it("rejeita JSON maior que TEXT antes de gravar o histórico", async () => {
   ).rejects.toThrow(/65.535 bytes/)
   expect(db.auditoria.create).not.toHaveBeenCalled()
 })
+
+it.each([
+  ["locais_estoque", { id_empresa: 10, id_local_destino: 7 }],
+  ["produtos", { id_produto: 7 }],
+  ["cores", { id_empresa: 10, produto_variacoes: { id_cor: 7 } }],
+  ["tamanhos", { id_empresa: 10, produto_variacoes: { id_tamanho: 7 } }],
+] as const)(
+  "recusa inativar %s usado em transferência pendente",
+  async (tabela, filtro) => {
+    const local = {
+      id: 7,
+      id_empresa: 10,
+      status: tabela === "cores" ? "ATIVA" : "ATIVO",
+    }
+    db[tabela].findUnique.mockResolvedValue(local)
+    db.transferencia_estoque.findFirst.mockResolvedValue({ id: 1 })
+    const tx = db as unknown as Prisma.TransactionClient
+    await expect(
+      gravarCatalogo(tabela, local.id, tx, async () => ({
+        ...local,
+        status: tabela === "cores" ? "INATIVA" : "INATIVO",
+      })),
+    ).rejects.toMatchObject({ status: 409 })
+    expect(db.transferencia_estoque.findFirst).toHaveBeenCalledWith({
+      where: { ...filtro, status: "ENVIADA" },
+      select: { id: true },
+    })
+    expect(db.auditoria.create).not.toHaveBeenCalled()
+  },
+)

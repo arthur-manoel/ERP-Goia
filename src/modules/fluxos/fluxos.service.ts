@@ -111,6 +111,8 @@ export function salvar(
   const isolamento =
     tipo === "setor" && id !== undefined ? "ReadCommitted" : undefined
   return transacao(async (tx) => {
+    if (tipo === "setor" && id !== undefined && input.ativo === false)
+      await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
     const antes =
       id === undefined ? undefined : await repo.buscar(tx, ctx, tipo, id)
     // Inativar exige "excluir" somente na transição ATIVO → INATIVO. Reenviar
@@ -119,6 +121,20 @@ export function salvar(
     if (inativando && ctx.pode?.excluir !== true)
       throw new ProducaoError(403, "Você não tem permissão para inativar.")
     if (tipo === "setor" && inativando && id !== undefined) {
+      if (
+        await tx.transferencia_estoque.findFirst({
+          where: {
+            id_empresa: ctx.idEmpresa,
+            id_setor_destino: id,
+            status: "ENVIADA",
+          },
+          select: { id: true },
+        })
+      )
+        throw new ProducaoError(
+          409,
+          "Este setor é destino de uma transferência em trânsito. Receba as peças antes de inativá-lo.",
+        )
       const fluxos = await repo.fluxosAtivosDoSetor(tx, ctx, id)
       if (fluxos.length)
         throw new ProducaoError(
