@@ -23,5 +23,6 @@ export const rotulosRecursos: Record<
   TAMANHOS: "Tamanhos",
   TIPOS_PRODUTO: "Tipos de produto",
   EMPRESAS: "Empresas",
+  CARGOS: "Cargos",
 }
 export { RECURSOS_PERMISSAO }

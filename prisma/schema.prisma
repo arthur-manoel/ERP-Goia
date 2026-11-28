@@ -1841,6 +1841,7 @@ enum permissoes_usuario_recurso {
   TAMANHOS
   TIPOS_PRODUTO
   EMPRESAS
+  CARGOS
 }
 
 enum tipos_setor_status {

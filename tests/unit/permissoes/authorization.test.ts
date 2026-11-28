@@ -1,4 +1,5 @@
 import { expect, it } from "vitest"
+import { permissoes_usuario_recurso } from "@/generated/prisma/enums"
 import { db } from "../../helpers/prisma"
 import { allowedCompanies } from "../../../modules/catalogos/repository"
 import { autorizar } from "../../../src/modules/producao/producao.authorization"
@@ -26,8 +27,12 @@ const vinculo = (
   permissoes_usuario: permissoes,
 })
 it("preserva os recursos do catálogo e não aceita recurso/ação ausente nem fallback null", async () => {
-  expect(RECURSOS_PERMISSAO).toHaveLength(19)
-  expect(new Set(RECURSOS_PERMISSAO).size).toBe(19)
+  const recursosPrisma = Object.values(permissoes_usuario_recurso)
+  expect(RECURSOS_PERMISSAO).toHaveLength(recursosPrisma.length)
+  expect(new Set(RECURSOS_PERMISSAO)).toEqual(new Set(recursosPrisma))
+  expect(RECURSOS_PERMISSAO).toEqual(
+    expect.arrayContaining(["EMPRESAS", "CARGOS"]),
+  )
   for (const value of [null, undefined, "__proto__", "INEXISTENTE"])
     expect(await allowedCompanies(1, value as never, "pode_ler")).toEqual([])
   expect(await allowedCompanies(1, "PRODUTOS", "constructor" as never)).toEqual(

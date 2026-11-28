@@ -21,6 +21,7 @@ export const db = {
   refresh_tokens: model(),
   usuarios: model(),
   usuario_empresa: model(),
+  cargos: model(),
   tamanhos: model(),
   cores: model(),
   produtos: model(),
