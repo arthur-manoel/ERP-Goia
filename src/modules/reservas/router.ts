@@ -32,8 +32,27 @@ import {
   receberTransferencia,
 } from "./fluxo.service"
 
-class EntregaRecusada extends HttpError {
-  readonly code = "ENTREGA_RECUSADA"
+import { listarTransferencias } from "./transferencias.consulta"
+
+class OperacaoRecusada extends HttpError {
+  constructor(
+    status: number,
+    mensagem: string,
+    readonly code: string,
+  ) {
+    super(status, mensagem)
+  }
+}
+
+class RecuperacaoIndisponivel extends HttpError {
+  readonly code = "RECUPERACAO_INDISPONIVEL"
+
+  constructor() {
+    super(
+      404,
+      "Tentativa antiga sem resultado recuperável para esta conta. Confira o histórico antes de iniciar outra transferência.",
+    )
+  }
 }
 
 type Operacao =
@@ -487,25 +506,18 @@ export async function operacoesHandler(
               pagina: pag.pagina,
             })
           }
+          if (op === "transferencias")
+            return textoJson(
+              await listarTransferencias(
+                tx,
+                ctx,
+                validate(
+                  schemas.listarTransferenciasSchema,
+                  readQuery(request),
+                ),
+              ),
+            )
           const filtro = validate(schemas.listarSchema, readQuery(request))
-          if (op === "transferencias") {
-            const where = { id_empresa: ctx.idEmpresa }
-            const [dados, total] = await Promise.all([
-              tx.transferencia_estoque.findMany({
-                where,
-                orderBy: { id: "desc" },
-                skip: (filtro.pagina - 1) * filtro.limite,
-                take: filtro.limite,
-              }),
-              tx.transferencia_estoque.count({ where }),
-            ])
-            return textoJson({
-              dados,
-              total,
-              pagina: filtro.pagina,
-              totalPaginas: Math.ceil(total / filtro.limite),
-            })
-          }
           const where: Prisma.reserva_estoqueWhereInput = {
             id_empresa: ctx.idEmpresa,
             ...(filtro.status ? { status: filtro.status } : {}),
@@ -569,7 +581,11 @@ export async function operacoesHandler(
       entregar: schemas.entregaSchema,
       consumir: schemas.consumoSchema,
       transferir: schemas.transferenciaSchema,
-      receberTransferencia: z.strictObject({}),
+      // O corpo vazio só pode recuperar o resultado de uma chave legada já gravada.
+      receberTransferencia: z.union([
+        schemas.receberTransferenciaSchema,
+        z.strictObject({}),
+      ]),
     }
     const contrato = contratos[op]
     if (!contrato) throw new ValidationError("Operação indisponível.")
@@ -592,6 +608,9 @@ export async function operacoesHandler(
         "editar",
       ])
     }
+    const somenteRecuperar =
+      (op === "transferir" || op === "receberTransferencia") &&
+      request.headers.get("X-Recuperar-Transferencia") === "1"
     const data = await executar(
       ctx,
       chave,
@@ -599,6 +618,8 @@ export async function operacoesHandler(
       body,
       exigencias,
       async (tx) => {
+        // O executor só chama este bloco quando a chave ainda não tem resultado.
+        if (somenteRecuperar) throw new RecuperacaoIndisponivel()
         if (op === "reservas")
           return reservar(tx, ctx, validate(schemas.reservaSchema, body))
         if (op === "liberar") {
@@ -688,7 +709,11 @@ export async function operacoesHandler(
               [400, 404, 409].includes(erro.status) &&
               !(erro instanceof ConflitoTransitorio)
             )
-              throw new EntregaRecusada(erro.status, erro.message)
+              throw new OperacaoRecusada(
+                erro.status,
+                erro.message,
+                "ENTREGA_RECUSADA",
+              )
             throw erro
           }
         }
@@ -700,16 +725,31 @@ export async function operacoesHandler(
             validate(schemas.consumoSchema, body),
             chave,
           )
-        if (op === "transferir")
-          return enviarTransferencia(
-            tx,
-            ctx,
-            validate(schemas.transferenciaSchema, body),
-            chave,
-          )
-        if (op === "receberTransferencia") {
-          validate(z.strictObject({}), body)
-          return receberTransferencia(tx, ctx, id!)
+        if (op === "transferir" || op === "receberTransferencia") {
+          try {
+            if (op === "transferir")
+              return await enviarTransferencia(
+                tx,
+                ctx,
+                validate(schemas.transferenciaSchema, body),
+                chave,
+              )
+            const entrada = validate(schemas.receberTransferenciaSchema, body)
+            return await receberTransferencia(tx, ctx, id!, entrada.quantidade)
+          } catch (erro) {
+            // A recusa é conclusiva porque a chave já foi consultada nesta transação.
+            if (
+              erro instanceof HttpError &&
+              [400, 404, 409].includes(erro.status) &&
+              !(erro instanceof ConflitoTransitorio)
+            )
+              throw new OperacaoRecusada(
+                erro.status,
+                erro.message,
+                "TRANSFERENCIA_RECUSADA",
+              )
+            throw erro
+          }
         }
         throw new ValidationError("Operação indisponível.")
       },
@@ -740,7 +780,15 @@ export async function operacoesHandler(
             },
           }
         : undefined,
-    )
+    ).catch((erro: unknown) => {
+      if (
+        somenteRecuperar &&
+        erro instanceof ConflictError &&
+        !(erro instanceof ConflitoTransitorio)
+      )
+        throw new RecuperacaoIndisponivel()
+      throw erro
+    })
     return Response.json(
       { success: true, data: data.dados, criado: data.criado },
       { headers, status: data.criado ? 201 : 200 },
@@ -752,7 +800,8 @@ export async function operacoesHandler(
       {
         success: false,
         ...(erro instanceof ConflitoTransitorio ||
-        erro instanceof EntregaRecusada
+        erro instanceof OperacaoRecusada ||
+        erro instanceof RecuperacaoIndisponivel
           ? { code: erro.code }
           : {}),
         error:

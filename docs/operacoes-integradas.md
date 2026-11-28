@@ -130,8 +130,8 @@ CONCLUIDA sem entradas identificadas retorna `baixaEstoque: pendente_regularizac
 não há backfill físico. Apontamentos/perdas da entrega separada não são pressupostos
 nem reimplementados. Consumos legados sem vínculo comprovado também exigem revisão.
 
-Transferência possui dois eventos reais: envio dá TRANSFERENCIA_SAIDA na origem
-e deixa ENVIADA; confirmação física dá TRANSFERENCIA_ENTRADA e RECEBIDA no
+A [transferência física de peças prontas](transferencias-producao-loja.md) possui dois eventos. O envio dá TRANSFERENCIA_SAIDA na origem
+e deixa ENVIADA. A conferência integral da quantidade dá TRANSFERENCIA_ENTRADA e RECEBIDA no
 destino. A conclusão da OP não comprova chegada à loja. A quantidade em trânsito
 não fica disponível em nenhum dos locais. Repetir recebimento não duplica entrada.
 
@@ -177,9 +177,9 @@ o contexto e interrompe consultas; resposta antiga não substitui outro document
 | GET | `/api/ordem_producao/{id}/operacao` | itens, etapas, materiais previstos, necessidades e reservas |
 | POST | `/api/ordem_producao/{id}/consumos` | idReserva, quantidade, concluirConsumo, motivoDivergencia opcional |
 | POST | `/api/ordem_producao/{id}/concluir` | contrato existente; conclusão também é chamada pela última etapa |
-| GET | `/api/estoque/transferencias` | pagina, limite |
+| GET | `/api/estoque/transferencias` | pagina, limite, status e destino opcionais |
 | POST | `/api/estoque/transferencias/enviar` | produto/variação, locais/setores origem/destino, quantidade, observacao |
-| POST | `/api/estoque/transferencias/{id}/receber` | {} e confirmação de chegada física |
+| POST | `/api/estoque/transferencias/{id}/receber` | quantidade conferida para confirmar chegada integral |
 | GET/POST | `/api/contas_receber/{id}/recebimentos` | GET pagina/limite; POST valor, data YYYY-MM-DD, formaPagamento, idContaBancaria, referencia/observacao opcionais |
 | GET | `/api/contas_receber/opcoes-recebimento` | contas ativas da empresa e formas de pagamento válidas |
 

@@ -28,3 +28,36 @@ export function quantidadeDaEntrega(entrada: FormDataEntryValue | null) {
     ? ({ tipo: "valida", quantidade: resultado.data } as const)
     : ({ tipo: "invalida" } as const)
 }
+
+export function saldoTransferivel(
+  posicao: {
+    quantidade: string
+    quantidade_reservada: string
+    estoque_variacao: {
+      id_variacao: number
+      quantidade: string
+      quantidade_reservada: string
+    }[]
+  },
+  idVariacao?: number,
+) {
+  const detalhe = posicao.estoque_variacao.find(
+    (p) => p.id_variacao === idVariacao,
+  )
+  const fisico =
+    idVariacao === undefined
+      ? posicao.estoque_variacao.reduce(
+          (s, p) => s - milesimos(p.quantidade),
+          milesimos(posicao.quantidade),
+        )
+      : milesimos(detalhe?.quantidade ?? "0")
+  const reservado =
+    idVariacao === undefined
+      ? posicao.estoque_variacao.reduce(
+          (s, p) => s - milesimos(p.quantidade_reservada),
+          milesimos(posicao.quantidade_reservada),
+        )
+      : milesimos(detalhe?.quantidade_reservada ?? "0")
+  const disponivel = fisico - reservado
+  return { fisico, reservado, disponivel }
+}

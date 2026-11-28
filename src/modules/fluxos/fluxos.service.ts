@@ -100,6 +100,26 @@ export function listar(ctx: Contexto, tipo: repo.Entidade, input: Listagem) {
     }
   })
 }
+async function validarDestinoSemTransferencias(
+  tx: Transaction,
+  ctx: Contexto,
+  id: number,
+) {
+  const transferencia = await tx.transferencia_estoque.findFirst({
+    where: {
+      id_empresa: ctx.idEmpresa,
+      id_setor_destino: id,
+      status: "ENVIADA",
+    },
+    select: { id: true },
+  })
+  if (transferencia)
+    throw new ProducaoError(
+      409,
+      "Este setor é destino de uma transferência em trânsito. Receba as peças antes de alterá-lo.",
+    )
+}
+
 export function salvar(
   ctx: Contexto,
   tipo: repo.Entidade,
@@ -111,6 +131,8 @@ export function salvar(
   const isolamento =
     tipo === "setor" && id !== undefined ? "ReadCommitted" : undefined
   return transacao(async (tx) => {
+    if (tipo === "setor" && id !== undefined && input.ativo === false)
+      await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
     const antes =
       id === undefined ? undefined : await repo.buscar(tx, ctx, tipo, id)
     // Inativar exige "excluir" somente na transição ATIVO → INATIVO. Reenviar
@@ -119,6 +141,7 @@ export function salvar(
     if (inativando && ctx.pode?.excluir !== true)
       throw new ProducaoError(403, "Você não tem permissão para inativar.")
     if (tipo === "setor" && inativando && id !== undefined) {
+      await validarDestinoSemTransferencias(tx, ctx, id)
       const fluxos = await repo.fluxosAtivosDoSetor(tx, ctx, id)
       if (fluxos.length)
         throw new ProducaoError(
@@ -191,12 +214,15 @@ export function salvar(
 }
 export function excluir(ctx: Contexto, tipo: repo.Entidade, id: number) {
   return transacao(async (tx) => {
+    if (tipo === "setor")
+      await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${ctx.idEmpresa} FOR UPDATE`
     const antes = await detalhe(
       tx,
       ctx,
       tipo,
       await repo.buscar(tx, ctx, tipo, id),
     )
+    if (tipo === "setor") await validarDestinoSemTransferencias(tx, ctx, id)
     if (await repo.emUso(tx, tipo, id))
       throw new ProducaoError(
         409,

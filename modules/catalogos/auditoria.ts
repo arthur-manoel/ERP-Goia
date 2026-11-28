@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import { Prisma } from "../../src/generated/prisma/client"
 import { prisma } from "../../src/lib/prisma"
 import { serializarJsonTextMysql } from "../../src/lib/limites-texto"
-import { ValidationError } from "../../src/lib/api/errors"
+import { ConflictError, ValidationError } from "../../src/lib/api/errors"
 import { bloquearProdutoCatalogo } from "./transactions"
 
 type Contexto = { idUsuario: number; empresas: number[] }
@@ -89,6 +89,50 @@ export async function gravarCatalogo<T extends Registro>(
     const antes = id === null ? null : ((await ler(id)) ?? null)
     const result = await operation(tx)
     const depois = result
+    // O cadastro e a expedição já bloqueiam a empresa. A recusa aqui
+    // reverte a atualização antes de confirmar o cadastro e sua auditoria.
+    const inativou =
+      antes &&
+      "status" in depois &&
+      ((antes.status === "ATIVO" && depois.status === "INATIVO") ||
+        (antes.status === "ATIVA" && depois.status === "INATIVA"))
+    const desativouEstoque =
+      tabela === "produtos" &&
+      antes &&
+      "controla_estoque" in antes &&
+      antes.controla_estoque &&
+      "controla_estoque" in depois &&
+      depois.controla_estoque === false
+    const empresaAntes =
+      antes && "id_empresa" in antes ? antes.id_empresa : undefined
+    const mudouEmpresaDaGrade =
+      (tabela === "cores" || tabela === "tamanhos") &&
+      empresaAntes != null &&
+      depois.id_empresa !== empresaAntes
+    if (inativou || desativouEstoque || mudouEmpresaDaGrade) {
+      const filtro = (() => {
+        if (tabela === "produtos") return { id_produto: depois.id }
+        if (empresaAntes == null) return null
+        const escopo = { id_empresa: empresaAntes }
+        if (tabela === "locais_estoque")
+          return { ...escopo, id_local_destino: depois.id }
+        if (tabela === "cores")
+          return { ...escopo, produto_variacoes: { id_cor: depois.id } }
+        if (tabela === "tamanhos")
+          return { ...escopo, produto_variacoes: { id_tamanho: depois.id } }
+        return null
+      })()
+      if (
+        filtro &&
+        (await tx.transferencia_estoque.findFirst({
+          where: { ...filtro, status: "ENVIADA" },
+          select: { id: true },
+        }))
+      )
+        throw new ConflictError(
+          "Este cadastro é necessário para receber peças em trânsito. Confirme o recebimento antes de alterar sua disponibilidade.",
+        )
+    }
     const serializar = (v: unknown) =>
       v === null
         ? null
@@ -96,8 +140,6 @@ export async function gravarCatalogo<T extends Registro>(
     const dadosAnteriores = serializar(antes)
     const dadosNovos = serializar(depois)
     if (dadosAnteriores === dadosNovos) return result
-    const empresaAntes =
-      antes && "id_empresa" in antes ? antes.id_empresa : undefined
     const transferencia =
       tabela !== "produtos" &&
       antes !== null &&

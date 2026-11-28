@@ -140,7 +140,7 @@ function confirmar(posicao: Referencia, criado: boolean) {
   }
 }
 
-async function criarNaTransacao(
+export async function criarVinculoEstoqueNaTransacao(
   tx: Prisma.TransactionClient,
   contexto: Contexto,
   dados: CriarVinculoInput,
@@ -262,7 +262,7 @@ export async function criarVinculoEstoque(
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     try {
       return await prisma.$transaction(
-        (tx) => criarNaTransacao(tx, contexto, dados),
+        (tx) => criarVinculoEstoqueNaTransacao(tx, contexto, dados),
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       )
     } catch (error) {

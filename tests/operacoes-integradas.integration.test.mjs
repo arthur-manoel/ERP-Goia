@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { ambienteRecebiveis } from "./helpers/integracao-recebiveis.mjs"
 
 test("Três cards HTTP reais: reserva, produção, transferência, entrega, fechamento e recebimento", async (t) => {
@@ -136,7 +136,12 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         id_cargo: cargo.id,
       },
     })
-    for (const nome of ["Tecidos", "Produtos prontos da fábrica", "Loja"])
+    for (const nome of [
+      "Tecidos",
+      "Produtos prontos da fábrica",
+      "Loja",
+      "Loja de conferência",
+    ])
       locais.push(
         await prisma.locais_estoque.create({
           data: { id_empresa: empresa, nome },
@@ -149,6 +154,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       "Costura",
       "Aprontamento",
       "Loja",
+      "Conferência da loja",
     ])
       setores.push(
         await prisma.setores.create({
@@ -182,7 +188,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         status: "ATIVA",
         data_vigencia: new Date("2026-01-01"),
         ficha_tecnica_item: {
-          create: { id_produto_componente: tecido.id, quantidade: "2.000" },
+          create: { id_produto_componente: tecido.id, quantidade: "0.600" },
         },
       },
     })
@@ -323,7 +329,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       idProduto: produto,
       idVariacao: m.id,
       idLocal: locais[1].id,
-      quantidade: "3.000",
+      quantidade: "10.000",
     }
     const chaveAbertura = randomUUID()
     const cabecalhoNumerico = await post("/api/ordem_producao", { numero: "1" })
@@ -350,7 +356,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     assert.equal(resumo.status, 200)
     assert.equal(resumo.body.data.count, 2)
     assert.equal(resumo.body.data.rows[0].id, op.id)
-    assert.equal(resumo.body.data.rows[0].quantidade_planejada, "3")
+    assert.equal(resumo.body.data.rows[0].quantidade_planejada, "10")
     assert.equal(resumo.body.data.rows[0].etapaAtual.ordem, 1)
     assert.equal(resumo.body.data.rows[0].itens[0].quantidade_produzida, "0")
     const outraCor = await prisma.cores.create({
@@ -552,7 +558,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       const dados = {
         idEtapa: etapas[i].id,
         idItem: itemOP.id,
-        quantidadeProduzida: "3.000",
+        quantidadeProduzida: "10.000",
         quantidadePerdida: "0.000",
         dataApontamento: dia,
       }
@@ -564,7 +570,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         const r = await a.chamar(
           `/api/ordem_producao/${op.id}/itens/${itemOP.id}/producao`,
           "PUT",
-          { quantidade_produzida: "3.000", quantidade_esperada: "0" },
+          { quantidade_produzida: "10.000", quantidade_esperada: "0" },
         )
         assert.equal(r.status, 200, JSON.stringify(r.body))
         const antesConcluir = await snapshot()
@@ -622,7 +628,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     )
     assert.equal(
       (await posicao(produto, locais[1].id)).quantidade.toFixed(3),
-      "3.000",
+      "10.000",
     )
     assert.equal(
       (await posicao(produto, locais[2].id)).quantidade.toFixed(3),
@@ -641,7 +647,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       movimentosOP.map((m) => [m.tipo, m.quantidade.toFixed(3)]),
       [
         ["SAIDA_PRODUCAO", "6.000"],
-        ["ENTRADA_PRODUCAO", "3.000"],
+        ["ENTRADA_PRODUCAO", "10.000"],
       ],
     )
     for (const mov of movimentosOP) {
@@ -655,7 +661,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       assert.equal(registro.dados[0].tipo, mov.tipo)
       assert.equal(
         registro.resumo.saldos.fechamento,
-        mov.tipo === "SAIDA_PRODUCAO" ? "4.000" : "3.000",
+        mov.tipo === "SAIDA_PRODUCAO" ? "4.000" : "10.000",
       )
     }
     assert.equal(
@@ -685,6 +691,318 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
       409,
     )
     assert.equal(await snapshot(), concluida)
+    await t.test(
+      "expedição de 6 das 10 peças da OP e conferência real em loja vazia",
+      async () => {
+        const rotaEnvio = "/api/estoque/transferencias/enviar"
+        const dados = {
+          idProduto: produto,
+          idVariacao: m.id,
+          idLocalOrigem: locais[1].id,
+          idSetorOrigem: setores[4].id,
+          idLocalDestino: locais[3].id,
+          idSetorDestino: setores[6].id,
+          quantidade: "6.000",
+          observacao: "Expedição das peças prontas",
+        }
+        const saldoLoja = async () => {
+          const r = await a.chamar(
+            `/api/estoque/saldo?idProduto=${produto}&idLocalEstoque=${locais[3].id}`,
+          )
+          assert.equal(r.status, 200)
+          return r.body.saldo
+        }
+        assert.equal(await saldoLoja(), "0.000")
+        assert.equal(
+          (await posicao(produto, locais[1].id)).quantidade.toFixed(3),
+          "10.000",
+        )
+
+        const antesEnvio = await snapshot()
+        const falhaEnvio = await a.falhaControlada(
+          "auditoria",
+          `NEW.id_empresa = ${empresa}`,
+          () => a.chamar(rotaEnvio, "POST", dados, { chave: randomUUID() }),
+        )
+        assert.equal(falhaEnvio.status, 500)
+        assert.equal(await snapshot(), antesEnvio)
+        await post(
+          rotaEnvio,
+          { ...dados, idSetorOrigem: setores[5].id },
+          randomUUID(),
+          409,
+        )
+        await post(
+          rotaEnvio,
+          { ...dados, idLocalDestino: locais[2].id },
+          randomUUID(),
+          409,
+        )
+        await post(
+          rotaEnvio,
+          {
+            ...dados,
+            idLocalOrigem: locais[2].id,
+            idSetorOrigem: setores[5].id,
+            quantidade: "1.000",
+          },
+          randomUUID(),
+          409,
+        )
+        assert.equal(await snapshot(), antesEnvio)
+
+        const chave = randomUUID()
+        const descartada = await a.chamar(rotaEnvio, "POST", dados, {
+          chave,
+          descartarResposta: true,
+        })
+        assert.equal(descartada.status, 201)
+        const enviado = await post(
+          rotaEnvio,
+          { ...dados, quantidade: "6.0" },
+          chave,
+          200,
+        )
+        await post(rotaEnvio, { ...dados, quantidade: "7.000" }, chave, 409)
+        assert.equal(
+          (await posicao(produto, locais[1].id)).quantidade.toFixed(3),
+          "4.000",
+        )
+        assert.equal(await saldoLoja(), "0.000")
+
+        const antesRecuperar = await snapshot()
+        const headers = { "X-Recuperar-Transferencia": "1" }
+        const conhecida = await a.chamar(rotaEnvio, "POST", dados, {
+          chave,
+          headers,
+        })
+        assert.equal(conhecida.status, 200)
+        assert.deepEqual(conhecida.body.data, enviado)
+        for (const opts of [{ chave: randomUUID() }, { ...outro, chave }]) {
+          const recusada = await a.chamar(rotaEnvio, "POST", dados, {
+            ...opts,
+            headers,
+          })
+          assert.equal(recusada.status, 404)
+          assert.equal(recusada.body.code, "RECUPERACAO_INDISPONIVEL")
+        }
+        const conflitoLocal = await post(
+          rotaEnvio,
+          {
+            ...dados,
+            idSetorDestino: setores[2].id,
+            quantidade: "1.000",
+          },
+          randomUUID(),
+          409,
+        )
+        assert.equal(conflitoLocal.code, "TRANSFERENCIA_RECUSADA")
+        const conflitoSetor = await post(
+          rotaEnvio,
+          {
+            ...dados,
+            idLocalDestino: locais[0].id,
+            quantidade: "1.000",
+          },
+          randomUUID(),
+          409,
+        )
+        assert.equal(conflitoSetor.code, "TRANSFERENCIA_RECUSADA")
+        assert.equal(
+          (await posicao(produto, locais[3].id)).quantidade.toFixed(3),
+          "0.000",
+        )
+        assert.equal(await snapshot(), antesRecuperar)
+        const rotaConsulta = "/api/estoque/transferencias"
+        const lista = await a.chamar(
+          `${rotaConsulta}?status=ENVIADA&idLocalDestino=${locais[3].id}&limite=1`,
+        )
+        assert.equal(lista.status, 200)
+        assert.equal(lista.body.data.total, 1)
+        assert.equal(lista.body.data.dados[0].id, enviado.idTransferencia)
+        assert.equal(lista.body.data.dados[0].quantidade, "6.000")
+        assert.equal(lista.body.data.dados[0].origem.local, locais[1].nome)
+        assert.equal(lista.body.data.dados[0].destino.local, locais[3].nome)
+        assert.equal(lista.body.data.dados[0].produto.unidade, "UN")
+        assert.ok(lista.body.data.dados[0].enviadoPor)
+        assert.deepEqual(
+          (await a.chamar(rotaConsulta, "GET", undefined, outroContexto)).body
+            .data.dados,
+          [],
+        )
+        assert.equal(
+          (
+            await a.chamar(rotaConsulta, "GET", undefined, {
+              empresa: empresas[1],
+            })
+          ).status,
+          403,
+        )
+        assert.equal(
+          (await a.chamar(rotaConsulta, "GET", undefined, { usuario: null }))
+            .status,
+          401,
+        )
+
+        const rotaReceber = `${rotaConsulta}/${enviado.idTransferencia}/receber`
+        const antesReceber = await snapshot()
+        for (const invalido of [
+          {},
+          { quantidade: "abc" },
+          { quantidade: "6.0001" },
+          { quantidade: "-1" },
+          { quantidade: "6", idLocalDestino: locais[2].id },
+        ])
+          await post(rotaReceber, invalido, randomUUID(), 400)
+        for (const quantidade of ["0", "5.000", "7.000"]) {
+          const recusa = await post(
+            rotaReceber,
+            { quantidade },
+            randomUUID(),
+            409,
+          )
+          assert.equal(recusa.code, "TRANSFERENCIA_RECUSADA")
+        }
+        const estrangeira = await a.chamar(
+          rotaReceber,
+          "POST",
+          { quantidade: "6" },
+          { ...outroContexto, chave: randomUUID() },
+        )
+        assert.equal(estrangeira.status, 404)
+        const semPermissao = await a.chamar(
+          rotaReceber,
+          "POST",
+          { quantidade: "6" },
+          { usuario: 1, chave: randomUUID() },
+        )
+        assert.equal(semPermissao.status, 403)
+        const reservaEmTransito = await a.chamar(
+          "/api/estoque/reservas",
+          "POST",
+          {
+            ...alocar,
+            idLocalEstoque: locais[3].id,
+            quantidade: "1.000",
+          },
+          { chave: randomUUID() },
+        )
+        assert.equal(reservaEmTransito.status, 409)
+        assert.equal(await saldoLoja(), "0.000")
+        assert.equal(await snapshot(), antesReceber)
+
+        const falhaEntrada = await a.falhaControlada(
+          "auditoria",
+          `NEW.id_empresa = ${empresa}`,
+          () =>
+            a.chamar(
+              rotaReceber,
+              "POST",
+              { quantidade: "6" },
+              { chave: randomUUID() },
+            ),
+        )
+        assert.equal(falhaEntrada.status, 500)
+        assert.equal(await snapshot(), antesReceber)
+
+        const chaveReceber = randomUUID()
+        const [a1, a2] = await Promise.all([
+          a.chamar(
+            rotaReceber,
+            "POST",
+            { quantidade: "6.000" },
+            { chave: chaveReceber, descartarResposta: true },
+          ),
+          postOutro(rotaReceber, { quantidade: "6" }),
+        ])
+        assert.equal(a1.status, 201)
+        const recuperada = await post(
+          rotaReceber,
+          { quantidade: "6.0" },
+          chaveReceber,
+          200,
+        )
+        assert.deepEqual(recuperada, a2)
+        const chaveLegada = randomUUID()
+        const tipoLegado = `receberTransferencia:${enviado.idTransferencia}`
+        const idUsuario = a.usuarios[0]
+        await prisma.operacao_erp.create({
+          data: {
+            id_empresa: empresa,
+            id_usuario: idUsuario,
+            chave: chaveLegada,
+            tipo: tipoLegado,
+            hash: createHash("sha256")
+              .update(
+                JSON.stringify({ tipo: tipoLegado, idUsuario, input: {} }),
+              )
+              .digest("hex"),
+            resultado: recuperada,
+          },
+        })
+        const antesReplayLegado = await snapshot()
+        assert.deepEqual(
+          await post(rotaReceber, {}, chaveLegada, 200),
+          recuperada,
+        )
+        await post(rotaReceber, {}, randomUUID(), 400)
+        assert.equal(await snapshot(), antesReplayLegado)
+        await post(rotaReceber, { quantidade: "5" }, randomUUID(), 409)
+        assert.equal(await saldoLoja(), "6.000")
+        assert.equal(
+          (await posicao(produto, locais[1].id)).quantidade.toFixed(3),
+          "4.000",
+        )
+        const auditoria = await prisma.auditoria.findMany({
+          where: {
+            id_empresa: empresa,
+            tabela: "transferencia_estoque",
+            id_registro: enviado.idTransferencia,
+          },
+          orderBy: { id: "asc" },
+        })
+        assert.deepEqual(
+          auditoria.map((r) => r.acao),
+          ["INSERT", "UPDATE"],
+        )
+        assert.equal(
+          JSON.parse(auditoria[1].dados_novos).quantidadeConferida,
+          "6.000",
+        )
+        const entrada = await kardex({
+          origemTipo: "TRANSFERENCIA_RECEBIMENTO",
+          origemId: enviado.idTransferencia,
+        })
+        assert.equal(entrada.dados.length, 1)
+        assert.equal(
+          entrada.dados[0].idMovimentacao,
+          recuperada.idMovimentoEntrada,
+        )
+        assert.equal(
+          entrada.dados[0].idMovimentoRelacionado,
+          enviado.idMovimentoSaida,
+        )
+        assert.equal(
+          (
+            await a.chamar(
+              `${rotaConsulta}?status=ENVIADA&idLocalDestino=${locais[3].id}`,
+            )
+          ).body.data.total,
+          0,
+        )
+        const historico = await a.chamar(
+          `${rotaConsulta}?status=RECEBIDA&idTransferencia=${enviado.idTransferencia}`,
+        )
+        assert.equal(historico.body.data.total, 1)
+        assert.ok(historico.body.data.dados[0].recebidoPor)
+      },
+    )
+
+    await prisma.ficha_tecnica_item.updateMany({
+      where: { id_ficha_tecnica: ficha.id },
+      data: { quantidade: "2.000" },
+    })
+
     const transferencia = await post("/api/estoque/transferencias/enviar", {
       idProduto: produto,
       idVariacao: m.id,
@@ -697,7 +1015,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     })
     assert.equal(
       (await posicao(produto, locais[1].id)).quantidade.toFixed(3),
-      "0.000",
+      "1.000",
     )
     assert.equal(
       (await posicao(produto, locais[2].id)).quantidade.toFixed(3),
@@ -721,7 +1039,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     )
     const chegada = await post(
       `/api/estoque/transferencias/${transferencia.idTransferencia}/receber`,
-      {},
+      { quantidade: "3.000" },
       chaveReceber,
     )
     const recebidoKardex = await kardex({
@@ -744,7 +1062,7 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
     const recebida = await snapshot()
     await post(
       `/api/estoque/transferencias/${transferencia.idTransferencia}/receber`,
-      {},
+      { quantidade: "3.000" },
       chaveReceber,
       200,
     )
@@ -1866,8 +2184,134 @@ test("Três cards HTTP reais: reserva, produção, transferência, entrega, fech
         assert.equal(semLogin.status, 401)
       },
     )
+    await t.test(
+      "expedições concorrentes respeitam o saldo exato e a grade",
+      async () => {
+        const novo = await prisma.produtos.create({
+          data: {
+            id_tipo_produto: tipo,
+            nome: `Tecido fracionável ${randomUUID()}`,
+            codigo: randomUUID(),
+            unidade: "M",
+            produto_empresa: { create: { id_empresa: empresa } },
+          },
+        })
+        a.produtos.push(novo.id)
+        const [disponivel, outraVariacao] = await Promise.all(
+          [m, g].map((v) =>
+            prisma.produto_variacoes.create({
+              data: {
+                id_empresa: empresa,
+                id_produto: novo.id,
+                id_cor: v.id_cor,
+                id_tamanho: v.id_tamanho,
+              },
+            }),
+          ),
+        )
+        const localExterno = await prisma.locais_estoque.create({
+          data: { id_empresa: empresas[1], nome: "Local externo" },
+        })
+        await entrada(
+          novo.id,
+          locais[1].id,
+          setores[4].id,
+          "0.300",
+          disponivel.id,
+        )
+        const rota = "/api/estoque/transferencias/enviar"
+        const dados = {
+          idProduto: novo.id,
+          idVariacao: disponivel.id,
+          idLocalOrigem: locais[1].id,
+          idSetorOrigem: setores[4].id,
+          idLocalDestino: locais[3].id,
+          idSetorDestino: setores[6].id,
+          quantidade: "0.200",
+          observacao: "Expedição fracionável",
+        }
+        const antes = await snapshot()
+        await post(
+          rota,
+          { ...dados, idVariacao: outraVariacao.id },
+          randomUUID(),
+          409,
+        )
+        await post(
+          rota,
+          { ...dados, idLocalDestino: localExterno.id },
+          randomUUID(),
+          404,
+        )
+        assert.equal(await snapshot(), antes)
+        const concorrentes = await Promise.all([
+          a.chamar(rota, "POST", dados, { chave: randomUUID() }),
+          a.chamar(rota, "POST", dados, { ...outro, chave: randomUUID() }),
+        ])
+        assert.deepEqual(concorrentes.map((r) => r.status).sort(), [201, 409])
+        const linha = await prisma.transferencia_estoque.findFirstOrThrow({
+          where: { id_empresa: empresa, id_produto: novo.id },
+        })
+        assert.equal(
+          await prisma.transferencia_estoque.count({
+            where: { id_empresa: empresa, id_produto: novo.id },
+          }),
+          1,
+        )
+        assert.equal(
+          (await posicao(novo.id, locais[1].id)).quantidade.toFixed(3),
+          "0.100",
+        )
+        await postOutro(`/api/estoque/transferencias/${linha.id}/receber`, {
+          quantidade: "0.2",
+        })
+        assert.equal(
+          (await posicao(novo.id, locais[3].id)).quantidade.toFixed(3),
+          "0.200",
+        )
+        const seguinte = await postOutro(rota, {
+          ...dados,
+          quantidade: "0.100",
+        })
+        assert.notEqual(seguinte.idTransferencia, linha.id)
+        const posicaoDestino = await posicao(novo.id, locais[3].id)
+        assert.equal(posicaoDestino.id_setor, setores[6].id)
+        assert.equal(posicaoDestino.quantidade.toFixed(3), "0.200")
+        assert.equal(
+          (await posicao(novo.id, locais[1].id)).quantidade.toFixed(3),
+          "0.000",
+        )
+      },
+    )
+
+    await t.test(
+      "sessão revogada bloqueia consulta e confirmação de transferências",
+      async () => {
+        const revogada = await a.chamar("/api/auth/logout", "POST", undefined, {
+          usuario: 5,
+        })
+        assert.ok(revogada.status === 200 || revogada.status === 204)
+        const consulta = await a.chamar(
+          "/api/estoque/transferencias",
+          "GET",
+          undefined,
+          outro,
+        )
+        const tentativa = await a.chamar(
+          `/api/estoque/transferencias/${transferencia.idTransferencia}/receber`,
+          "POST",
+          { quantidade: "3" },
+          { ...outro, chave: randomUUID() },
+        )
+        assert.equal(consulta.status, 401)
+        assert.equal(tentativa.status, 401)
+      },
+    )
   } finally {
     const scope = { in: empresas }
+    await prisma.compra_recebimento_linha?.deleteMany({
+      where: { id_empresa: scope },
+    })
     await prisma.compra_itens.deleteMany({
       where: { compras: { id_empresa: scope } },
     })
